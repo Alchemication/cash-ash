@@ -236,6 +236,20 @@ must be better at a task nobody has evaluated yet.
 MAX_TOKENS_DEFAULT: int = _env_int("SKARBIE_MAX_TOKENS_DEFAULT", 4000)
 """Default output budget for a model call."""
 
+THESIS_MAX_TOKENS: int = _env_int("SKARBIE_THESIS_MAX_TOKENS", 9000)
+"""Output budget for a thesis restatement.
+
+Measured rather than chosen. At 3,000 tokens, eight of fourteen bootstrap calls
+hit finish_reason 'length' and had to be retried at a larger budget — paying
+for each of those twice and roughly doubling the wall-clock time. The call is
+given the owner's whole log plus their strategy and investor notes, and the
+model reasons over all of it before writing a few hundred tokens of answer, so
+the budget has to cover the thinking rather than the output.
+
+Generous on purpose: an unused budget costs nothing, since billing is on tokens
+produced, while too small a budget costs the entire call and then the retry.
+"""
+
 MIN_MAX_TOKENS: int = _env_int("SKARBIE_MIN_MAX_TOKENS", 1024)
 """Floor under any output budget, enforced rather than merely defaulted.
 

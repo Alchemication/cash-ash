@@ -6,6 +6,7 @@ Subcommands:
     sync           Fetch prices, FX rates, known dates and consensus estimates.
     events         List known upcoming events for your holdings.
     thesis         Bootstrap, list and inspect why each position is held.
+    triage         Rank every holding by what deserves attention this week.
     models         Inspect or change which model each stage calls.
     llm-log        Inspect recorded model calls and what they cost.
     price          Record one price by hand when a feed cannot.
@@ -51,6 +52,12 @@ Examples:
     uv run python main.py thesis show NKE
         Why you own it, what must stay true, and what would break it.
 
+    uv run python main.py triage
+        Rank every holding by what may have changed this week.
+
+    uv run python main.py triage --dry-run
+        Show exactly what triage would be given, without calling a model.
+
     uv run python main.py models
         Which model each stage calls, and what tier it is.
 
@@ -86,6 +93,7 @@ from cmd_db import cmd_db  # noqa: E402
 from cmd_llm_log import cmd_llm_log  # noqa: E402
 from cmd_models import cmd_models  # noqa: E402
 from cmd_thesis import cmd_thesis  # noqa: E402
+from cmd_triage import cmd_triage  # noqa: E402
 from cmd_sync import cmd_events, cmd_price, cmd_sync  # noqa: E402
 from commands import (  # noqa: E402
     cmd_concentration,
@@ -278,6 +286,15 @@ def build_parser() -> argparse.ArgumentParser:
     thesis_sub.add_parser("list", help="Every current thesis")
     _add_db(p_thesis)
     p_thesis.set_defaults(func=cmd_thesis, thesis_cmd=None, ticker=None)
+
+    p_triage = sub.add_parser("triage", help="Rank holdings by what changed")
+    p_triage.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be sent to the model, and send nothing",
+    )
+    _add_db(p_triage)
+    p_triage.set_defaults(func=cmd_triage)
 
     p_models = sub.add_parser("models", help="Inspect or change model routing")
     models_sub = p_models.add_subparsers(dest="models_cmd", required=False)

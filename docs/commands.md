@@ -9,6 +9,7 @@ uv run python main.py init             # create and seed from the snapshot file
 uv run python main.py sync             # prices, FX, earnings dates, consensus
 uv run python main.py events           # known upcoming dates for your holdings
 uv run python main.py thesis           # why each position is held
+uv run python main.py triage           # rank holdings by what changed
 uv run python main.py models           # which model each stage calls
 uv run python main.py llm-log          # recorded model calls and their cost
 uv run python main.py price TICKER --close AMOUNT   # record a price by hand
@@ -44,6 +45,7 @@ uv run python main.py thesis bootstrap        # theses from your own notes
 uv run python main.py thesis bootstrap NKE --overwrite
 uv run python main.py thesis show NKE
 uv run python main.py thesis list
+uv run python main.py triage --dry-run        # show the input, send nothing
 ```
 
 ## Profiles
@@ -154,6 +156,31 @@ never a number. An LLM's stated "confidence: 91%" is not a calibrated
 probability, and storing it as one would launder a guess into a statistic.
 Conviction describes the strength of the *reason*, not the quality of the
 company: a great business held for no articulated reason is `weak`.
+
+## Triage
+
+`triage` ranks every holding by how likely it is that something changed which
+affects its thesis — not by how much the price moved or how large the position
+is. It is one call covering the whole portfolio rather than one per holding,
+because the judgement is comparative and is both cheaper and better made once
+with everything visible.
+
+Every holding is recorded, including the ones passed over. "Nothing needed
+looking at this week" is a finding, and it is invisible if only the selected
+holdings are stored. A week with nothing selected is a normal outcome.
+
+The model is told explicitly what it is *not* being given. Absent data and
+unchanged data look identical in the rendering, so without that a model reports
+calm it never observed — in the first weeks there is no price history and only
+one consensus observation, and neither means nothing moved.
+
+Two failure modes are handled rather than hidden. A holding the model omits is
+recorded as unranked, because a silently dropped holding looks exactly like one
+considered and passed over. And if nothing at all was ranked, the run fails
+loudly instead of reporting a triage that considered nothing as though it had
+run.
+
+`--dry-run` prints exactly what would be sent and calls no model.
 
 ## Model routing
 
