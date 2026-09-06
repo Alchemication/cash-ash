@@ -12,17 +12,26 @@ from db.migrations import apply_migrations, get_live_schema, list_migrations
 from profiles import resolve_cli_profile
 from store import connect_db
 
-_TABLES = (
-    "accounts",
-    "securities",
-    "security_themes",
-    "cash_flows",
-    "trades",
-    "prices",
-    "fx_rates",
-    "portfolio_snapshots",
-    "snapshot_positions",
-)
+
+def _table_names(conn) -> list[str]:
+    """Return the database's own table names, newest schema included.
+
+    Read from the database rather than listed here: a hardcoded roster silently
+    stops mentioning whatever the most recent migration added, which is exactly
+    when someone is looking.
+    """
+    return [
+        row[0]
+        for row in conn.execute(
+            """
+            SELECT name FROM sqlite_master
+            WHERE type = 'table'
+              AND name NOT LIKE 'sqlite_%'
+              AND name != 'schema_migrations'
+            ORDER BY name
+            """
+        ).fetchall()
+    ]
 
 
 def _format_bytes(size_bytes: int) -> str:
@@ -91,8 +100,8 @@ def cmd_db(args: argparse.Namespace) -> None:
     table = Table(title=f"Database: {db_path}")
     table.add_column("Table", style="cyan")
     table.add_column("Rows", justify="right")
-    for name in _TABLES:
-        row = conn.execute(f"SELECT COUNT(*) AS n FROM {name}").fetchone()
+    for name in _table_names(conn):
+        row = conn.execute(f'SELECT COUNT(*) AS n FROM "{name}"').fetchone()
         table.add_row(name, f"{row['n']:,}")
     console.print(table)
 

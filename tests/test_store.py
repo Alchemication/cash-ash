@@ -291,3 +291,22 @@ class TestOpeningDatabases:
         statuses = list_migrations(connection)
         assert all(status.status == "applied" for status in statuses)
         connection.close()
+
+
+class TestDbStatusTables:
+    """The status listing must reflect the schema, not a hardcoded roster."""
+
+    def test_lists_tables_from_the_database(self, conn) -> None:
+        from cmd_db import _table_names
+
+        names = _table_names(conn)
+        # Every table any migration created should appear without being named
+        # anywhere in cmd_db.py.
+        assert {"accounts", "trades", "events", "consensus_estimates"} <= set(names)
+
+    def test_excludes_bookkeeping_tables(self, conn) -> None:
+        from cmd_db import _table_names
+
+        names = _table_names(conn)
+        assert "schema_migrations" not in names
+        assert not any(name.startswith("sqlite_") for name in names)
