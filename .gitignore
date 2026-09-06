@@ -1,0 +1,20 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# My files
+.env
+
+# Real broker snapshot. Belongs in $SKARBIE_HOME, never here, but ignore
+# it in the project root too in case a copy lands during setup.
+seed_snapshot.toml
+*.db
+*.db-wal
+*.db-shm

@@ -1,0 +1,67 @@
+# Broker snapshot used to seed the database. Copy this file to
+# ~/Documents/skarbie/seed_snapshot.toml (or $SKARBIE_HOME/seed_snapshot.toml)
+# and replace the invented figures below with your own.
+#
+# The real file stays on your machine and is never committed: it holds actual
+# holdings and euro amounts, and git history is permanent.
+#
+# A snapshot is a screenshot, not a transaction history. It states a quantity,
+# a value and a blended return per position; cost basis is derived from those
+# as value / (1 + return) and written as one synthetic opening trade each.
+# `init` prints the reconciliation and refuses to write if the derived total
+# drifts from `reported_total_eur` by more than the configured tolerance.
+
+date = "2026-01-15"
+source = "revolut"
+cash_eur = 10.00
+
+# Optional but strongly recommended: the total the broker displayed. It is the
+# only independent check that the snapshot was transcribed correctly.
+reported_total_eur = 510.00
+
+# Optional account identity. Defaults shown.
+# account_name = "revolut"
+# account_broker = "Revolut"
+# account_currency = "EUR"
+
+[[position]]
+ticker = "ACME"
+name = "Acme Corporation"
+quantity = 1.5
+value_eur = 150.00
+reported_return_pct = 12.50
+sector = "Industrials"
+themes = ["example"]
+
+[[position]]
+ticker = "GLOBEX"
+name = "Globex Corporation"
+quantity = 2.0
+value_eur = 200.00
+reported_return_pct = -8.00
+sector = "Information Technology"
+themes = ["example", "software"]
+
+[[position]]
+ticker = "INITECH"
+name = "Initech"
+quantity = 0.75
+value_eur = 90.00
+reported_return_pct = 33.00
+sector = "Information Technology"
+themes = ["example", "software"]
+
+[[position]]
+ticker = "UMBRELLA.B"
+name = "Umbrella Corporation Class B"
+quantity = 3.2
+value_eur = 60.00
+reported_return_pct = -15.25
+sector = "Health Care"
+themes = ["example"]
+# Set when the market-data provider uses a different symbol to the one your
+# broker shows — Yahoo writes a dotted class suffix with a hyphen.
+feed_symbol = "UMBRELLA-B"
+# Set to "manual" for anything no feed can price; it is then excluded from
+# totals and weights rather than valued at zero.
+# pricing_mode = "manual"
