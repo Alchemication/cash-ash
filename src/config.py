@@ -282,3 +282,27 @@ LLM_TIMEOUT_S: float = _env_float("SKARBIE_LLM_TIMEOUT_S", 180.0)
 """Per-request timeout. Generous because reasoning models are slow, and a
 research call that takes two minutes is still cheaper than a failed run.
 """
+
+
+# ---------------------------------------------------------------------------
+# Evidence
+# ---------------------------------------------------------------------------
+
+EVIDENCE_SOURCE: str = os.environ.get("SKARBIE_EVIDENCE_SOURCE", "yfinance-news")
+"""Where the facts an analysis reasons over are retrieved from.
+
+Free news aggregation by default, needing no key. It supplies provenance — a
+URL, a date, a publisher — but not quality: it carries retail commentary rather
+than filings, so an item establishes that something was said, not that it is
+true. A paid search API is a plausible upgrade at roughly ten dollars a year at
+this portfolio's usage, but adding a credential before the free source has been
+shown inadequate is a cost with no measured benefit.
+"""
+
+EVIDENCE_ITEMS_PER_SECURITY: int = _env_int("SKARBIE_EVIDENCE_ITEMS_PER_SECURITY", 8)
+"""How many items to retrieve per security for one research pass.
+
+Enough to see what a week actually contained without burying the thesis in
+noise. The aggregator returns around ten, most of which are commentary rather
+than news, so raising this mostly buys more opinions about the same events.
+"""

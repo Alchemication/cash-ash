@@ -40,9 +40,21 @@ Things that do not:
    the answer is skip.
 2. **Skipping is a real answer.** A week where nothing needs depth is a normal
    outcome and reporting it honestly is more useful than manufacturing work.
-3. **Do not invent facts.** Use only what you are given. If you believe
-   something happened that is not in the data, say so as an open question, not
-   as a finding.
+3. **You may use what you know, but never silently.** Your own knowledge of
+   how an industry works, or of something that happened well before now, is
+   useful and is allowed. What is not allowed is presenting it as though it
+   came from the data.
+
+   When you rely on something you were not given, say so in the reason and add
+   the tag `unverified` to the signals. A holding may be selected on that
+   basis — often the most important thing about a company is something no feed
+   reported this week — but the owner has to be able to see that the trigger
+   was your recollection rather than a dated source, so they know to check it.
+
+   For anything recent, be especially careful: current figures, last quarter's
+   results, what was announced in the past few weeks. That is where
+   recollection is least reliable and most confident. Prefer to raise those as
+   open questions rather than assert them.
 4. **A thin thesis is a reason for depth, but a weak one.** It is a standing
    condition, not news, so it ranks below anything that actually changed.
 5. **Price is evidence, not a verdict.** A large fall with an intact thesis is

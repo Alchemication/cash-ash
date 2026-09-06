@@ -182,6 +182,30 @@ run.
 
 `--dry-run` prints exactly what would be sent and calls no model.
 
+## Evidence and provenance
+
+Two kinds of claim reach an analysis and they are not interchangeable.
+
+A **sourced** claim is anchored to something published and carries a URL and a
+publication date. The database refuses to store one without both, so this is a
+constraint rather than an instruction a prompt could ignore. Anything
+time-sensitive has to be this kind — what a company just reported, how a market
+moved, what was announced last week — because that is precisely where a model's
+recollection is least reliable and most confident.
+
+A **background** claim is the model's own knowledge: how an industry works,
+what happened years ago, what a pattern usually implies. That is genuinely
+useful and is allowed. What it may not do is masquerade as a current fact.
+Where a stage relies on it, the output says so and tags the claim `unverified`,
+so a reader can see the trigger was recollection rather than a dated source.
+
+The default source is free news aggregation needing no key. It supplies
+provenance but not quality — it carries retail commentary rather than filings,
+so an item establishes that something was said, not that it is true. A paid
+search API costs roughly ten dollars a year at this portfolio's usage and is a
+plausible upgrade, but adding a credential before the free source has been
+shown inadequate is a cost with no measured benefit.
+
 ## Model routing
 
 Each stage of the pipeline routes independently, so one expensive step does not

@@ -257,7 +257,7 @@ def _bootstrap_message(security, context: dict[str, str]) -> str:  # type: ignor
 # Triage
 # ---------------------------------------------------------------------------
 
-TRIAGE_PROMPT_VERSION = "triage/1"
+TRIAGE_PROMPT_VERSION = "triage/2"
 
 
 @dataclass(frozen=True)
