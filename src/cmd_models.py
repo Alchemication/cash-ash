@@ -5,11 +5,10 @@ from __future__ import annotations
 import argparse
 import logging
 
-from config import FLASH_MODEL, PRO_MODEL
+from config import FAST_MODEL, FLASH_MODEL, PRO_MODEL
 from model_prefs import (
     FEATURE_PURPOSE,
     FEATURES,
-    MODEL_TIERS,
     clear_route,
     resolve_route,
 )
@@ -21,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def _tier_style(tier: str) -> str:
     """Return a rich colour reflecting how expensive a tier is."""
-    return {"flash": "green", "pro": "yellow"}.get(tier, "cyan")
+    return {"flash": "green", "fast": "blue", "pro": "yellow"}.get(tier, "cyan")
 
 
 def cmd_models(args: argparse.Namespace) -> None:
@@ -125,8 +124,9 @@ def cmd_models(args: argparse.Namespace) -> None:
         )
     console.print(table)
     console.print(
-        f"[dim]Tiers: flash={FLASH_MODEL}, pro={PRO_MODEL}. "
-        f"Known tiers: {', '.join(sorted(set(MODEL_TIERS.values())))}.[/dim]"
+        f"[dim]flash={FLASH_MODEL} · fast={FAST_MODEL} · pro={PRO_MODEL}\n"
+        f"flash and pro reason before answering; fast does not, which is why it "
+        f"is the fallback rather than a cheaper substitute.[/dim]"
     )
     console.print(
         "Change one with [cyan]main.py models set FEATURE --model MODEL[/cyan]; "

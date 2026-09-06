@@ -33,7 +33,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from config import FLASH_MODEL, PRO_MODEL
+from config import FAST_MODEL, FLASH_MODEL, PRO_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +56,18 @@ stage produces a recommendation.
 
 FEATURES: tuple[str, ...] = tuple(FEATURE_PURPOSE)
 
-MODEL_TIERS: dict[str, str] = {FLASH_MODEL: "flash", PRO_MODEL: "pro"}
-"""Rough capability and price tier, shown beside a model so an upgrade is
-visibly an upgrade."""
+MODEL_TIERS: dict[str, str] = {
+    FLASH_MODEL: "flash",
+    FAST_MODEL: "fast",
+    PRO_MODEL: "pro",
+}
+"""Tier shown beside a model, so a change is visibly a change.
+
+``flash`` and ``pro`` reason before answering; ``fast`` does not. The
+distinction matters more than the price: on an analytical stage the reasoning
+is the output being bought, so a model that skips it is not a cheaper way to do
+the same work.
+"""
 
 _DEFAULT_TEMPERATURE: dict[str, float] = {
     # Analysts read the same frozen evidence; the useful disagreement between
@@ -93,9 +102,15 @@ class ModelRoute:
 def default_route(feature: str) -> ModelRoute:
     """Return the built-in route for a feature.
 
-    The fallback is the pro tier: with a single provider configured it is the
-    only redundancy available, and it covers a fault specific to one model. It
-    does not cover the provider itself going down, which needs a second key.
+    The fallback is the fast tier, which sits on a different provider. That is
+    the point: a fallback within one provider covers a fault specific to one
+    model but not the provider going down, which is the outage that would take
+    a whole weekly run with it. It also emits no reasoning, so it cannot fail
+    the way the primary can — by spending an entire budget thinking and
+    returning nothing.
+
+    Analytical stages all route to the flash tier. The fast model is here for
+    resilience, not because it is a cheaper way to do the same analysis.
 
     Args:
         feature: Feature name.
@@ -106,7 +121,7 @@ def default_route(feature: str) -> ModelRoute:
     return ModelRoute(
         feature=feature,
         model=FLASH_MODEL,
-        fallback=PRO_MODEL,
+        fallback=FAST_MODEL,
         temperature=_DEFAULT_TEMPERATURE.get(feature),
         source="default",
     )

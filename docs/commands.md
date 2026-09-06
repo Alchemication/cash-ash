@@ -140,8 +140,15 @@ uv run python main.py models set synthesis --model zai/glm-4.7
 uv run python main.py models cost                             # what it actually cost
 ```
 
+Three tiers ship. `flash` and `pro` reason before answering; `fast` does not,
+and sits on a second provider. `fast` is the default fallback for that reason —
+a fallback within one provider survives a bad model but not an outage, which is
+the failure that would take a whole weekly run with it. It is redundancy, not a
+cheaper way to do the analysis: where the reasoning is the output, the
+reasoning is what is being paid for.
+
 Preferences persist per profile, so two people can route differently. Any
-litellm model id is accepted, which is how a second provider joins without a
+litellm model id is accepted, which is how a further provider joins without a
 code change.
 
 Analysts default to temperature 0. Disagreement between them should come from

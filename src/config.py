@@ -205,6 +205,20 @@ weekly pass over fourteen holdings costs a few cents at this rate, which is
 what makes running the whole pipeline every week defensible at all.
 """
 
+FAST_MODEL: str = os.environ.get("SKARBIE_FAST_MODEL", "openai/gpt-5.6-luna")
+"""Non-reasoning model on a second provider, used as the fallback.
+
+Its value here is redundancy, not capability. Being on a different provider
+means an outage at the primary is survivable rather than merely a different
+model failing the same way, and emitting no reasoning tokens means it cannot
+hit the truncation trap the primary is prone to.
+
+Nominally dearer per token than the flash tier (0.20/1.20 against 0.15/0.50 per
+million). It is not a cheaper substitute for analysis: on a task where the
+reasoning is the product, the reasoning is what you are paying for. Which model
+is actually better at research is an evaluation question, not a pricing one.
+"""
+
 PRO_MODEL: str = os.environ.get("SKARBIE_PRO_MODEL", "zai/glm-4.7")
 """Stronger model, roughly four times the price of the flash tier.
 

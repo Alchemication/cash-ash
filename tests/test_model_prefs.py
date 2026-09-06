@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from config import FLASH_MODEL, PRO_MODEL
+from config import FAST_MODEL, FLASH_MODEL, PRO_MODEL
 from model_prefs import (
     FEATURE_PURPOSE,
     FEATURES,
@@ -33,8 +33,18 @@ class TestDefaults:
         for feature in FEATURES:
             assert resolve_route(feature, prefs).model == FLASH_MODEL
 
-    def test_default_fallback_is_the_pro_tier(self) -> None:
-        assert default_route("triage").fallback == PRO_MODEL
+    def test_default_fallback_is_on_another_provider(self) -> None:
+        # A fallback within one provider survives a bad model but not an
+        # outage, which is the failure that would take a whole run with it.
+        route = default_route("triage")
+        assert route.fallback == FAST_MODEL
+        assert route.model.split("/")[0] != route.fallback.split("/")[0]
+
+    def test_analytical_stages_all_use_the_reasoning_tier(self, prefs: Path) -> None:
+        # The fast model is redundancy, not a cheaper way to do the analysis:
+        # where reasoning is the output, it is what is being paid for.
+        for feature in ("triage", "plan", "analyst", "synthesis", "decision"):
+            assert resolve_route(feature, prefs).model == FLASH_MODEL
 
     def test_every_feature_is_documented(self) -> None:
         for feature in FEATURES:
