@@ -4,9 +4,12 @@ Handlers print user-facing output to stdout and log diagnostics to stderr.
 ``main.py`` is dispatch only; the work lives here.
 
 Public API:
-    cmd_init           -- create and seed the database
+    cmd_init           -- create and seed a profile's database
     cmd_holdings       -- current positions, cost basis and value
     cmd_concentration  -- grouped weights by security, sector and theme
+    cmd_profile        -- create and list profiles
+    cmd_context        -- show a profile's context files and their status
+    cmd_doctor         -- check whether a profile is ready to use
 """
 
 from __future__ import annotations
@@ -17,14 +20,21 @@ from pathlib import Path
 
 from config import (
     CONCENTRATION_ALERT_PCT,
+    DEFAULT_MONTHLY_CONTRIBUTION_EUR,
     LARGE_POSITION_WEIGHT_PCT,
     MAX_POSITION_WEIGHT_PCT,
-    MONTHLY_CONTRIBUTION_EUR,
     SEED_RECONCILIATION_TOLERANCE_EUR,
-    SEED_SNAPSHOT_PATH,
 )
 from models import Holding
 from portfolio import cash_eur, concentration, holdings, total_value
+from profiles import (
+    CONTEXT_FILES,
+    ProfileConfigError,
+    add_profile,
+    context_status,
+    load_profiles,
+    resolve_cli_profile,
+)
 from seed import load_snapshot, reconcile, seed_database
 from store import open_db, open_existing_db
 
@@ -64,7 +74,18 @@ def cmd_init(args: argparse.Namespace) -> None:
     from rich.table import Table
 
     console = Console()
-    snapshot_path = Path(args.snapshot or SEED_SNAPSHOT_PATH)
+    profile, db_path = resolve_cli_profile(
+        args.profile, db=args.db, require_existing=False
+    )
+    if args.snapshot:
+        snapshot_path = Path(args.snapshot)
+    elif profile is not None:
+        snapshot_path = profile.snapshot
+    else:
+        raise ProfileConfigError(
+            "An explicit --db needs an explicit --snapshot; without a profile "
+            "there is nowhere to look for one."
+        )
     snapshot = load_snapshot(snapshot_path)
     check = reconcile(snapshot)
     difference = check["total_difference_eur"]
@@ -114,23 +135,31 @@ def cmd_init(args: argparse.Namespace) -> None:
         console.print("[yellow]Dry run: nothing written.[/yellow]")
         return
 
-    db_path = Path(args.db)
     conn = open_db(db_path)
     seed_database(conn, snapshot)
     console.print(f"[green]Seeded[/green] {db_path}")
-    console.print("Next: [cyan]uv run python main.py holdings[/cyan]")
+    suffix = f" --profile {profile.name}" if profile and not profile.operator else ""
+    console.print(f"Next: [cyan]uv run python main.py holdings{suffix}[/cyan]")
 
 
-def _holdings_context(args: argparse.Namespace) -> tuple[list[Holding], float, float]:
-    """Load holdings, cash and total for a command.
+def _holdings_context(
+    args: argparse.Namespace,
+) -> tuple[list[Holding], float, float, float]:
+    """Load holdings, cash, total and the profile's contribution figure.
 
     Raises:
-        FileNotFoundError: If the database does not exist yet.
+        ProfileConfigError: If the profile or its database is missing.
     """
-    conn = open_existing_db(Path(args.db))
+    profile, db_path = resolve_cli_profile(args.profile, db=args.db)
+    conn = open_existing_db(db_path)
     rows = holdings(conn, account_id=1)
     cash = cash_eur(conn, account_id=1)
-    return rows, cash, total_value(rows, cash=cash)
+    contribution = (
+        profile.monthly_contribution_eur
+        if profile is not None
+        else DEFAULT_MONTHLY_CONTRIBUTION_EUR
+    )
+    return rows, cash, total_value(rows, cash=cash), contribution
 
 
 def cmd_holdings(args: argparse.Namespace) -> None:
@@ -139,12 +168,12 @@ def cmd_holdings(args: argparse.Namespace) -> None:
     from rich.table import Table
 
     console = Console()
-    rows, cash, total = _holdings_context(args)
+    rows, cash, total, contribution = _holdings_context(args)
 
     if not rows:
         console.print(
             "No positions. Run [cyan]uv run python main.py init[/cyan] to seed "
-            "the database from the Revolut snapshot."
+            "the database from your broker snapshot."
         )
         return
 
@@ -201,7 +230,7 @@ def cmd_holdings(args: argparse.Namespace) -> None:
     console.print(
         f"Cash [bold]{_eur(cash)}[/bold] · "
         f"Total [bold]{_eur(total)}[/bold] · "
-        f"Planning contribution [bold]{_eur(MONTHLY_CONTRIBUTION_EUR)}[/bold]/month"
+        f"Planning contribution [bold]{_eur(contribution)}[/bold]/month"
     )
     if priced_at:
         console.print(f"[dim]Valued at prices from {priced_at}.[/dim]")
@@ -219,7 +248,7 @@ def cmd_concentration(args: argparse.Namespace) -> None:
     from rich.table import Table
 
     console = Console()
-    rows, cash, total = _holdings_context(args)
+    rows, cash, total, _ = _holdings_context(args)
 
     if not rows:
         console.print(
@@ -267,3 +296,176 @@ def cmd_concentration(args: argparse.Namespace) -> None:
         f"[dim]Weights are against a total of {_eur(total)} including "
         f"{_eur(cash)} cash. Theme weights overlap and may exceed 100%.[/dim]"
     )
+
+
+def cmd_profile(args: argparse.Namespace) -> None:
+    """Create a profile or list the roster.
+
+    Raises:
+        ProfileConfigError: If creation is rejected or the roster is invalid.
+    """
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console()
+
+    if args.profile_cmd == "add":
+        profile = add_profile(
+            args.name,
+            args.telegram_id,
+            operator=args.operator,
+            monthly_contribution_eur=args.monthly_contribution,
+        )
+        console.print(
+            f"[green]Created profile[/green] {profile.name} at {profile.root}"
+        )
+        console.print()
+        console.print("Next, in order:")
+        console.print(
+            f"  1. Write your holdings into [cyan]{profile.snapshot}[/cyan] "
+            f"(copy [cyan]seed_snapshot.example.toml[/cyan])"
+        )
+        console.print(
+            f"  2. [cyan]uv run python main.py init --profile {profile.name}[/cyan]"
+        )
+        console.print(
+            f"  3. Fill in the context files in [cyan]{profile.context}[/cyan] — "
+            f"see [cyan]main.py context[/cyan]"
+        )
+        return
+
+    profiles = load_profiles()
+    table = Table(title="Profiles")
+    table.add_column("Name", style="bold")
+    table.add_column("Telegram ID", justify="right")
+    table.add_column("Default", justify="center")
+    table.add_column("Enabled", justify="center")
+    table.add_column("Contribution", justify="right")
+    table.add_column("Database", style="dim", overflow="fold")
+    for profile in sorted(profiles.values(), key=lambda item: item.name):
+        table.add_row(
+            profile.name,
+            str(profile.telegram_id),
+            "yes" if profile.operator else "",
+            "yes" if profile.enabled else "[red]no[/red]",
+            f"{_eur(profile.monthly_contribution_eur)}/mo",
+            str(profile.db) if profile.db.exists() else "[yellow]not created[/yellow]",
+        )
+    console.print(table)
+
+
+def cmd_context(args: argparse.Namespace) -> None:
+    """Show a profile's personal context files and whether they are written.
+
+    Raises:
+        ProfileConfigError: If the profile is unknown.
+    """
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console()
+    profile, _ = resolve_cli_profile(args.profile, db=None, require_existing=False)
+    assert profile is not None  # resolve_cli_profile only returns None with --db
+
+    table = Table(title=f"Context files — {profile.name}")
+    table.add_column("File", style="bold")
+    table.add_column("Status")
+    table.add_column("Purpose", style="dim", overflow="fold")
+
+    styles = {
+        "written": "[green]written[/green]",
+        "template": "[yellow]template[/yellow]",
+        "missing": "[red]missing[/red]",
+    }
+    for file, status in context_status(profile):
+        label = styles[status]
+        if file.generated:
+            label += " [dim](generated)[/dim]"
+        table.add_row(file.name, label, file.purpose)
+    console.print(table)
+    console.print(f"[dim]{profile.context}[/dim]")
+
+    unwritten = [
+        file.name
+        for file, status in context_status(profile)
+        if status != "written" and not file.generated
+    ]
+    if unwritten:
+        console.print(
+            f"[yellow]Still to write: {', '.join(unwritten)}.[/yellow] Nothing "
+            f"reads these yet — the research pipeline will, from Phase 4. "
+            f"Writing strategy.md early is the useful one."
+        )
+
+
+def cmd_doctor(args: argparse.Namespace) -> None:
+    """Report whether a profile is ready to use, and what is missing."""
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console()
+    table = Table(title="Setup check")
+    table.add_column("Check", style="bold")
+    table.add_column("Status")
+    table.add_column("Detail", style="dim", overflow="fold")
+
+    ok = "[green]ok[/green]"
+    warn = "[yellow]todo[/yellow]"
+    bad = "[red]missing[/red]"
+
+    try:
+        profiles = load_profiles()
+    except ProfileConfigError as exc:
+        table.add_row("Profile roster", bad, str(exc))
+        console.print(table)
+        return
+
+    table.add_row("Profile roster", ok, f"{len(profiles)} profile(s)")
+
+    profile, _ = resolve_cli_profile(args.profile, db=None, require_existing=False)
+    assert profile is not None
+    table.add_row("Profile", ok, f"{profile.name} (telegram {profile.telegram_id})")
+    table.add_row(
+        "Broker snapshot",
+        ok if profile.snapshot.exists() else bad,
+        str(profile.snapshot),
+    )
+    table.add_row(
+        "Database",
+        ok if profile.db.exists() else bad,
+        str(profile.db)
+        if profile.db.exists()
+        else f"Run 'main.py init --profile {profile.name}'",
+    )
+
+    statuses = dict((file.name, status) for file, status in context_status(profile))
+    authored = [
+        file
+        for file in CONTEXT_FILES
+        if not file.generated and statuses[file.name] == "written"
+    ]
+    total_authored = len([file for file in CONTEXT_FILES if not file.generated])
+    table.add_row(
+        "Context files",
+        ok if len(authored) == total_authored else warn,
+        f"{len(authored)}/{total_authored} written — see 'main.py context'",
+    )
+
+    import os
+
+    table.add_row(
+        "Telegram token",
+        ok if os.environ.get("TELEGRAM_BOT_TOKEN") else warn,
+        "TELEGRAM_BOT_TOKEN in .env — needed from Phase 7",
+    )
+    provider_keys = [
+        name
+        for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY")
+        if os.environ.get(name)
+    ]
+    table.add_row(
+        "Model providers",
+        ok if provider_keys else warn,
+        f"{len(provider_keys)} key(s) set — needed from Phase 3",
+    )
+    console.print(table)

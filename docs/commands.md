@@ -3,9 +3,13 @@
 Always use `uv run`. Run any command with `--help` for the full flag list.
 
 ```bash
+uv run python main.py profile add NAME --telegram-id ID --operator   # first profile
+uv run python main.py profile list     # the roster
 uv run python main.py init             # create and seed from the snapshot file
 uv run python main.py holdings         # positions, cost basis, value, P&L
 uv run python main.py concentration    # grouped weights and limit breaches
+uv run python main.py context          # personal context files and their status
+uv run python main.py doctor           # what is set up and what is missing
 uv run python main.py db status        # row counts and migration state
 uv run python main.py db migrate       # apply pending migrations
 uv run python main.py db schema        # print the live schema
@@ -21,10 +25,36 @@ uv run python main.py concentration --by sector
 uv run python main.py holdings --verbose      # debug logging on stderr
 ```
 
-`--db PATH` overrides the database location on any command; `SKARBIE_HOME`
-moves the whole app directory. Only `init` creates a database — everything else
-fails with a message pointing at it, so a typo in a path cannot silently produce
-an empty portfolio.
+## Profiles
+
+Every portfolio command is profile-scoped. `--profile NAME` selects one;
+omitting it means the operator profile in `profiles.toml`. One person is one
+profile: their own database, broker snapshot, context files and Telegram id.
+
+```bash
+uv run python main.py holdings --profile kasia
+uv run python main.py init --profile kasia
+```
+
+A single Telegram bot serves everyone. The token is shared infrastructure in
+`.env`; the per-person part is the numeric `telegram_id` in the roster, which
+the bot routes incoming messages by.
+
+`--db PATH` overrides the database on any command and bypasses the roster
+entirely — it exists for experimental databases. Only `init` creates a
+database; everything else fails with a message pointing at it, so a typo in a
+path or a profile name cannot silently produce an empty portfolio.
+
+## Context files
+
+Each profile owns personal markdown files under
+`$SKARBIE_HOME/profiles/<name>/context/`. `profile add` writes templates;
+`context` reports which are still templates and which you have written.
+
+Nothing reads them yet — the research pipeline will, from Phase 4. They exist
+now so `strategy.md` can be filled in over time rather than in a rush when the
+pipeline lands. An unedited template counts as unwritten, because placeholder
+prose read as intent is worse than no file at all.
 
 ## Reading the output
 

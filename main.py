@@ -1,12 +1,22 @@
 """skarbie — research and decision support for a small personal stock portfolio.
 
 Subcommands:
+    profile        Create and list profiles — one per person.
     init           Create the database and seed it from a broker snapshot file.
     holdings       Show current positions, cost basis, value and P&L.
     concentration  Show grouped weights by security, sector and theme.
+    context        Show a profile's personal context files and their status.
+    doctor         Check whether a profile is ready to use.
     db             Migration and schema admin.
 
+All portfolio commands are profile-scoped. Use --profile NAME; omitting it
+means the operator profile from profiles.toml. An explicit --db is only for
+experimental databases and never creates one.
+
 Examples:
+    uv run python main.py profile add adam --telegram-id 123456789 --operator
+        Create the first profile, its directories and its context templates.
+
     uv run python main.py init --dry-run
         Check the snapshot reconciles against the broker's stated total,
         writing nothing.
@@ -19,6 +29,12 @@ Examples:
 
     uv run python main.py concentration --by theme
         Theme weights, flagging anything over the configured limit.
+
+    uv run python main.py holdings --profile kasia
+        Someone else's portfolio.
+
+    uv run python main.py doctor
+        What is set up and what is still missing.
 
     uv run python main.py db status
         Row counts and migration state.
@@ -36,15 +52,30 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from cmd_db import cmd_db  # noqa: E402
-from commands import cmd_concentration, cmd_holdings, cmd_init  # noqa: E402
-from config import DB_PATH, SEED_SNAPSHOT_PATH  # noqa: E402
+from commands import (  # noqa: E402
+    cmd_concentration,
+    cmd_context,
+    cmd_doctor,
+    cmd_holdings,
+    cmd_init,
+    cmd_profile,
+)
+from config import DEFAULT_MONTHLY_CONTRIBUTION_EUR  # noqa: E402
 from log import setup_logging  # noqa: E402
+from profiles import ProfileConfigError  # noqa: E402
 
 
-def main() -> None:
-    """Entry point: parse CLI args and dispatch to the appropriate subcommand."""
-    load_dotenv()
+def build_parser() -> argparse.ArgumentParser:
+    """Build the full argument parser.
 
+    Separate from :func:`main` so tests can walk the command tree instead of
+    scraping this file for string literals — subcommands built in a loop have
+    no literal to find, which is exactly how a documentation check goes
+    vacuously green.
+
+    Returns:
+        The configured parser.
+    """
     parser = argparse.ArgumentParser(
         description="Personal portfolio research and decision support",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -58,18 +89,50 @@ def main() -> None:
 
     def _add_db(subparser: argparse.ArgumentParser) -> None:
         subparser.add_argument(
+            "--profile",
+            metavar="NAME",
+            default=None,
+            help="Profile name (default: the operator profile)",
+        )
+        subparser.add_argument(
             "--db",
             metavar="PATH",
-            default=str(DB_PATH),
-            help=f"SQLite database path (default: {DB_PATH})",
+            default=None,
+            help="Explicit database path, overriding --profile",
         )
+
+    p_profile = sub.add_parser("profile", help="Create and list profiles")
+    profile_sub = p_profile.add_subparsers(dest="profile_cmd", required=True)
+    p_profile_add = profile_sub.add_parser("add", help="Create a profile")
+    p_profile_add.add_argument("name", help="Profile name (lowercase, no spaces)")
+    p_profile_add.add_argument(
+        "--telegram-id",
+        type=int,
+        required=True,
+        metavar="ID",
+        help="Numeric Telegram user id; message @userinfobot to find it",
+    )
+    p_profile_add.add_argument(
+        "--operator",
+        action="store_true",
+        help="Make this the default profile for commands without --profile",
+    )
+    p_profile_add.add_argument(
+        "--monthly-contribution",
+        type=float,
+        default=DEFAULT_MONTHLY_CONTRIBUTION_EUR,
+        metavar="EUR",
+        help=f"Planning figure for new money (default: {DEFAULT_MONTHLY_CONTRIBUTION_EUR:.0f})",
+    )
+    profile_sub.add_parser("list", help="List the roster")
+    p_profile.set_defaults(func=cmd_profile)
 
     p_init = sub.add_parser("init", help="Create and seed the database")
     p_init.add_argument(
         "--snapshot",
         metavar="PATH",
         default=None,
-        help=f"Broker snapshot TOML (default: {SEED_SNAPSHOT_PATH})",
+        help="Broker snapshot TOML (default: the profile's seed_snapshot.toml)",
     )
     p_init.add_argument(
         "--dry-run",
@@ -93,6 +156,24 @@ def main() -> None:
     _add_db(p_conc)
     p_conc.set_defaults(func=cmd_concentration)
 
+    p_context = sub.add_parser("context", help="Show personal context files")
+    p_context.add_argument(
+        "--profile",
+        metavar="NAME",
+        default=None,
+        help="Profile name (default: the operator profile)",
+    )
+    p_context.set_defaults(func=cmd_context)
+
+    p_doctor = sub.add_parser("doctor", help="Check setup readiness")
+    p_doctor.add_argument(
+        "--profile",
+        metavar="NAME",
+        default=None,
+        help="Profile name (default: the operator profile)",
+    )
+    p_doctor.set_defaults(func=cmd_doctor)
+
     p_db = sub.add_parser("db", help="Migration and schema admin")
     db_sub = p_db.add_subparsers(dest="db_cmd", required=True)
     for name, help_text in (
@@ -104,12 +185,18 @@ def main() -> None:
         _add_db(p_db_cmd)
     p_db.set_defaults(func=cmd_db)
 
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    """Entry point: parse CLI args and dispatch to the appropriate subcommand."""
+    load_dotenv()
+    args = build_parser().parse_args()
     setup_logging(args.verbose)
 
     try:
         args.func(args)
-    except (FileNotFoundError, ValueError) as exc:
+    except (FileNotFoundError, ValueError, ProfileConfigError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 

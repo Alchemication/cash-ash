@@ -23,17 +23,50 @@ class TestAgentInstructions:
 
 
 class TestCommandsDoc:
-    """Every subcommand the CLI exposes must appear in docs/commands.md."""
+    """Every subcommand the CLI exposes must appear in docs/commands.md.
+
+    Walks the real parser rather than scraping main.py for string literals:
+    the ``db`` subcommands are built in a loop and have no literal to find, so
+    a text-matching check would pass without ever seeing them.
+    """
+
+    @staticmethod
+    def _invocations() -> set[str]:
+        import argparse
+
+        from main import build_parser
+
+        def walk(parser: argparse.ArgumentParser, prefix: str = "") -> set[str]:
+            found: set[str] = set()
+            for action in parser._actions:
+                if not isinstance(action, argparse._SubParsersAction):
+                    continue
+                for name, subparser in action.choices.items():
+                    path = f"{prefix}{name}"
+                    nested = walk(subparser, prefix=f"{path} ")
+                    # Only leaves need documenting; "main.py db" alone is not a
+                    # runnable command.
+                    found |= nested or {path}
+            return found
+
+        return walk(build_parser())
 
     def test_documents_every_subcommand(self) -> None:
-        main_source = (ROOT / "main.py").read_text()
         documented = (ROOT / "docs" / "commands.md").read_text()
-        commands = set(re.findall(r'sub\.add_parser\(\s*"([a-z-]+)"', main_source))
-        assert commands, "No subcommands found in main.py; the regex is stale."
+        commands = self._invocations()
+        assert commands, "No subcommands found; the parser walk is broken."
         missing = sorted(
             name for name in commands if f"main.py {name}" not in documented
         )
         assert not missing, f"Undocumented subcommands: {missing}"
+
+    def test_walk_finds_both_levels(self) -> None:
+        # Guards the walk itself: if it silently returned nothing, the check
+        # above would pass vacuously.
+        commands = self._invocations()
+        assert "holdings" in commands
+        assert "profile add" in commands
+        assert "db migrate" in commands
 
 
 class TestEnvExample:

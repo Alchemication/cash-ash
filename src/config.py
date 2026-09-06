@@ -47,9 +47,9 @@ APP_HOME: Path = Path(
 ).expanduser()
 """Root directory for user-owned skarbie state."""
 
-DB_PATH: Path = APP_HOME / "portfolio.db"
-"""The one database. Unlike zdrowskit there are no profiles: a portfolio has a
-single owner, and a second portfolio is a second ``SKARBIE_HOME``."""
+# Per-profile paths — the database, the broker snapshot, the context files —
+# are owned by ``profiles.Profile``, not defined here. A path that depends on
+# which person a command is acting for cannot be a module-level constant.
 
 
 # ---------------------------------------------------------------------------
@@ -65,15 +65,6 @@ security's native listing currency and are converted at a stored FX rate, so a
 position's return can be decomposed into stock move and FX move rather than
 silently blending the two — which is exactly what the broker's own percentage
 does, and why it cannot be used as an input to a decision.
-"""
-
-SEED_SNAPSHOT_PATH: Path = APP_HOME / "seed_snapshot.toml"
-"""User-owned file holding the broker snapshot the database is seeded from.
-
-Lives under the app home, never in the repository. It contains real holdings,
-quantities and euro amounts, and git history is permanent — so the repository
-ships only ``seed_snapshot.example.toml`` with invented figures, and the real
-file stays on the user's machine alongside the database it produces.
 """
 
 SEED_RECONCILIATION_TOLERANCE_EUR: float = _env_float(
@@ -93,8 +84,13 @@ tight enough that a transposed digit or a missing row cannot slip through.
 # Capital available to allocate
 # ---------------------------------------------------------------------------
 
-MONTHLY_CONTRIBUTION_EUR: float = _env_float("SKARBIE_MONTHLY_CONTRIBUTION_EUR", 150.0)
-"""Assumed new money per month, used as the planning figure for BUY/ADD.
+DEFAULT_MONTHLY_CONTRIBUTION_EUR: float = _env_float(
+    "SKARBIE_DEFAULT_MONTHLY_CONTRIBUTION_EUR", 150.0
+)
+"""Default new money per month for a newly created profile.
+
+Only a default: the live figure is per-profile, in ``profiles.toml``, because
+two people in a household do not contribute the same amount.
 
 The portfolio holds almost no cash, so without an expected contribution the
 decision layer can only ever emit HOLD/TRIM/EXIT and half the system is

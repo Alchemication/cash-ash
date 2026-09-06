@@ -14,13 +14,26 @@ comes next and why in that order.
 ## Quick start
 
 ```bash
-cp seed_snapshot.example.toml ~/Documents/skarbie/seed_snapshot.toml
-$EDITOR ~/Documents/skarbie/seed_snapshot.toml   # your holdings; never committed
-uv run python main.py init --dry-run   # check it reconciles, write nothing
-uv run python main.py init             # create and seed the database
+# 1. Create your profile. --operator makes it the default for bare commands.
+uv run python main.py profile add adam --telegram-id 123456789 --operator
+
+# 2. Describe your holdings. This file never leaves your machine.
+cp seed_snapshot.example.toml ~/Documents/skarbie/profiles/adam/seed_snapshot.toml
+$EDITOR ~/Documents/skarbie/profiles/adam/seed_snapshot.toml
+
+# 3. Check it reconciles against your broker's stated total, then seed.
+uv run python main.py init --dry-run
+uv run python main.py init
+
 uv run python main.py holdings         # positions, cost basis, P&L
 uv run python main.py concentration    # weights by security, sector and theme
+uv run python main.py doctor           # what is set up, what is still missing
 ```
+
+`profile add` also writes starter context files — `investor.md`, `strategy.md`,
+`log.md`, `watchlist.md` — under the profile's `context/` directory. Nothing
+reads them yet; the research pipeline will, from Phase 4. `main.py context`
+shows which are still untouched templates.
 
 Full command list: [docs/commands.md](docs/commands.md).
 
@@ -52,12 +65,33 @@ Three rules follow from that, and everything else depends on them:
   without warning. Such a holding is excluded from totals and weights and the
   shortfall is printed, rather than silently valuing it at zero.
 
+## Profiles
+
+One profile is one person: their own database, broker snapshot, context files
+and Telegram id. A household shares one bot — the token is infrastructure in
+`.env`, and the roster's numeric `telegram_id` is what the bot routes messages
+by, so nobody needs their own BotFather registration.
+
+```
+~/Documents/skarbie/
+  profiles.toml                 the roster
+  profiles/adam/
+    portfolio.db
+    seed_snapshot.toml          your holdings, never committed
+    context/                    investor.md, strategy.md, log.md, watchlist.md
+```
+
+Every portfolio command takes `--profile NAME`; omitting it means the operator
+profile. `--db PATH` bypasses the roster entirely and exists for experimental
+databases.
+
 ## Configuration
 
-Copy `.env_example` to `.env`. Every tunable — guardrails, the planning
-contribution, paths — is defined in `src/config.py` with a docstring explaining
-how its value was chosen. The database lives at `~/Documents/skarbie/` by
-default; set `SKARBIE_HOME` to move it.
+Copy `.env_example` to `.env`. Every tunable — guardrails, defaults, tolerances
+— is defined in `src/config.py` with a docstring explaining how its value was
+chosen. Per-person settings such as the monthly contribution live in
+`profiles.toml`, not in `config.py`. Set `SKARBIE_HOME` to move the whole app
+directory.
 
 ## Development
 

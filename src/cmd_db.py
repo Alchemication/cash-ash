@@ -7,9 +7,9 @@ arrived at once that module outgrew a single file.
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 from db.migrations import apply_migrations, get_live_schema, list_migrations
+from profiles import resolve_cli_profile
 from store import connect_db
 
 _TABLES = (
@@ -39,7 +39,8 @@ def cmd_db(args: argparse.Namespace) -> None:
     """Handle the 'db' subcommand family for migration and schema admin.
 
     Raises:
-        FileNotFoundError: If a non-creating subcommand is given a missing path.
+        FileNotFoundError: If the resolved database does not exist.
+        ProfileConfigError: If the named profile is unknown.
     """
     from rich.console import Console
     from rich.panel import Panel
@@ -47,12 +48,17 @@ def cmd_db(args: argparse.Namespace) -> None:
     from rich.table import Table
 
     console = Console()
-    db_path = Path(args.db).expanduser().resolve()
+    profile, db_path = resolve_cli_profile(
+        args.profile, db=args.db, require_existing=False
+    )
+    db_path = db_path.expanduser().resolve()
 
     if not db_path.exists():
+        target = f" --profile {profile.name}" if profile else ""
         raise FileNotFoundError(
-            f"No database at {db_path}. Run 'uv run python main.py init' to "
-            f"create and seed it; 'db' will not create one implicitly."
+            f"No database at {db_path}. Run 'uv run python main.py init"
+            f"{target}' to create and seed it; 'db' will not create one "
+            f"implicitly."
         )
 
     if args.db_cmd == "migrate":

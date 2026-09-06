@@ -54,6 +54,7 @@ day one — which is why it shipped in Phase 1.
 |---|---|---|
 | 0 | Scaffolding: `uv`, `src/` layout, dispatch-only `main.py`, config, logging, migrations, lint + tests | done |
 | 1 | Ledger: accounts, securities, trades, cash flows, snapshots. Seed, `holdings`, `concentration` | done |
+| 1.5 | Profiles: roster, per-person directories, `--profile` everywhere, context-file scaffolding, `doctor` | done |
 | 2 | `MarketDataProvider` abstraction, yfinance adapter, price + FX fetch, `sync`, manual-price entry for when a feed fails | next |
 | 3 | LLM infrastructure ported from zdrowskit: `llm.py`, per-feature model routing, call/trace logging, `models`, `llm-log` | |
 | 4 | Versioned theses, research runs, evidence. Plan → evidence → single analyst → structured thesis update. `research TICKER` | |
@@ -62,13 +63,41 @@ day one — which is why it shipped in Phase 1.
 | 7 | Telegram: notifier, long-polling daemon, Approve/Reject/Later/Executed keyboards, `user_decisions`, `executions` | |
 | 8 | Process evals, curated cases, passive-benchmark tracking | |
 
+## Why profiles landed before market data
+
+Retrofitting `--profile` after market data, model routing, research and
+Telegram exist means touching every command, every database open and every
+test. zdrowskit carries a `profile adopt` command purely to migrate legacy
+single-profile installs; that command is the retrofit tax, and building the
+roster early avoids paying it.
+
+One bot serves every profile, routed by the numeric `telegram_id` in the
+roster. Per-person bots would mean a BotFather registration, a token and a
+polling loop each, for nothing.
+
+Context files are created and managed now but read by nothing. That is
+deliberate: `strategy.md` is the file that gets filled in over weeks, and it
+should already exist when the research pipeline arrives. An unedited template
+counts as unwritten, because placeholder prose consumed as intent is worse than
+an absent file.
+
+**Open fork, to decide at Phase 4.** Research is per-company; portfolios and
+decisions are per-person. Three profiles all holding AAPL would run the analyst
+panel three times for identical output, tripling the cost already flagged
+above. The split when it matters: securities, prices, FX, evidence and research
+runs shared; trades, positions, theses, recommendations and decisions
+per-profile. Not built now — there is one profile and no research — but the
+research tables stay free of profile-scoped ids so it remains available.
+
 ## Deliberately out of scope for v1
 
 - **Automatic trading.** Execution stays manual behind a `BrokerAdapter` seam.
 - **New-stock discovery.** The spec's screening workflow is the most expensive
   part and the least useful while there is no capital to fund a new position.
-- **Multi-account tracking.** `accounts` carries one row so a second broker is
-  an INSERT rather than a rewrite, but no features are built on it.
+- **Multi-account tracking.** `accounts` carries one row per profile so a
+  second broker is an INSERT rather than a rewrite, but no features are built
+  on it. Distinct from profiles, which are multiple *people*, each with one
+  broker.
 - **Tax lots and vesting.** Average cost only. Revisit if an account with
   restricted stock is ever brought into advice scope.
 - **Crypto research.** The pipeline is fundamentals-shaped — thesis, valuation,
