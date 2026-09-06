@@ -39,6 +39,10 @@ _NOISY_LOGGERS: tuple[str, ...] = (
     "urllib",
     "httpx",
     "httpcore",
+    # litellm logs every completed call at INFO, which buries the output of
+    # any command that makes more than one.
+    "LiteLLM",
+    "litellm",
 )
 
 

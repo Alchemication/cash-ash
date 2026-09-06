@@ -8,6 +8,7 @@ Public API:
     Security      -- an instrument the portfolio can hold
     Trade         -- one buy or sell
     CashFlow      -- money entering or leaving the account
+    Thesis        -- why a position is held, and what would break it
     Event         -- a known date worth watching
     ConsensusEstimate -- analyst expectations as observed on one date
     Position      -- a derived holding: quantity and cost basis from trades
@@ -207,3 +208,54 @@ class ConsensusEstimate:
     revenue_avg: float | None = None
     revenue_low: float | None = None
     revenue_high: float | None = None
+
+
+@dataclass(frozen=True)
+class Thesis:
+    """Why a position is held, at one point in time.
+
+    Never edited: a revision is a new version, so the record of what was
+    believed and when survives being wrong.
+
+    Attributes:
+        security_id: The holding this concerns.
+        summary: One sentence — the reason, as it would be said out loud.
+        rationale: The fuller version, if there is one.
+        conviction: Ordinal label, never a number. An LLM's stated percentage
+            is not a calibrated probability and storing it as one would launder
+            a guess into a statistic.
+        thesis_status: Whether the reason is holding up.
+        key_assumptions: What must stay true for the reason to hold.
+        open_questions: What is not known yet.
+        what_would_break_it: Conditions that would falsify it. Without these a
+            thesis is a preference, and nothing downstream can detect that it
+            stopped being true.
+        source: ``user`` for what the owner said, ``research`` for what the
+            pipeline concluded. The first is ground truth about intent; the
+            second is an opinion stored in the same table.
+    """
+
+    security_id: int
+    summary: str
+    source: str
+    rationale: str | None = None
+    conviction: str = "unstated"
+    thesis_status: str = "unexamined"
+    key_assumptions: tuple[str, ...] = ()
+    open_questions: tuple[str, ...] = ()
+    what_would_break_it: tuple[str, ...] = ()
+    note: str | None = None
+    llm_call_id: int | None = None
+    version: int = 1
+    status: str = "active"
+    supersedes_id: int | None = None
+    id: int | None = None
+
+    @property
+    def is_falsifiable(self) -> bool:
+        """True when the thesis states what would prove it wrong.
+
+        A thesis that cannot be broken cannot be tracked, so this is the single
+        most useful quality check on one.
+        """
+        return bool(self.what_would_break_it)

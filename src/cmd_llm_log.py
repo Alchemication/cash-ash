@@ -7,7 +7,8 @@ import json
 import logging
 
 from profiles import resolve_cli_profile
-from store import load_llm_calls, open_existing_db
+from store import open_existing_db
+from store_research import load_llm_calls
 
 logger = logging.getLogger(__name__)
 

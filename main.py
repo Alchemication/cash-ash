@@ -5,6 +5,7 @@ Subcommands:
     init           Create the database and seed it from a broker snapshot file.
     sync           Fetch prices, FX rates, known dates and consensus estimates.
     events         List known upcoming events for your holdings.
+    thesis         Bootstrap, list and inspect why each position is held.
     models         Inspect or change which model each stage calls.
     llm-log        Inspect recorded model calls and what they cost.
     price          Record one price by hand when a feed cannot.
@@ -44,6 +45,12 @@ Examples:
     uv run python main.py events --days 60
         Earnings dates, dividends and curated events in the next 60 days.
 
+    uv run python main.py thesis bootstrap
+        Turn your written reasons for each holding into trackable theses.
+
+    uv run python main.py thesis show NKE
+        Why you own it, what must stay true, and what would break it.
+
     uv run python main.py models
         Which model each stage calls, and what tier it is.
 
@@ -66,6 +73,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -77,6 +85,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 from cmd_db import cmd_db  # noqa: E402
 from cmd_llm_log import cmd_llm_log  # noqa: E402
 from cmd_models import cmd_models  # noqa: E402
+from cmd_thesis import cmd_thesis  # noqa: E402
 from cmd_sync import cmd_events, cmd_price, cmd_sync  # noqa: E402
 from commands import (  # noqa: E402
     cmd_concentration,
@@ -249,6 +258,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_doctor.set_defaults(func=cmd_doctor)
 
+    p_thesis = sub.add_parser("thesis", help="Why each position is held")
+    thesis_sub = p_thesis.add_subparsers(dest="thesis_cmd", required=False)
+    p_thesis_boot = thesis_sub.add_parser(
+        "bootstrap", help="Create theses from your own notes"
+    )
+    p_thesis_boot.add_argument(
+        "ticker", nargs="?", default=None, help="Only this holding"
+    )
+    p_thesis_boot.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace an existing thesis with a new version",
+    )
+    _add_db(p_thesis_boot)
+    p_thesis_show = thesis_sub.add_parser("show", help="Inspect one thesis in full")
+    p_thesis_show.add_argument("ticker")
+    _add_db(p_thesis_show)
+    thesis_sub.add_parser("list", help="Every current thesis")
+    _add_db(p_thesis)
+    p_thesis.set_defaults(func=cmd_thesis, thesis_cmd=None, ticker=None)
+
     p_models = sub.add_parser("models", help="Inspect or change model routing")
     models_sub = p_models.add_subparsers(dest="models_cmd", required=False)
     p_models_set = models_sub.add_parser("set", help="Route one feature")
@@ -309,6 +339,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     """Entry point: parse CLI args and dispatch to the appropriate subcommand."""
     load_dotenv()
+    # Set before litellm is imported anywhere: it configures its own
+    # handler at import time and ignores logger levels set afterwards.
+    os.environ.setdefault("LITELLM_LOG", "ERROR")
     args = build_parser().parse_args()
     setup_logging(args.verbose)
 

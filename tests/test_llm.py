@@ -16,7 +16,7 @@ import pytest
 import llm as llm_module
 from config import MIN_MAX_TOKENS
 from llm import LLMError, _is_transient, _was_truncated_before_answering, call_llm
-from store import create_llm_trace, llm_cost_summary, load_llm_calls
+from store_research import create_llm_trace, llm_cost_summary, load_llm_calls
 
 
 def _response(

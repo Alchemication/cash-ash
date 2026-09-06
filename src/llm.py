@@ -36,7 +36,7 @@ from config import (
     MIN_MAX_TOKENS,
     TRUNCATION_RETRY_MULTIPLIER,
 )
-from store import log_llm_call
+from store_research import log_llm_call
 
 logger = logging.getLogger(__name__)
 

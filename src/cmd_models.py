@@ -13,7 +13,8 @@ from model_prefs import (
     resolve_route,
 )
 from profiles import resolve_cli_profile
-from store import llm_cost_summary, open_existing_db
+from store import open_existing_db
+from store_research import llm_cost_summary
 
 logger = logging.getLogger(__name__)
 

@@ -8,6 +8,7 @@ uv run python main.py profile list     # the roster
 uv run python main.py init             # create and seed from the snapshot file
 uv run python main.py sync             # prices, FX, earnings dates, consensus
 uv run python main.py events           # known upcoming dates for your holdings
+uv run python main.py thesis           # why each position is held
 uv run python main.py models           # which model each stage calls
 uv run python main.py llm-log          # recorded model calls and their cost
 uv run python main.py price TICKER --close AMOUNT   # record a price by hand
@@ -39,6 +40,10 @@ uv run python main.py models cost --since 2026-09-01
 uv run python main.py llm-log --id 42         # one call in full
 uv run python main.py llm-log --trace 7       # every call in one operation
 uv run python main.py llm-log --errors        # only attempts that failed
+uv run python main.py thesis bootstrap        # theses from your own notes
+uv run python main.py thesis bootstrap NKE --overwrite
+uv run python main.py thesis show NKE
+uv run python main.py thesis list
 ```
 
 ## Profiles
@@ -125,6 +130,30 @@ they were *observed* rather than the period they forecast. The provider reports
 what consensus is today and never what it was last month, so a revision is only
 detectable by comparing today's figure against one already stored. The series
 cannot be backfilled, which is why recording starts before anything reads it.
+
+## Theses
+
+A thesis records why a position is held, and — the part that makes it useful —
+what would prove it wrong. A statement that cannot be falsified is a
+preference, not a thesis, and nothing downstream can detect that it stopped
+being true.
+
+`thesis bootstrap` builds the first version of each from your own notes in
+`context/log.md`. It is a restatement, not research: the model is instructed to
+use only what you wrote, not to strengthen a weak reason, and not to soften a
+bad one. That matters because your real reasons are the baseline every later
+comparison is made against — a thesis you never held cannot break, and cannot
+teach you anything.
+
+Theses are versioned and never edited. A revision is a new version and the old
+one is kept, so a year later it is still possible to ask what was believed at
+the time and how it changed.
+
+Conviction is an ordinal label — `none`, `weak`, `moderate`, `strong` — and
+never a number. An LLM's stated "confidence: 91%" is not a calibrated
+probability, and storing it as one would launder a guess into a statistic.
+Conviction describes the strength of the *reason*, not the quality of the
+company: a great business held for no articulated reason is `weak`.
 
 ## Model routing
 

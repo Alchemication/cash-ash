@@ -52,6 +52,12 @@ APP_HOME: Path = Path(
 # which person a command is acting for cannot be a module-level constant.
 
 
+PROMPTS_DIR: Path = Path(__file__).resolve().parent / "prompts"
+"""Natural-language prompts. Versioned with the code, not with user data:
+a prompt is part of what the system is, and a result recorded without
+knowing which prompt produced it cannot be attributed."""
+
+
 # ---------------------------------------------------------------------------
 # Currency and accounting
 # ---------------------------------------------------------------------------
