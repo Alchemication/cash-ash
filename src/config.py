@@ -187,3 +187,64 @@ public holiday and it is four. Beyond that the sync has probably been failing,
 and valuing a portfolio on a stale price without saying so is how a weekly
 review quietly reviews last month.
 """
+
+
+# ---------------------------------------------------------------------------
+# Model routing
+#
+# Defaults are deliberately cheap. On a ~EUR 1,400 portfolio a weekly research
+# run on premium models could cost more per year than the portfolio returns,
+# so the strong tier is opt-in per feature and its cost is measured.
+# ---------------------------------------------------------------------------
+
+FLASH_MODEL: str = os.environ.get("SKARBIE_FLASH_MODEL", "zai/glm-5.3-flash")
+"""Default model for every feature. Cheap, fast, and always reasoning.
+
+Roughly USD 0.15 per million input tokens and 0.50 per million output. A full
+weekly pass over fourteen holdings costs a few cents at this rate, which is
+what makes running the whole pipeline every week defensible at all.
+"""
+
+PRO_MODEL: str = os.environ.get("SKARBIE_PRO_MODEL", "zai/glm-4.7")
+"""Stronger model, roughly four times the price of the flash tier.
+
+Not used by any feature by default. Route a feature here with `main.py models`
+when there is a measured reason to, not on the assumption that a bigger model
+must be better at a task nobody has evaluated yet.
+"""
+
+MAX_TOKENS_DEFAULT: int = _env_int("SKARBIE_MAX_TOKENS_DEFAULT", 4000)
+"""Default output budget for a model call."""
+
+MIN_MAX_TOKENS: int = _env_int("SKARBIE_MIN_MAX_TOKENS", 1024)
+"""Floor under any output budget, enforced rather than merely defaulted.
+
+Measured, not guessed: GLM-5.3-Flash always reasons and cannot be told not to.
+Asked a one-sentence question with a 400-token budget it spent all 400 on
+reasoning and returned empty content with finish_reason 'length' — an answer
+that costs money and contains nothing. Any budget small enough to be consumed
+entirely by reasoning is a bug, so callers cannot set one.
+"""
+
+TRUNCATION_RETRY_MULTIPLIER: float = _env_float(
+    "SKARBIE_TRUNCATION_RETRY_MULTIPLIER", 2.5
+)
+"""Budget multiplier when a reply is truncated before any content appeared.
+
+A reasoning model that ran out of budget mid-thought produces empty content
+rather than a short answer, so retrying at the same size repeats the failure
+and pays twice. Retried once only; a second truncation means the prompt is
+asking for too much, which more budget will not fix.
+"""
+
+LLM_RETRY_DELAYS: tuple[int, ...] = (5, 15, 45)
+"""Backoff between retries of a transient failure, in seconds.
+
+Three attempts spanning about a minute. A weekly batch job can afford to wait;
+what it cannot afford is to abandon a run because one provider blipped.
+"""
+
+LLM_TIMEOUT_S: float = _env_float("SKARBIE_LLM_TIMEOUT_S", 180.0)
+"""Per-request timeout. Generous because reasoning models are slow, and a
+research call that takes two minutes is still cheaper than a failed run.
+"""

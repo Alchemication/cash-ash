@@ -5,6 +5,8 @@ Subcommands:
     init           Create the database and seed it from a broker snapshot file.
     sync           Fetch prices, FX rates, known dates and consensus estimates.
     events         List known upcoming events for your holdings.
+    models         Inspect or change which model each stage calls.
+    llm-log        Inspect recorded model calls and what they cost.
     price          Record one price by hand when a feed cannot.
     holdings       Show current positions, cost basis, value and P&L.
     concentration  Show grouped weights by security, sector and theme.
@@ -42,6 +44,15 @@ Examples:
     uv run python main.py events --days 60
         Earnings dates, dividends and curated events in the next 60 days.
 
+    uv run python main.py models
+        Which model each stage calls, and what tier it is.
+
+    uv run python main.py models cost
+        What the models have actually cost so far.
+
+    uv run python main.py llm-log --id 42
+        The full trace of one call: prompt, reasoning, response, cost.
+
     uv run python main.py holdings --profile kasia
         Someone else's portfolio.
 
@@ -64,6 +75,8 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from cmd_db import cmd_db  # noqa: E402
+from cmd_llm_log import cmd_llm_log  # noqa: E402
+from cmd_models import cmd_models  # noqa: E402
 from cmd_sync import cmd_events, cmd_price, cmd_sync  # noqa: E402
 from commands import (  # noqa: E402
     cmd_concentration,
@@ -75,7 +88,9 @@ from commands import (  # noqa: E402
 )
 from config import DEFAULT_MONTHLY_CONTRIBUTION_EUR  # noqa: E402
 from log import setup_logging  # noqa: E402
+from llm import LLMError  # noqa: E402
 from market_data import ProviderError  # noqa: E402
+from model_prefs import FEATURES  # noqa: E402
 from profiles import ProfileConfigError  # noqa: E402
 
 
@@ -234,6 +249,49 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_doctor.set_defaults(func=cmd_doctor)
 
+    p_models = sub.add_parser("models", help="Inspect or change model routing")
+    models_sub = p_models.add_subparsers(dest="models_cmd", required=False)
+    p_models_set = models_sub.add_parser("set", help="Route one feature")
+    p_models_set.add_argument("feature", choices=FEATURES)
+    p_models_set.add_argument("--model", metavar="ID", default=None, help="Model id")
+    p_models_set.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        metavar="T",
+        help="Sampling temperature",
+    )
+    p_models_reset = models_sub.add_parser("reset", help="Restore defaults")
+    p_models_reset.add_argument("feature", choices=(*FEATURES, "all"))
+    p_models_cost = models_sub.add_parser("cost", help="Spend by feature")
+    p_models_cost.add_argument(
+        "--since", metavar="ISO", default=None, help="Only calls at or after this time"
+    )
+    _add_db(p_models_cost)
+    _add_db(p_models)
+    p_models.set_defaults(func=cmd_models, models_cmd=None)
+
+    p_llm_log = sub.add_parser("llm-log", help="Inspect recorded model calls")
+    p_llm_log.add_argument("--id", type=int, default=None, help="Show one call in full")
+    p_llm_log.add_argument(
+        "--trace",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Every call in one operation",
+    )
+    p_llm_log.add_argument(
+        "--feature", choices=FEATURES, default=None, help="Restrict to one stage"
+    )
+    p_llm_log.add_argument(
+        "--errors", action="store_true", help="Only attempts that failed"
+    )
+    p_llm_log.add_argument(
+        "--limit", type=int, default=20, metavar="N", help="Maximum rows (default: 20)"
+    )
+    _add_db(p_llm_log)
+    p_llm_log.set_defaults(func=cmd_llm_log)
+
     p_db = sub.add_parser("db", help="Migration and schema admin")
     db_sub = p_db.add_subparsers(dest="db_cmd", required=True)
     for name, help_text in (
@@ -256,7 +314,13 @@ def main() -> None:
 
     try:
         args.func(args)
-    except (FileNotFoundError, ValueError, ProfileConfigError, ProviderError) as exc:
+    except (
+        FileNotFoundError,
+        ValueError,
+        ProfileConfigError,
+        ProviderError,
+        LLMError,
+    ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 

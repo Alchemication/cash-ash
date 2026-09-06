@@ -57,7 +57,7 @@ day one — which is why it shipped in Phase 1.
 | 1.5 | Profiles: roster, per-person directories, `--profile` everywhere, context-file scaffolding, `doctor` | done |
 | 2 | `MarketDataProvider` abstraction, yfinance adapter, price + FX fetch, `sync`, manual-price entry for when a feed fails | done |
 | 2.5 | Events and consensus estimates: known dates from the feed, curated dates from a file, an estimate time series | done |
-| 3 | LLM infrastructure ported from zdrowskit: `llm.py`, per-feature model routing, call/trace logging, `models`, `llm-log` | next |
+| 3 | LLM plumbing: retry, fallback, per-feature routing, call/trace logging, `models`, `llm-log` | done |
 | 4 | Versioned theses, research runs, evidence. Plan → evidence → single analyst → structured thesis update. `research TICKER` | |
 | 5 | Frozen hashed evidence package, N neutral analysts across providers, disagreement scoring, synthesis | |
 | 6 | Decision layer: deterministic guardrails, `recommendations` with expiry, `review` | |
@@ -163,6 +163,32 @@ IGNORE` swallows every constraint failure, not just uniqueness, so invalid data
 vanished instead of raising. And SQLite treats two NULLs as distinct in a
 unique index, so an event belonging to no single holding never collided with
 itself and gained a duplicate on every weekly sync.
+
+## Notes from Phase 3
+
+Routing is per stage and defaults to the cheap tier everywhere. The cost
+argument is only real if it is the default rather than the advice.
+
+Two behaviours came from measurement, not design. The default model always
+reasons and cannot be told not to: asked a one-sentence question with a
+400-token budget it spent all 400 thinking and returned empty content with
+finish_reason 'length'. So output budgets have an enforced floor callers cannot
+lower, and a reply truncated before any content appears is retried once with a
+larger budget.
+
+The fallback behaviour on truncation was got wrong twice before the live
+evidence settled it. Blocking fallback looked right — a prompt asking for more
+than fits is a prompt problem, and another model hits the same wall. But a live
+run showed glm-4.7 answering a prompt glm-5.3-flash could not finish, because
+reasoning verbosity differs between models. Allowing the fallback its own
+escalation was then also wrong: it compounded to four attempts and 12,500
+tokens. What ships is one enlargement in total, carried across models: primary,
+primary enlarged, fallback at that same enlarged size, then stop.
+
+Every attempt is logged including failures, because a model that fails
+repeatedly is what an evaluation needs to see and it is invisible if only
+successes are kept. Traces group the calls of one operation, since a synthesis
+read alone says little about why it concluded what it did.
 
 ## Deliberately out of scope for v1
 

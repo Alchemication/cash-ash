@@ -8,6 +8,8 @@ uv run python main.py profile list     # the roster
 uv run python main.py init             # create and seed from the snapshot file
 uv run python main.py sync             # prices, FX, earnings dates, consensus
 uv run python main.py events           # known upcoming dates for your holdings
+uv run python main.py models           # which model each stage calls
+uv run python main.py llm-log          # recorded model calls and their cost
 uv run python main.py price TICKER --close AMOUNT   # record a price by hand
 uv run python main.py holdings         # positions, cost basis, value, P&L
 uv run python main.py concentration    # grouped weights and limit breaches
@@ -31,6 +33,12 @@ uv run python main.py price SPCX --close 147.95 --date 2026-09-04
 uv run python main.py sync --prices-only      # skip the calendar fetch
 uv run python main.py events --days 30
 uv run python main.py events --past           # include dates already passed
+uv run python main.py models set synthesis --model zai/glm-4.7
+uv run python main.py models reset all
+uv run python main.py models cost --since 2026-09-01
+uv run python main.py llm-log --id 42         # one call in full
+uv run python main.py llm-log --trace 7       # every call in one operation
+uv run python main.py llm-log --errors        # only attempts that failed
 ```
 
 ## Profiles
@@ -117,6 +125,53 @@ they were *observed* rather than the period they forecast. The provider reports
 what consensus is today and never what it was last month, so a revision is only
 detectable by comparing today's figure against one already stored. The series
 cannot be backfilled, which is why recording starts before anything reads it.
+
+## Model routing
+
+Each stage of the pipeline routes independently, so one expensive step does not
+drag the whole run's cost with it, and a change is attributable to the stage it
+was made in.
+
+Every stage defaults to the flash tier. The pro tier is opt-in per feature:
+
+```bash
+uv run python main.py models                                  # what is in force
+uv run python main.py models set synthesis --model zai/glm-4.7
+uv run python main.py models cost                             # what it actually cost
+```
+
+Preferences persist per profile, so two people can route differently. Any
+litellm model id is accepted, which is how a second provider joins without a
+code change.
+
+Analysts default to temperature 0. Disagreement between them should come from
+using different models, not from sampling noise, or a rerun cannot tell the two
+apart.
+
+## Model call log
+
+Every attempt is recorded, successful or not, with the model, prompt version,
+token counts, cost and the reasoning the model emitted. Failures are kept
+deliberately: a model that fails repeatedly is exactly what a later evaluation
+needs to see, and it is invisible if only successes are stored.
+
+```bash
+uv run python main.py llm-log            # recent calls
+uv run python main.py llm-log --id 42    # prompt, reasoning, response, cost
+uv run python main.py llm-log --trace 7  # every call in one weekly run
+```
+
+A trace groups the calls of one operation. Reading a synthesis in isolation
+says little about why it concluded what it did; reading it beside the analyst
+calls it consumed says a lot.
+
+Two behaviours worth knowing, both measured rather than assumed. Output budgets
+have an enforced floor: the default model always reasons and cannot be told not
+to, so too small a budget is spent entirely on thinking and returns empty
+content that still costs money. And when a reply is truncated before any
+content appears, the budget is enlarged once and the fallback model is tried at
+that same enlarged size — a terser model can finish where a discursive one
+never stops thinking.
 
 ## Reading the output
 
