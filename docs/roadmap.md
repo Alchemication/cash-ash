@@ -55,8 +55,8 @@ day one — which is why it shipped in Phase 1.
 | 0 | Scaffolding: `uv`, `src/` layout, dispatch-only `main.py`, config, logging, migrations, lint + tests | done |
 | 1 | Ledger: accounts, securities, trades, cash flows, snapshots. Seed, `holdings`, `concentration` | done |
 | 1.5 | Profiles: roster, per-person directories, `--profile` everywhere, context-file scaffolding, `doctor` | done |
-| 2 | `MarketDataProvider` abstraction, yfinance adapter, price + FX fetch, `sync`, manual-price entry for when a feed fails | next |
-| 3 | LLM infrastructure ported from zdrowskit: `llm.py`, per-feature model routing, call/trace logging, `models`, `llm-log` | |
+| 2 | `MarketDataProvider` abstraction, yfinance adapter, price + FX fetch, `sync`, manual-price entry for when a feed fails | done |
+| 3 | LLM infrastructure ported from zdrowskit: `llm.py`, per-feature model routing, call/trace logging, `models`, `llm-log` | next |
 | 4 | Versioned theses, research runs, evidence. Plan → evidence → single analyst → structured thesis update. `research TICKER` | |
 | 5 | Frozen hashed evidence package, N neutral analysts across providers, disagreement scoring, synthesis | |
 | 6 | Decision layer: deterministic guardrails, `recommendations` with expiry, `review` | |
@@ -88,6 +88,25 @@ above. The split when it matters: securities, prices, FX, evidence and research
 runs shared; trades, positions, theses, recommendations and decisions
 per-profile. Not built now — there is one profile and no research — but the
 research tables stay free of profile-scoped ids so it remains available.
+
+## Notes from Phase 2
+
+Yahoo publishes both directions of a currency pair, so `USDEUR=X` is requested
+directly rather than inverting `EURUSD=X`. Inverting is where direction errors
+live, and an FX bug misprices every holding at once rather than one.
+
+The provider reports a number, not a currency. `securities.currency` stays the
+authority on what that number is denominated in, so a provider quirk cannot
+silently redenominate a holding.
+
+`pricing_mode` stopped being a dead column: `sync` skips manual securities
+without reporting them as failures, and `price` enters one by hand. Nothing in
+the seeded portfolio uses it today, but a delisting, a halt or an outage turns
+it on with no warning.
+
+Prices are stored under the close's own date, never the request's. A Monday
+sync returns Friday's close, and stamping it Monday would make every price look
+fresher than it is — which is exactly what the staleness check exists to catch.
 
 ## Deliberately out of scope for v1
 

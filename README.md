@@ -7,9 +7,9 @@ Researches holdings on a weekly cadence, proposes constrained
 judge those decisions later. Human-in-the-loop by design: the system recommends,
 you approve, you execute manually in Revolut.
 
-**Not built yet.** Today it is the portfolio ledger — accounts, trades,
-valuation and concentration. See [docs/roadmap.md](docs/roadmap.md) for what
-comes next and why in that order.
+**Not built yet.** Today it is the portfolio ledger and market data — trades,
+live valuation, FX, and concentration reporting. No AI yet. See
+[docs/roadmap.md](docs/roadmap.md) for what comes next and why in that order.
 
 ## Quick start
 
@@ -25,6 +25,7 @@ $EDITOR ~/Documents/skarbie/profiles/adam/seed_snapshot.toml
 uv run python main.py init --dry-run
 uv run python main.py init
 
+uv run python main.py sync             # fetch live prices and FX rates
 uv run python main.py holdings         # positions, cost basis, P&L
 uv run python main.py concentration    # weights by security, sector and theme
 uv run python main.py doctor           # what is set up, what is still missing

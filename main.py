@@ -3,6 +3,8 @@
 Subcommands:
     profile        Create and list profiles — one per person.
     init           Create the database and seed it from a broker snapshot file.
+    sync           Fetch current prices and FX rates for your holdings.
+    price          Record one price by hand when a feed cannot.
     holdings       Show current positions, cost basis, value and P&L.
     concentration  Show grouped weights by security, sector and theme.
     context        Show a profile's personal context files and their status.
@@ -30,6 +32,12 @@ Examples:
     uv run python main.py concentration --by theme
         Theme weights, flagging anything over the configured limit.
 
+    uv run python main.py sync
+        Fetch today's prices and FX rates for everything you hold.
+
+    uv run python main.py price SPCX --close 147.95
+        Record a price by hand when the feed cannot.
+
     uv run python main.py holdings --profile kasia
         Someone else's portfolio.
 
@@ -52,6 +60,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from cmd_db import cmd_db  # noqa: E402
+from cmd_sync import cmd_price, cmd_sync  # noqa: E402
 from commands import (  # noqa: E402
     cmd_concentration,
     cmd_context,
@@ -62,6 +71,7 @@ from commands import (  # noqa: E402
 )
 from config import DEFAULT_MONTHLY_CONTRIBUTION_EUR  # noqa: E402
 from log import setup_logging  # noqa: E402
+from market_data import ProviderError  # noqa: E402
 from profiles import ProfileConfigError  # noqa: E402
 
 
@@ -142,6 +152,33 @@ def build_parser() -> argparse.ArgumentParser:
     _add_db(p_init)
     p_init.set_defaults(func=cmd_init)
 
+    p_sync = sub.add_parser("sync", help="Fetch current prices and FX rates")
+    p_sync.add_argument(
+        "--provider",
+        metavar="NAME",
+        default=None,
+        help="Market-data provider (default: the configured one)",
+    )
+    _add_db(p_sync)
+    p_sync.set_defaults(func=cmd_sync)
+
+    p_price = sub.add_parser("price", help="Record one price by hand")
+    p_price.add_argument("ticker", help="Ticker as it appears in holdings")
+    p_price.add_argument(
+        "--close", type=float, required=True, metavar="AMOUNT", help="Closing price"
+    )
+    p_price.add_argument(
+        "--currency",
+        metavar="CCY",
+        default=None,
+        help="Currency of the price (default: the security's own)",
+    )
+    p_price.add_argument(
+        "--date", metavar="YYYY-MM-DD", default=None, help="Date (default: today)"
+    )
+    _add_db(p_price)
+    p_price.set_defaults(func=cmd_price)
+
     p_holdings = sub.add_parser("holdings", help="Show current positions")
     _add_db(p_holdings)
     p_holdings.set_defaults(func=cmd_holdings)
@@ -196,7 +233,7 @@ def main() -> None:
 
     try:
         args.func(args)
-    except (FileNotFoundError, ValueError, ProfileConfigError) as exc:
+    except (FileNotFoundError, ValueError, ProfileConfigError, ProviderError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 

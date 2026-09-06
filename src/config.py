@@ -157,3 +157,33 @@ A weekly cadence means the next review supersedes the last one. Approving a
 stale BUY executes research that has already been replaced, at a price that has
 already moved.
 """
+
+
+# ---------------------------------------------------------------------------
+# Market data
+# ---------------------------------------------------------------------------
+
+MARKET_DATA_PROVIDER: str = os.environ.get("SKARBIE_MARKET_DATA_PROVIDER", "yfinance")
+"""Which market-data adapter to use.
+
+yfinance by default: free, no key, covers prices and FX in one dependency. It
+is scraped rather than licensed and breaks occasionally, which is why it sits
+behind an abstraction instead of being called directly.
+"""
+
+MARKET_DATA_LOOKBACK: str = os.environ.get("SKARBIE_MARKET_DATA_LOOKBACK", "5d")
+"""How much history to request in order to find one usable close.
+
+Not a window of interest — only the most recent close is kept. Five days is
+enough to reach back past a long weekend plus a public holiday, which is the
+realistic worst case for a Monday-morning sync finding an empty series.
+"""
+
+PRICE_STALE_AFTER_DAYS: int = _env_int("SKARBIE_PRICE_STALE_AFTER_DAYS", 4)
+"""Age at which a stored price is reported as stale rather than used silently.
+
+A Friday close read on Monday is three days old and perfectly normal; add a
+public holiday and it is four. Beyond that the sync has probably been failing,
+and valuing a portfolio on a stale price without saying so is how a weekly
+review quietly reviews last month.
+"""

@@ -6,6 +6,8 @@ Always use `uv run`. Run any command with `--help` for the full flag list.
 uv run python main.py profile add NAME --telegram-id ID --operator   # first profile
 uv run python main.py profile list     # the roster
 uv run python main.py init             # create and seed from the snapshot file
+uv run python main.py sync             # fetch current prices and FX rates
+uv run python main.py price TICKER --close AMOUNT   # record a price by hand
 uv run python main.py holdings         # positions, cost basis, value, P&L
 uv run python main.py concentration    # grouped weights and limit breaches
 uv run python main.py context          # personal context files and their status
@@ -23,6 +25,8 @@ uv run python main.py init --snapshot ./other.toml   # seed from a different fil
 uv run python main.py concentration --by theme
 uv run python main.py concentration --by sector
 uv run python main.py holdings --verbose      # debug logging on stderr
+uv run python main.py sync --provider yfinance
+uv run python main.py price SPCX --close 147.95 --date 2026-09-04
 ```
 
 ## Profiles
@@ -56,13 +60,37 @@ now so `strategy.md` can be filled in over time rather than in a rush when the
 pipeline lands. An unedited template counts as unwritten, because placeholder
 prose read as intent is worse than no file at all.
 
+## Market data
+
+`sync` fetches one close per held security and one rate per currency they are
+quoted in, then stores both. It asks only about securities you actually hold —
+pricing something you sold costs a request and changes no figure.
+
+Prices are stored in the security's own currency and converted at the stored FX
+rate, so a EUR return can be separated into stock move and currency move.
+Yahoo's `USDEUR=X` is requested directly rather than inverting `EURUSD=X`,
+because inverting is where direction errors live and an FX bug misprices every
+holding at once.
+
+Anything the feed cannot price is reported, not guessed at. Use `price` to
+enter one by hand:
+
+```bash
+uv run python main.py price SPCX --close 147.95
+```
+
+The provider is unofficial and occasionally breaks. When a request fails
+outright, stored prices are left alone and `holdings` keeps using the last ones
+it had — marked stale, so a failing sync is visible rather than silent.
+
 ## Reading the output
 
 `holdings` values each position at the best price available: a stored market
 price converted at the stored FX rate, else the per-unit value implied by the
-most recent snapshot, else unknown. The footer names the date the prices came
-from and lists anything that could not be priced. Unpriced holdings are excluded
-from the total and from every weight.
+most recent snapshot, else unknown. The footer names the dates the prices came
+from, flags any older than the staleness threshold in `src/config.py`, and
+lists anything that could not be priced. Unpriced holdings are excluded from the
+total and from every weight.
 
 `concentration` reports three groupings. Security weights are checked against
 the position limit; sector and theme weights against the concentration alert

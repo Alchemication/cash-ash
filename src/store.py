@@ -15,6 +15,8 @@ Public API:
     load_trades        -- trades in ledger order
     insert_cash_flow   -- record money in or out
     load_cash_flows    -- cash flows in ledger order
+    save_prices        -- upsert closing prices
+    save_fx_rate       -- upsert one currency pair's rate
     save_snapshot      -- store a point-in-time valuation and its positions
     latest_snapshot    -- most recent snapshot for an account, with positions
     latest_prices      -- most recent stored price per security
@@ -465,3 +467,81 @@ def latest_prices(conn: sqlite3.Connection) -> dict[int, sqlite3.Row]:
         """
     ).fetchall()
     return {int(row["security_id"]): row for row in rows}
+
+
+def save_prices(
+    conn: sqlite3.Connection,
+    rows: list[tuple[int, str, float, str, str]],
+) -> int:
+    """Upsert closing prices.
+
+    Re-fetching the same date overwrites rather than duplicating, so a sync run
+    twice in one day is harmless.
+
+    Args:
+        conn: Open database connection.
+        rows: ``(security_id, price_date, close_native, currency, source)``.
+
+    Returns:
+        The number of rows written.
+    """
+    if not rows:
+        return 0
+    now = _now()
+    with conn:
+        conn.executemany(
+            """
+            INSERT INTO prices (
+                security_id, price_date, close_native, currency, source, fetched_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(security_id, price_date) DO UPDATE SET
+                close_native = excluded.close_native,
+                currency = excluded.currency,
+                source = excluded.source,
+                fetched_at = excluded.fetched_at
+            """,
+            [(*row, now) for row in rows],
+        )
+    return len(rows)
+
+
+def save_fx_rate(
+    conn: sqlite3.Connection,
+    *,
+    rate_date: str,
+    base: str,
+    quote: str,
+    rate: float,
+    source: str,
+) -> None:
+    """Upsert one currency pair's rate for one date.
+
+    Args:
+        conn: Open database connection.
+        rate_date: ISO date the rate is for.
+        base: Currency converted from.
+        quote: Currency converted to.
+        rate: How many *quote* units one *base* unit buys.
+        source: Where the rate came from.
+
+    Raises:
+        ValueError: If the rate is not positive. A zero or negative rate would
+            silently value the whole portfolio at nothing.
+    """
+    if rate <= 0:
+        raise ValueError(
+            f"Refusing to store a non-positive {base}/{quote} rate: {rate}."
+        )
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO fx_rates (rate_date, base, quote, rate, source, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(rate_date, base, quote) DO UPDATE SET
+                rate = excluded.rate,
+                source = excluded.source,
+                fetched_at = excluded.fetched_at
+            """,
+            (rate_date, base, quote, rate, source, _now()),
+        )

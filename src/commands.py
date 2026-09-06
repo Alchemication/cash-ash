@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import argparse
 import logging
+from datetime import date
 from pathlib import Path
 
 from config import (
     CONCENTRATION_ALERT_PCT,
     DEFAULT_MONTHLY_CONTRIBUTION_EUR,
+    PRICE_STALE_AFTER_DAYS,
     LARGE_POSITION_WEIGHT_PCT,
     MAX_POSITION_WEIGHT_PCT,
     SEED_RECONCILIATION_TOLERANCE_EUR,
@@ -53,6 +55,25 @@ def _pct(value: float | None, *, signed: bool = False) -> str:
     if value is None:
         return "—"
     return f"{value:+.2f}%" if signed else f"{value:.1f}%"
+
+
+def _price_age_days(price_date: str | None, *, today: date | None = None) -> int | None:
+    """Return how many days old a price is, or None if it has no usable date.
+
+    Args:
+        price_date: ISO date the price is for.
+        today: Reference date, for tests.
+
+    Returns:
+        Age in days, or None when the date is absent or unparseable.
+    """
+    if not price_date:
+        return None
+    try:
+        parsed = date.fromisoformat(price_date)
+    except ValueError:
+        return None
+    return ((today or date.today()) - parsed).days
 
 
 def _pnl_style(value: float | None) -> str:
@@ -226,14 +247,32 @@ def cmd_holdings(args: argparse.Namespace) -> None:
     console.print(table)
 
     unpriced = [row for row in rows if row.value_eur is None]
-    priced_at = next((row.price_date for row in rows if row.price_date), None)
     console.print(
         f"Cash [bold]{_eur(cash)}[/bold] · "
         f"Total [bold]{_eur(total)}[/bold] · "
         f"Planning contribution [bold]{_eur(contribution)}[/bold]/month"
     )
-    if priced_at:
-        console.print(f"[dim]Valued at prices from {priced_at}.[/dim]")
+
+    dates = sorted({row.price_date for row in rows if row.price_date})
+    if dates:
+        span = dates[0] if len(dates) == 1 else f"{dates[0]} to {dates[-1]}"
+        console.print(f"[dim]Valued at prices from {span}.[/dim]")
+
+    stale = [
+        row
+        for row in rows
+        if _price_age_days(row.price_date) is not None
+        and _price_age_days(row.price_date) > PRICE_STALE_AFTER_DAYS
+    ]
+    if stale:
+        oldest = max(_price_age_days(row.price_date) or 0 for row in stale)
+        tickers = ", ".join(row.position.security.ticker for row in stale)
+        console.print(
+            f"[yellow]{len(stale)} price(s) older than "
+            f"{PRICE_STALE_AFTER_DAYS} days (up to {oldest}): {tickers}. "
+            f"Run 'uv run python main.py sync'.[/yellow]"
+        )
+
     if unpriced:
         tickers = ", ".join(row.position.security.ticker for row in unpriced)
         console.print(
