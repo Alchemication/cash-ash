@@ -6,7 +6,8 @@ Always use `uv run`. Run any command with `--help` for the full flag list.
 uv run python main.py profile add NAME --telegram-id ID --operator   # first profile
 uv run python main.py profile list     # the roster
 uv run python main.py init             # create and seed from the snapshot file
-uv run python main.py sync             # fetch current prices and FX rates
+uv run python main.py sync             # prices, FX, earnings dates, consensus
+uv run python main.py events           # known upcoming dates for your holdings
 uv run python main.py price TICKER --close AMOUNT   # record a price by hand
 uv run python main.py holdings         # positions, cost basis, value, P&L
 uv run python main.py concentration    # grouped weights and limit breaches
@@ -27,6 +28,9 @@ uv run python main.py concentration --by sector
 uv run python main.py holdings --verbose      # debug logging on stderr
 uv run python main.py sync --provider yfinance
 uv run python main.py price SPCX --close 147.95 --date 2026-09-04
+uv run python main.py sync --prices-only      # skip the calendar fetch
+uv run python main.py events --days 30
+uv run python main.py events --past           # include dates already passed
 ```
 
 ## Profiles
@@ -82,6 +86,37 @@ uv run python main.py price SPCX --close 147.95
 The provider is unofficial and occasionally breaks. When a request fails
 outright, stored prices are left alone and `holdings` keeps using the last ones
 it had — marked stale, so a failing sync is visible rather than silent.
+
+## Events
+
+`sync` records three kinds of date, and `events` lists what is coming.
+
+**Feed** — earnings, ex-dividend and dividend dates, fetched automatically. If
+a company reschedules, the future date is replaced rather than added beside the
+old one; past dates are never touched, because a thesis that referenced one
+must still make sense.
+
+**Curated** — everything no feed carries, and often what actually moves a
+holding: a product keynote, an IPO lockup expiry, a quarterly delivery report,
+a court date, a rate decision. These live in
+`$SKARBIE_HOME/profiles/<name>/events.toml`; `events.example.toml` in the
+project root shows the format. `sync` imports the file and reports any entry it
+had to skip, so a typo surfaces rather than silently losing a date.
+
+**Research** — written by the pipeline when a model finds a date. Deliberately
+the least trusted of the three.
+
+Each entry is `confirmed` or `estimated`. An inferred date — a lockup expiry
+calculated from a listing date, a keynote in its usual slot — is marked `~` in
+the listing so it is never mistaken for something the company announced.
+
+## Consensus estimates
+
+`sync` also records analyst EPS and revenue expectations, keyed by the date
+they were *observed* rather than the period they forecast. The provider reports
+what consensus is today and never what it was last month, so a revision is only
+detectable by comparing today's figure against one already stored. The series
+cannot be backfilled, which is why recording starts before anything reads it.
 
 ## Reading the output
 

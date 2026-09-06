@@ -56,6 +56,7 @@ day one — which is why it shipped in Phase 1.
 | 1 | Ledger: accounts, securities, trades, cash flows, snapshots. Seed, `holdings`, `concentration` | done |
 | 1.5 | Profiles: roster, per-person directories, `--profile` everywhere, context-file scaffolding, `doctor` | done |
 | 2 | `MarketDataProvider` abstraction, yfinance adapter, price + FX fetch, `sync`, manual-price entry for when a feed fails | done |
+| 2.5 | Events and consensus estimates: known dates from the feed, curated dates from a file, an estimate time series | done |
 | 3 | LLM infrastructure ported from zdrowskit: `llm.py`, per-feature model routing, call/trace logging, `models`, `llm-log` | next |
 | 4 | Versioned theses, research runs, evidence. Plan → evidence → single analyst → structured thesis update. `research TICKER` | |
 | 5 | Frozen hashed evidence package, N neutral analysts across providers, disagreement scoring, synthesis | |
@@ -107,6 +108,61 @@ it on with no warning.
 Prices are stored under the close's own date, never the request's. A Monday
 sync returns Friday's close, and stamping it Monday would make every price look
 fresher than it is — which is exactly what the staleness check exists to catch.
+
+## The triage design
+
+The weekly run is a funnel, not a fixed grid. Every holding is analysed each
+week — the owner is learning the market, and a stock where nothing happened is
+still a worked example — but not all at the same depth, and almost none of it
+is notified.
+
+```
+Tier 0   deterministic, every holding, no model
+         price moves, weight drift, concentration, staleness, guardrails
+
+Tier 1   triage: ONE call covering every holding together
+         "given these moves, dates and open questions, what deserves depth?"
+         A comparative judgement, so it is both cheaper and better done once
+         than fourteen times.
+
+Tier 2   depth where warranted: earnings, material move, thesis flag, or the
+         six-week staleness floor. The multi-model panel fires here only.
+
+Tier 3   one portfolio decision across everything.
+```
+
+The staleness floor is the important part. Pure change-detection has a fatal
+gap: a company that deteriorates slowly never trips a trigger. Nike did not
+fall 37% in a week.
+
+**Notification is not gated on model-reported confidence.** An LLM's stated
+certainty is uncalibrated, and filtering on it rewards overconfidence — the way
+to be heard becomes claiming to be sure. Gates are things that can be checked:
+a thesis changing state, a deterministic guardrail, independent agreement
+between models from different labs reading the same frozen evidence, and
+whether claims carry sources.
+
+Cost is not what drives any of this. At the default routing a full weekly run
+over fourteen holdings is a few dollars a year. The constraint is that output
+nobody reads is worse than no output.
+
+## Notes from Phase 2.5
+
+Earnings, ex-dividend and dividend dates come from the feed. Everything else
+does not exist in any API — a keynote, an IPO lockup expiry, a delivery report
+published ahead of earnings — and those are frequently the dates that move a
+holding, so they are curated in a file the user maintains.
+
+Analyst consensus is recorded as a series keyed by observation date. The
+provider reports today's number and never last month's, so an estimate revision
+is only visible against something already stored. Recording began before
+anything consumed it because this series cannot be backfilled.
+
+Two bugs surfaced while testing the storage, both worth recording. `INSERT OR
+IGNORE` swallows every constraint failure, not just uniqueness, so invalid data
+vanished instead of raising. And SQLite treats two NULLs as distinct in a
+unique index, so an event belonging to no single holding never collided with
+itself and gained a duplicate on every weekly sync.
 
 ## Deliberately out of scope for v1
 

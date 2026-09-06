@@ -1,0 +1,43 @@
+# Curated events — the dates no market-data feed carries.
+#
+# Copy to $SKARBIE_HOME/profiles/<name>/events.toml and edit. Earnings,
+# ex-dividend and dividend dates arrive automatically from the price feed and
+# do NOT belong here; this file is for everything else, which is frequently
+# what actually moves a holding:
+#
+#   a keynote or product launch, an IPO lockup expiry, a quarterly delivery
+#   report, a court or regulatory date, an investor day, an index change,
+#   a rate decision.
+#
+# `uv run python main.py sync` imports this file. `main.py events` lists what
+# is coming. Entries are matched on ticker + date + kind + title, so editing a
+# title creates a new entry rather than updating the old one.
+
+# kind: earnings | ex_dividend | dividend | product | conference |
+#       lockup_expiry | delivery_report | regulatory | index_change |
+#       macro | other
+# confidence: confirmed (announced) | estimated (inferred — triage trusts it less)
+# ticker: omit entirely for a macro event that belongs to no single holding.
+
+[[event]]
+ticker = "ACME"
+date = "2026-10-15"
+kind = "product"
+title = "Acme autumn hardware event"
+confidence = "confirmed"
+note = "Historically the largest single-day move of the year."
+
+[[event]]
+ticker = "GLOBEX"
+date = "2026-11-20"
+kind = "lockup_expiry"
+title = "Globex IPO lockup expiry"
+confidence = "estimated"
+note = "180 days after the 24 May listing; date inferred, not announced."
+
+[[event]]
+date = "2026-12-10"
+kind = "macro"
+title = "Central bank rate decision"
+confidence = "confirmed"
+note = "No ticker: applies to the whole portfolio."

@@ -3,7 +3,8 @@
 Subcommands:
     profile        Create and list profiles — one per person.
     init           Create the database and seed it from a broker snapshot file.
-    sync           Fetch current prices and FX rates for your holdings.
+    sync           Fetch prices, FX rates, known dates and consensus estimates.
+    events         List known upcoming events for your holdings.
     price          Record one price by hand when a feed cannot.
     holdings       Show current positions, cost basis, value and P&L.
     concentration  Show grouped weights by security, sector and theme.
@@ -38,6 +39,9 @@ Examples:
     uv run python main.py price SPCX --close 147.95
         Record a price by hand when the feed cannot.
 
+    uv run python main.py events --days 60
+        Earnings dates, dividends and curated events in the next 60 days.
+
     uv run python main.py holdings --profile kasia
         Someone else's portfolio.
 
@@ -60,7 +64,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from cmd_db import cmd_db  # noqa: E402
-from cmd_sync import cmd_price, cmd_sync  # noqa: E402
+from cmd_sync import cmd_events, cmd_price, cmd_sync  # noqa: E402
 from commands import (  # noqa: E402
     cmd_concentration,
     cmd_context,
@@ -159,8 +163,27 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Market-data provider (default: the configured one)",
     )
+    p_sync.add_argument(
+        "--prices-only",
+        action="store_true",
+        help="Skip the calendar and consensus fetch",
+    )
     _add_db(p_sync)
     p_sync.set_defaults(func=cmd_sync)
+
+    p_events = sub.add_parser("events", help="List known upcoming events")
+    p_events.add_argument(
+        "--days",
+        type=int,
+        default=90,
+        metavar="N",
+        help="How far ahead to look (default: 90)",
+    )
+    p_events.add_argument(
+        "--past", action="store_true", help="Include events already passed"
+    )
+    _add_db(p_events)
+    p_events.set_defaults(func=cmd_events)
 
     p_price = sub.add_parser("price", help="Record one price by hand")
     p_price.add_argument("ticker", help="Ticker as it appears in holdings")

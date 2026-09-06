@@ -14,6 +14,7 @@ import pytest
 
 from cmd_sync import sync_prices
 from market_data import (
+    CalendarEntry,
     FxQuote,
     MarketDataProvider,
     ProviderError,
@@ -43,10 +44,13 @@ class FakeProvider:
         self,
         quotes: dict[str, Quote] | None = None,
         fx: dict[tuple[str, str], FxQuote] | None = None,
+        calendar: dict[str, CalendarEntry] | None = None,
     ) -> None:
         self._quotes = quotes or {}
         self._fx = fx or {}
+        self._calendar = calendar or {}
         self.asked_for: list[str] = []
+        self.calendar_asked_for: list[str] = []
 
     def fetch_quotes(self, symbols: Sequence[str]) -> dict[str, Quote]:
         self.asked_for = sorted(symbols)
@@ -56,6 +60,14 @@ class FakeProvider:
 
     def fetch_fx(self, base: str, quote: str) -> FxQuote | None:
         return self._fx.get((base, quote))
+
+    def fetch_calendar(self, symbols: Sequence[str]) -> dict[str, CalendarEntry]:
+        self.calendar_asked_for = sorted(symbols)
+        return {
+            symbol: entry
+            for symbol, entry in self._calendar.items()
+            if symbol in symbols
+        }
 
 
 def _quote(symbol: str, close: float, as_of: str = "2026-09-04") -> Quote:
@@ -126,6 +138,37 @@ class TestYFinanceFailures:
         # 1.0 here would be wrong.
         fx = YFinanceProvider().fetch_fx("EUR", "EUR")
         assert fx is not None and fx.rate == 1.0
+
+
+class TestCalendarParsing:
+    """Yahoo calendar fields arrive in inconsistent shapes."""
+
+    def test_dates_from_several_shapes(self) -> None:
+        from datetime import date, datetime
+
+        as_iso = YFinanceProvider._as_iso
+        assert as_iso(date(2026, 10, 29)) == "2026-10-29"
+        assert as_iso(datetime(2026, 10, 29, 13, 30)) == "2026-10-29"
+        assert as_iso("2026-10-29 00:00:00") == "2026-10-29"
+        assert as_iso(None) is None
+
+    def test_floats_reject_nan_and_junk(self) -> None:
+        as_float = YFinanceProvider._as_float
+        assert as_float(1.98) == 1.98
+        assert as_float("1.98") == 1.98
+        assert as_float(None) is None
+        assert as_float(float("nan")) is None
+        assert as_float("not a number") is None
+
+    def test_has_estimates_detects_any_field(self) -> None:
+        assert CalendarEntry("X", "fake").has_estimates is False
+        assert CalendarEntry("X", "fake", eps_avg=1.0).has_estimates is True
+        assert CalendarEntry("X", "fake", revenue_low=5.0).has_estimates is True
+
+    def test_entry_with_only_dates_has_no_estimates(self) -> None:
+        entry = CalendarEntry("X", "fake", earnings_dates=("2026-10-29",))
+        assert entry.has_estimates is False
+        assert entry.earnings_dates == ("2026-10-29",)
 
 
 class TestLastValid:

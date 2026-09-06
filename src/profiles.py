@@ -131,6 +131,15 @@ class Profile:
         """This profile's personal context directory."""
         return self.root / "context"
 
+    @property
+    def events_file(self) -> Path:
+        """This profile's curated events file.
+
+        Beside the snapshot rather than in ``context/`` because it is
+        structured data the code parses, not prose a model reads.
+        """
+        return self.root / "events.toml"
+
     def context_path(self, name: str) -> Path:
         """Return the path of one context file."""
         return self.context / name

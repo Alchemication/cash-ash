@@ -17,6 +17,11 @@ Public API:
     load_cash_flows    -- cash flows in ledger order
     save_prices        -- upsert closing prices
     save_fx_rate       -- upsert one currency pair's rate
+    replace_feed_events -- refresh a security's future feed-sourced events
+    save_events        -- insert events, ignoring exact duplicates
+    load_events        -- events in a date window
+    save_consensus     -- record consensus estimates as observed today
+    consensus_history  -- a security's recorded estimates, newest first
     save_snapshot      -- store a point-in-time valuation and its positions
     latest_snapshot    -- most recent snapshot for an account, with positions
     latest_prices      -- most recent stored price per security
@@ -37,7 +42,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from db.migrations import apply_migrations
-from models import Account, CashFlow, Security, Trade
+from models import Account, CashFlow, ConsensusEstimate, Event, Security, Trade
 
 logger = logging.getLogger(__name__)
 
@@ -545,3 +550,192 @@ def save_fx_rate(
             """,
             (rate_date, base, quote, rate, source, _now()),
         )
+
+
+def save_events(conn: sqlite3.Connection, events: list[Event]) -> int:
+    """Insert events, ignoring ones already recorded identically.
+
+    Args:
+        conn: Open database connection.
+        events: Events to record.
+
+    Returns:
+        The number of rows actually inserted.
+    """
+    if not events:
+        return 0
+    now = _now()
+    before = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
+    with conn:
+        conn.executemany(
+            # ON CONFLICT DO NOTHING, not INSERT OR IGNORE: the latter swallows
+            # every constraint failure, so a bad source or confidence value
+            # vanished silently instead of being rejected. This form skips only
+            # a uniqueness collision and still raises on a CHECK violation.
+            """
+            INSERT INTO events (
+                security_id, event_date, kind, title, source, confidence, note, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT DO NOTHING
+            """,
+            [
+                (
+                    event.security_id,
+                    event.event_date,
+                    event.kind,
+                    event.title,
+                    event.source,
+                    event.confidence,
+                    event.note,
+                    now,
+                )
+                for event in events
+            ],
+        )
+    after = conn.execute("SELECT COUNT(*) AS n FROM events").fetchone()["n"]
+    return after - before
+
+
+def replace_feed_events(
+    conn: sqlite3.Connection,
+    *,
+    security_id: int,
+    kind: str,
+    on_or_after: str,
+) -> None:
+    """Clear future feed-sourced events of one kind before re-fetching them.
+
+    Companies move their reporting dates. Without this a rescheduled earnings
+    call leaves the old date in place beside the new one, and triage sees two.
+    Past events are never touched: what already happened is history, and the
+    thesis that referenced it must still make sense.
+
+    Args:
+        conn: Open database connection.
+        security_id: Security whose events to clear.
+        kind: Event kind to clear.
+        on_or_after: Only clear events on or after this ISO date.
+    """
+    with conn:
+        conn.execute(
+            """
+            DELETE FROM events
+            WHERE security_id = ? AND kind = ? AND source = 'feed'
+              AND event_date >= ?
+            """,
+            (security_id, kind, on_or_after),
+        )
+
+
+def load_events(
+    conn: sqlite3.Connection,
+    *,
+    start: str | None = None,
+    end: str | None = None,
+    security_id: int | None = None,
+) -> list[sqlite3.Row]:
+    """Return events in a date window, soonest first, with their tickers.
+
+    Args:
+        conn: Open database connection.
+        start: Earliest ISO date, inclusive.
+        end: Latest ISO date, inclusive.
+        security_id: Restrict to one security.
+
+    Returns:
+        Event rows joined to their security's ticker, which is NULL for macro
+        events belonging to no single holding.
+    """
+    clauses: list[str] = []
+    params: list[object] = []
+    if start:
+        clauses.append("e.event_date >= ?")
+        params.append(start)
+    if end:
+        clauses.append("e.event_date <= ?")
+        params.append(end)
+    if security_id is not None:
+        clauses.append("e.security_id = ?")
+        params.append(security_id)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    return conn.execute(
+        f"""
+        SELECT e.*, s.ticker
+        FROM events e
+        LEFT JOIN securities s ON s.id = e.security_id
+        {where}
+        ORDER BY e.event_date, s.ticker
+        """,
+        params,
+    ).fetchall()
+
+
+def save_consensus(conn: sqlite3.Connection, estimates: list[ConsensusEstimate]) -> int:
+    """Record consensus estimates as observed on their observation date.
+
+    Re-running on the same day overwrites rather than duplicating, so a sync
+    run twice is harmless and the series stays one point per day.
+
+    Args:
+        conn: Open database connection.
+        estimates: Estimates to record.
+
+    Returns:
+        The number of rows written.
+    """
+    if not estimates:
+        return 0
+    now = _now()
+    with conn:
+        conn.executemany(
+            """
+            INSERT INTO consensus_estimates (
+                security_id, observed_date, period_end, eps_avg, eps_low, eps_high,
+                revenue_avg, revenue_low, revenue_high, source, fetched_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(security_id, observed_date) DO UPDATE SET
+                period_end = excluded.period_end,
+                eps_avg = excluded.eps_avg,
+                eps_low = excluded.eps_low,
+                eps_high = excluded.eps_high,
+                revenue_avg = excluded.revenue_avg,
+                revenue_low = excluded.revenue_low,
+                revenue_high = excluded.revenue_high,
+                source = excluded.source,
+                fetched_at = excluded.fetched_at
+            """,
+            [
+                (
+                    estimate.security_id,
+                    estimate.observed_date,
+                    estimate.period_end,
+                    estimate.eps_avg,
+                    estimate.eps_low,
+                    estimate.eps_high,
+                    estimate.revenue_avg,
+                    estimate.revenue_low,
+                    estimate.revenue_high,
+                    estimate.source,
+                    now,
+                )
+                for estimate in estimates
+            ],
+        )
+    return len(estimates)
+
+
+def consensus_history(
+    conn: sqlite3.Connection, *, security_id: int, limit: int = 30
+) -> list[sqlite3.Row]:
+    """Return a security's recorded estimates, newest observation first."""
+    return conn.execute(
+        """
+        SELECT * FROM consensus_estimates
+        WHERE security_id = ?
+        ORDER BY observed_date DESC
+        LIMIT ?
+        """,
+        (security_id, limit),
+    ).fetchall()

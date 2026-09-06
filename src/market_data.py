@@ -13,6 +13,7 @@ the result; :mod:`cmd_sync` decides what that means.
 Public API:
     Quote                -- one instrument's close in its native currency
     FxQuote              -- one currency pair's rate
+    CalendarEntry        -- known dates and analyst consensus for one instrument
     MarketDataProvider   -- the interface adapters implement
     YFinanceProvider     -- free, unofficial, the v1 default
     get_provider         -- construct the configured provider by name
@@ -62,6 +63,43 @@ class FxQuote:
     source: str
 
 
+@dataclass(frozen=True)
+class CalendarEntry:
+    """Known dates and analyst consensus for one instrument.
+
+    Every field is optional: coverage varies by instrument, and a newly listed
+    company may have an earnings date but no dividend history, while an
+    unfollowed one may have neither estimate.
+    """
+
+    symbol: str
+    source: str
+    earnings_dates: tuple[str, ...] = ()
+    ex_dividend_date: str | None = None
+    dividend_date: str | None = None
+    eps_avg: float | None = None
+    eps_low: float | None = None
+    eps_high: float | None = None
+    revenue_avg: float | None = None
+    revenue_low: float | None = None
+    revenue_high: float | None = None
+
+    @property
+    def has_estimates(self) -> bool:
+        """True when any consensus figure is present."""
+        return any(
+            value is not None
+            for value in (
+                self.eps_avg,
+                self.eps_low,
+                self.eps_high,
+                self.revenue_avg,
+                self.revenue_low,
+                self.revenue_high,
+            )
+        )
+
+
 class MarketDataProvider(Protocol):
     """What the rest of the system needs from a market-data source."""
 
@@ -73,6 +111,10 @@ class MarketDataProvider(Protocol):
 
     def fetch_fx(self, base: str, quote: str) -> FxQuote | None:
         """Return the rate for one currency pair, or None if unavailable."""
+        ...
+
+    def fetch_calendar(self, symbols: Sequence[str]) -> dict[str, CalendarEntry]:
+        """Return known dates and consensus, omitting symbols with neither."""
         ...
 
 
@@ -226,6 +268,91 @@ class YFinanceProvider:
             return None
         rate, as_of = found
         return FxQuote(base=base, quote=quote, rate=rate, as_of=as_of, source=self.name)
+
+    @staticmethod
+    def _as_iso(value: Any) -> str | None:
+        """Return an ISO date string from whatever shape Yahoo supplies."""
+        if value is None:
+            return None
+        for attribute in ("date", "isoformat"):
+            method = getattr(value, attribute, None)
+            if callable(method):
+                result = method()
+                return (
+                    result.isoformat() if hasattr(result, "isoformat") else str(result)
+                )
+        text = str(value).strip()
+        return text[:10] if len(text) >= 10 else None
+
+    @staticmethod
+    def _as_float(value: Any) -> float | None:
+        """Return a float from a calendar field, or None when absent."""
+        if value is None:
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        # NaN compares unequal to itself; pandas leaves them all over calendars.
+        return None if number != number else number
+
+    def fetch_calendar(self, symbols: Sequence[str]) -> dict[str, CalendarEntry]:
+        """Return known dates and consensus estimates per symbol.
+
+        Yahoo exposes the calendar per ticker rather than in a batch, so this
+        makes one request each. That is acceptable at a weekly cadence and for
+        a portfolio of this size; a provider with a batch endpoint should
+        override the shape rather than loop.
+
+        A failure for one symbol is logged and skipped. Calendars are
+        supplementary — a missing earnings date degrades triage, it does not
+        invalidate a valuation — so one bad ticker must not lose the rest.
+
+        Args:
+            symbols: Provider symbols to request.
+
+        Returns:
+            Entries keyed by symbol, omitting symbols with nothing useful.
+        """
+        import warnings
+
+        import yfinance
+
+        entries: dict[str, CalendarEntry] = {}
+        for symbol in sorted(set(symbols)):
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    calendar = yfinance.Ticker(symbol).calendar
+            except Exception as exc:  # noqa: BLE001 - provider faults are opaque
+                logger.warning("Calendar lookup failed for %s: %s", symbol, exc)
+                continue
+            if not isinstance(calendar, dict) or not calendar:
+                logger.debug("No calendar for %s", symbol)
+                continue
+
+            raw_earnings = calendar.get("Earnings Date") or []
+            if not isinstance(raw_earnings, list | tuple):
+                raw_earnings = [raw_earnings]
+            earnings = tuple(
+                iso for iso in (self._as_iso(item) for item in raw_earnings) if iso
+            )
+            entry = CalendarEntry(
+                symbol=symbol,
+                source=self.name,
+                earnings_dates=earnings,
+                ex_dividend_date=self._as_iso(calendar.get("Ex-Dividend Date")),
+                dividend_date=self._as_iso(calendar.get("Dividend Date")),
+                eps_avg=self._as_float(calendar.get("Earnings Average")),
+                eps_low=self._as_float(calendar.get("Earnings Low")),
+                eps_high=self._as_float(calendar.get("Earnings High")),
+                revenue_avg=self._as_float(calendar.get("Revenue Average")),
+                revenue_low=self._as_float(calendar.get("Revenue Low")),
+                revenue_high=self._as_float(calendar.get("Revenue High")),
+            )
+            if entry.earnings_dates or entry.ex_dividend_date or entry.has_estimates:
+                entries[symbol] = entry
+        return entries
 
 
 _PROVIDERS: dict[str, type] = {"yfinance": YFinanceProvider}

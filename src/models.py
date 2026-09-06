@@ -8,6 +8,8 @@ Public API:
     Security      -- an instrument the portfolio can hold
     Trade         -- one buy or sell
     CashFlow      -- money entering or leaving the account
+    Event         -- a known date worth watching
+    ConsensusEstimate -- analyst expectations as observed on one date
     Position      -- a derived holding: quantity and cost basis from trades
     Holding       -- a Position valued at a point in time
     ConcentrationRow -- one grouped weight in a concentration report
@@ -158,3 +160,50 @@ class ConcentrationRow:
     weight_pct: float
     members: tuple[str, ...] = field(default_factory=tuple)
     over_limit: bool = False
+
+
+@dataclass(frozen=True)
+class Event:
+    """A known date worth watching.
+
+    Attributes:
+        event_date: ISO date the event falls on.
+        kind: Short slug, e.g. ``earnings``, ``product``, ``lockup_expiry``.
+        title: Human-readable description.
+        source: ``feed``, ``curated`` or ``research``.
+        security_id: The holding it concerns, or None for a macro event.
+        confidence: ``confirmed`` or ``estimated``. A date a model inferred is
+            not the same as one the company announced, and triage must be able
+            to tell them apart.
+        note: Optional free text.
+    """
+
+    event_date: str
+    kind: str
+    title: str
+    source: str
+    security_id: int | None = None
+    confidence: str = "confirmed"
+    note: str | None = None
+    id: int | None = None
+
+
+@dataclass(frozen=True)
+class ConsensusEstimate:
+    """Analyst expectations for a security, as they stood on one date.
+
+    Keyed by when it was *observed*, not by the period it forecasts: the point
+    is the series, because a revision is only visible by comparing today's
+    number with the one recorded last week.
+    """
+
+    security_id: int
+    observed_date: str
+    source: str
+    period_end: str | None = None
+    eps_avg: float | None = None
+    eps_low: float | None = None
+    eps_high: float | None = None
+    revenue_avg: float | None = None
+    revenue_low: float | None = None
+    revenue_high: float | None = None
