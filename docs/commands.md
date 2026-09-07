@@ -16,6 +16,7 @@ uv run python main.py decide           # list and record your decisions
 uv run python main.py weekly           # the whole cycle, in one command
 uv run python main.py report           # the weekly review
 uv run python main.py benchmark        # against the same money in a tracker
+uv run python main.py eval             # is the machinery sound?
 uv run python main.py telegram-setup   # register the bot command menu
 uv run python main.py daemon           # listen for button presses
 uv run python main.py daemon install   # run the listener under launchd
@@ -323,6 +324,29 @@ token there is nothing to listen for, so the listener does not start — but the
 scheduler still does, because a weekly review is worth having even when there
 is nowhere to send it, and everything it produces is readable from the CLI.
 Logs go to `~/Library/Logs`, where Console.app looks.
+
+## Process checks
+
+`eval` reports two different kinds of thing, and keeps them apart on purpose.
+
+**Invariants** are statements that should never be true. An active thesis with
+nothing that would break it. A claim marked sourced without a URL and a date. A
+decision recorded against advice a later run withdrew. An active thesis the
+owner never accepted. A holding recorded as worth zero rather than omitted.
+Each is a defect with no tolerable rate, so each is reported as broken or not
+and the command exits non-zero when any is.
+
+**Observations** are numbers with no correct value: how many claims rest on a
+source, how many holdings are held on a thin reason, how often the rules
+refused a proposal, truncation and fallback rates, spend, coverage. These carry
+no verdict, because a threshold nobody can justify is worse than an honest
+number.
+
+What `eval` deliberately does not measure is whether the advice was any good.
+Fourteen holdings a week will never produce the sample size for that, and
+replaying a past week cannot validate a model whose training already contains
+what happened next — a favourable historical result would measure leakage
+rather than judgement.
 
 ## The benchmark
 

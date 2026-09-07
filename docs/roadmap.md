@@ -17,8 +17,9 @@ and investment-attractiveness worksheet could make assumptions easier to revisit
 
 ## Process evaluations
 
-Extend regression tests and observed process metrics with frozen synthetic
-research cases, repeated-run stability and reviewer-labelled claim support.
+Invariants and observed metrics are in place (`main.py eval`). Still wanted:
+frozen synthetic research cases, repeated-run stability, and reviewer-labelled
+claim support.
 Measure time spent reviewing and whether questions were resolved. Outcomes and
 the passive benchmark remain descriptive; they do not establish model skill.
 

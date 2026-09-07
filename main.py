@@ -13,6 +13,7 @@ Subcommands:
     weekly         Run the whole cycle now (the daemon schedules it weekly).
     report         The weekly review, on screen or sent to Telegram.
     benchmark      The portfolio against the same money in a tracker.
+    eval           Whether the machinery is sound: invariants and metrics.
     telegram-setup Register the bot's command menu.
     daemon         Listen for button presses; install it under launchd.
     models         Inspect or change which model each stage calls.
@@ -103,6 +104,9 @@ Examples:
     uv run python main.py benchmark
         What the same money would be worth in a global tracker instead.
 
+    uv run python main.py eval
+        Invariants that must hold, and process metrics that carry no verdict.
+
     uv run python main.py models
         Which model each stage calls, and what tier it is.
 
@@ -136,6 +140,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from cmd_benchmark import cmd_benchmark  # noqa: E402
 from cmd_daemon import cmd_daemon  # noqa: E402
+from cmd_eval import cmd_eval  # noqa: E402
 from cmd_db import cmd_db  # noqa: E402
 from cmd_llm_log import cmd_llm_log  # noqa: E402
 from cmd_models import cmd_models  # noqa: E402
@@ -462,6 +467,13 @@ def build_parser() -> argparse.ArgumentParser:
     bench_sub.add_parser("sync", help="Fetch the benchmark's price history")
     _add_db(p_bench)
     p_bench.set_defaults(func=cmd_benchmark, benchmark_cmd=None)
+
+    p_eval = sub.add_parser("eval", help="Check the process, not the outcomes")
+    p_eval.add_argument(
+        "--weeks", type=int, default=8, metavar="N", help="Window (default: 8)"
+    )
+    _add_db(p_eval)
+    p_eval.set_defaults(func=cmd_eval)
 
     p_models = sub.add_parser("models", help="Inspect or change model routing")
     models_sub = p_models.add_subparsers(dest="models_cmd", required=False)
