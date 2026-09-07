@@ -206,6 +206,20 @@ def run_daemon(*, stop_after: int | None = None) -> None:
     Raises:
         TelegramError: If another poller is already running for this bot.
     """
+    from config import TELEGRAM_BOT_TOKEN
+
+    if not TELEGRAM_BOT_TOKEN:
+        # Not a transient fault, so not retried. The first version looped on
+        # this every fifteen seconds indefinitely, writing the same warning
+        # forever — a permanent misconfiguration presented as a flaky network.
+        # Exiting cleanly also stops launchd restarting it, since the job only
+        # restarts on an unsuccessful exit.
+        logger.warning(
+            "No TELEGRAM_BOT_TOKEN set, so there is nothing to listen to. "
+            "Add one to .env and run 'main.py daemon restart'. Exiting."
+        )
+        return
+
     offset = _load_offset()
     logger.info("Daemon started; polling from offset %d", offset)
     cycles = 0

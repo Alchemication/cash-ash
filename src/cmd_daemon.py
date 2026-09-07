@@ -5,11 +5,12 @@ from __future__ import annotations
 import argparse
 import logging
 import plistlib
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-from config import APP_HOME, LAUNCHD_LABEL
+from config import DAEMON_LOG_FILE, LAUNCHD_LABEL
 
 logger = logging.getLogger(__name__)
 
@@ -37,23 +38,76 @@ def _render_plist(project: Path) -> dict:
     Returns:
         The plist as a dictionary.
     """
-    log = APP_HOME / "daemon.log"
+    log = DAEMON_LOG_FILE
+    log.parent.mkdir(parents=True, exist_ok=True)
     return {
         "Label": LAUNCHD_LABEL,
+        # Invoked through uv rather than the venv's python directly, matching
+        # zdrowskit. uv re-resolves dependencies at start, so a venv rebuilt or
+        # a dependency added does not leave a job pointing at a stale
+        # interpreter that fails only at the next restart.
         "ProgramArguments": [
-            str(project / ".venv" / "bin" / "python"),
+            _uv_path(),
+            "run",
+            "python",
             str(project / "main.py"),
             "daemon",
         ],
         "WorkingDirectory": str(project),
         "RunAtLoad": True,
-        "KeepAlive": True,
-        # Throttle a crash loop: without it a daemon that fails at startup is
+        # Restart on a crash, but not on a clean exit. The daemon exits cleanly
+        # when there is no bot token, and an unconditional KeepAlive would
+        # relaunch it into the same misconfiguration every thirty seconds.
+        "KeepAlive": {"SuccessfulExit": False},
+        # Throttle a crash loop: without it a daemon failing at startup is
         # relaunched as fast as launchd can manage.
         "ThrottleInterval": 30,
         "StandardOutPath": str(log),
         "StandardErrorPath": str(log),
-        "EnvironmentVariables": {"PATH": "/usr/bin:/bin:/usr/local/bin"},
+        "EnvironmentVariables": _launchd_environment(),
+    }
+
+
+def _uv_path() -> str:
+    """Return an absolute path to uv, which launchd cannot find on PATH."""
+    found = shutil.which("uv")
+    if found:
+        return found
+    for candidate in (
+        Path.home() / ".local" / "bin" / "uv",
+        Path("/opt/homebrew/bin/uv"),
+        Path("/usr/local/bin/uv"),
+    ):
+        if candidate.exists():
+            return str(candidate)
+    raise ValueError(
+        "Cannot find uv. launchd runs with a minimal PATH and needs an "
+        "absolute path to it, so install uv or run the daemon in the "
+        "foreground instead."
+    )
+
+
+def _launchd_environment() -> dict[str, str]:
+    """Return the environment a launchd job needs.
+
+    launchd starts jobs with almost nothing set. HOME in particular is absent,
+    and every user-owned path in this project is derived from it — an app home
+    resolved against a missing HOME lands somewhere unintended rather than
+    failing loudly. PATH carries the Homebrew locations because the default
+    omits them entirely on Apple Silicon.
+    """
+    home = Path.home()
+    return {
+        "HOME": str(home),
+        "PATH": ":".join(
+            [
+                str(home / ".local" / "bin"),
+                "/opt/homebrew/bin",
+                "/usr/local/bin",
+                "/usr/bin",
+                "/bin",
+            ]
+        ),
     }
 
 
@@ -103,7 +157,7 @@ def cmd_daemon(args: argparse.Namespace) -> None:
             raise ValueError(f"launchctl load failed: {output}")
         console.print(f"[green]Installed[/green] {LAUNCHD_LABEL}")
         console.print(f"[dim]{path}[/dim]")
-        console.print(f"[dim]Logs: {APP_HOME / 'daemon.log'}[/dim]")
+        console.print(f"[dim]Logs: {DAEMON_LOG_FILE}[/dim]")
         return
 
     if not path.exists():

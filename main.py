@@ -10,6 +10,7 @@ Subcommands:
     research       Deep pass on a holding: plan, evidence, findings.
     recommend      Propose actions for the week, with the rules applied.
     decide         Record approve / reject / later on a recommendation.
+    weekly         The whole cycle: sync, triage, research, decide, report.
     report         The weekly review, on screen or sent to Telegram.
     telegram-setup Register the bot's command menu.
     daemon         Listen for button presses; install it under launchd.
@@ -79,6 +80,12 @@ Examples:
     uv run python main.py decide 3 approve --note "agreed, will buy Monday"
         Record a decision. Approving is not executing.
 
+    uv run python main.py weekly
+        Sync, triage, research, decide and report, in one go.
+
+    uv run python main.py weekly install
+        Schedule it. Sunday evening, so there is a day to think before Monday.
+
     uv run python main.py report
         The weekly review as it would read on a phone.
 
@@ -127,6 +134,7 @@ from cmd_db import cmd_db  # noqa: E402
 from cmd_llm_log import cmd_llm_log  # noqa: E402
 from cmd_models import cmd_models  # noqa: E402
 from cmd_thesis import cmd_thesis  # noqa: E402
+from cmd_weekly import cmd_weekly  # noqa: E402
 from cmd_recommend import cmd_decide, cmd_recommend  # noqa: E402
 from cmd_report import cmd_report, cmd_telegram_setup  # noqa: E402
 from cmd_research import cmd_research  # noqa: E402
@@ -365,6 +373,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_db(p_decide)
     p_decide.set_defaults(func=cmd_decide)
+
+    p_weekly = sub.add_parser("weekly", help="Run the whole weekly cycle")
+    weekly_sub = p_weekly.add_subparsers(dest="weekly_cmd", required=False)
+    weekly_sub.add_parser("install", help="Schedule it under launchd")
+    weekly_sub.add_parser("stop", help="Unschedule it")
+    p_weekly.add_argument(
+        "--telegram", action="store_true", help="Send the report when done"
+    )
+    p_weekly.add_argument(
+        "--max-research",
+        type=int,
+        default=4,
+        metavar="N",
+        help="Cap on deep passes (default: 4)",
+    )
+    p_weekly.add_argument(
+        "--skip-research",
+        action="store_true",
+        help="Everything except the deep passes",
+    )
+    _add_db(p_weekly)
+    p_weekly.set_defaults(func=cmd_weekly, weekly_cmd=None)
 
     p_report = sub.add_parser("report", help="The weekly portfolio review")
     p_report.add_argument(

@@ -13,6 +13,7 @@ uv run python main.py triage           # rank holdings by what changed
 uv run python main.py research         # deep pass on what triage selected
 uv run python main.py recommend        # propose actions, rules applied
 uv run python main.py decide           # list and record your decisions
+uv run python main.py weekly           # the whole cycle, in one command
 uv run python main.py report           # the weekly review
 uv run python main.py telegram-setup   # register the bot command menu
 uv run python main.py daemon           # listen for button presses
@@ -57,6 +58,10 @@ uv run python main.py research AMD            # deep pass on one holding
 uv run python main.py decide 3 approve --note "agreed, buying Monday"
 uv run python main.py decide 3 reject
 uv run python main.py report --telegram       # send it to your phone
+uv run python main.py weekly --telegram       # run everything and send it
+uv run python main.py weekly --skip-research  # everything but the deep passes
+uv run python main.py weekly install          # schedule it for Sundays
+uv run python main.py weekly stop             # unschedule it
 uv run python main.py daemon stop
 uv run python main.py daemon restart
 ```
@@ -257,6 +262,47 @@ collapsing the two would erase the evidence of whether you acted at all.
 Recommendations expire. A weekly cadence supersedes itself, so acting on a
 stale one would execute research that has already been replaced, at a price
 that has moved. `decide` refuses an expired recommendation and says why.
+
+## The weekly run
+
+```bash
+uv run python main.py weekly            # sync, triage, research, decide, report
+uv run python main.py weekly install    # schedule it
+```
+
+One command, because five driven by hand is how a weekly habit fails to form.
+
+**Stages degrade rather than abort.** A failed price sync leaves yesterday's
+prices and the run continues on them, marked stale. A research pass that fails
+on one holding does not stop the others. A failed decision still leaves a
+report to send. Abandoning the run on the first fault turns a partial answer
+into no answer, and the next attempt is seven days away.
+
+Deep research is capped, four by default. It is the expensive stage and the
+slow one — roughly eight minutes a holding — and anything triage selected
+beyond the cap waits a week rather than making the run enormous.
+
+Scheduled for Sunday evening: the week's news has landed, markets are shut so
+nothing moves mid-run, and there is a day before Monday's open to think about
+anything proposed. The strategy asks for a cooling-off period, and a Sunday
+report gives one for free.
+
+The scheduled job and the listener are separate launchd jobs with separate
+labels. They have different lifetimes — the listener runs continuously, the
+weekly run fires once and exits — and sharing a label would mean stopping one
+stops both.
+
+Both are invoked through `uv run` rather than a fixed interpreter path, so a
+rebuilt virtual environment or an added dependency does not leave a job
+pointing at a stale interpreter that fails only at the next restart. launchd
+starts jobs with almost nothing in the environment, so both set `HOME` — every
+user-owned path here derives from it — and a `PATH` including the Homebrew
+locations, which the default omits entirely on Apple Silicon.
+
+The listener's `KeepAlive` restarts it on a crash but not on a clean exit. With
+no bot token there is nothing to listen to, so it logs once and exits; an
+unconditional `KeepAlive` would relaunch it into the same misconfiguration
+every thirty seconds. Logs go to `~/Library/Logs`, where Console.app looks.
 
 ## The weekly report
 

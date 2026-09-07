@@ -373,3 +373,43 @@ DAEMON_ERROR_BACKOFF_S: int = _env_int("SKARBIE_DAEMON_ERROR_BACKOFF_S", 15)
 Long enough that a provider outage does not become a request flood, short
 enough that a button press is not left unanswered for minutes once it clears.
 """
+
+
+LAUNCHD_WEEKLY_LABEL: str = "com.skarbie.weekly"
+"""launchd label for the scheduled weekly run, distinct from the listener's.
+
+Two jobs with different lifetimes: the listener runs continuously, the weekly
+run fires once and exits. Sharing a label would mean stopping one stops both.
+"""
+
+WEEKLY_RUN_WEEKDAY: int = _env_int("SKARBIE_WEEKLY_RUN_WEEKDAY", 0)
+"""Day the weekly run fires, launchd-style with Sunday as 0.
+
+Sunday by default: the week's news has landed, markets are shut so no price
+moves mid-run, and there is a day before Monday's open to think about anything
+it proposes. The strategy asks for a cooling-off period, and a Sunday report
+gives one for free.
+"""
+
+WEEKLY_RUN_HOUR: int = _env_int("SKARBIE_WEEKLY_RUN_HOUR", 18)
+"""Hour the weekly run fires, local time."""
+
+
+def _log_file() -> Path:
+    """Resolve where background jobs write, honouring an override."""
+    override = os.environ.get("SKARBIE_LOG_FILE", "").strip()
+    if override:
+        return Path(override).expanduser()
+    return Path.home() / "Library" / "Logs" / "skarbie.daemon.log"
+
+
+DAEMON_LOG_FILE: Path = _log_file()
+"""Where the background jobs write their output.
+
+``~/Library/Logs`` rather than the app home, following the macOS convention
+zdrowskit uses: it is where Console.app looks, and it keeps machine output out
+of a directory otherwise holding only the user's own files.
+"""
+
+WEEKLY_LOG_FILE: Path = DAEMON_LOG_FILE.with_name("skarbie.weekly.log")
+"""Where the scheduled weekly run writes its output, beside the daemon's."""

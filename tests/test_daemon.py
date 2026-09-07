@@ -121,6 +121,9 @@ class TestOffsetHandling:
     @pytest.fixture
     def polling(self, monkeypatch: pytest.MonkeyPatch, roster):
         def install(*batches):
+            import config
+
+            monkeypatch.setattr(config, "TELEGRAM_BOT_TOKEN", "123:abc")
             queue = list(batches)
             asked: list[int] = []
 
@@ -173,8 +176,11 @@ class TestOffsetHandling:
     def test_a_transient_poll_failure_is_retried(
         self, monkeypatch, roster, spy
     ) -> None:
+        import config
+
         from notify import TelegramError
 
+        monkeypatch.setattr(config, "TELEGRAM_BOT_TOKEN", "123:abc")
         calls = {"n": 0}
 
         def flaky(*, offset: int, timeout: int):  # type: ignore[no-untyped-def]
@@ -191,7 +197,11 @@ class TestOffsetHandling:
     def test_a_second_poller_stops_the_daemon(self, monkeypatch, roster, spy) -> None:
         # Two pollers steal each other's updates, so button presses would be
         # handled at random. Retrying that forever would hide it.
+        import config
+
         from notify import TelegramError
+
+        monkeypatch.setattr(config, "TELEGRAM_BOT_TOKEN", "123:abc")
 
         def conflict(*, offset: int, timeout: int):  # type: ignore[no-untyped-def]
             raise TelegramError("Another poller is already running for this bot.")
@@ -229,3 +239,61 @@ class TestConflictDetection:
         monkeypatch.setattr(notify_module.urllib.request, "urlopen", conflict)
         with pytest.raises(TelegramError, match="steal each other"):
             notify_module.get_updates(offset=0)
+
+
+class TestMisconfiguration:
+    """A permanent fault is not a flaky network."""
+
+    def test_no_token_exits_rather_than_looping(
+        self, roster, spy, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The first version retried this every fifteen seconds forever, writing
+        # the same warning each time.
+        import config
+
+        monkeypatch.setattr(config, "TELEGRAM_BOT_TOKEN", "")
+        monkeypatch.setattr(
+            daemon_module,
+            "get_updates",
+            lambda **kw: pytest.fail("should not have polled without a token"),
+        )
+        run_daemon(stop_after=5)
+
+
+class TestLaunchdJob:
+    """launchd starts jobs with almost nothing set."""
+
+    def test_environment_carries_home(self) -> None:
+        # Every user-owned path here derives from HOME, and an app home
+        # resolved against a missing one lands somewhere unintended rather
+        # than failing loudly.
+        from cmd_daemon import _launchd_environment
+
+        assert _launchd_environment()["HOME"]
+
+    def test_path_includes_homebrew(self) -> None:
+        # Absent from the default PATH entirely on Apple Silicon.
+        from cmd_daemon import _launchd_environment
+
+        assert "/opt/homebrew/bin" in _launchd_environment()["PATH"]
+
+    def test_keepalive_does_not_restart_a_clean_exit(self) -> None:
+        # An unconditional KeepAlive relaunches the daemon into the same
+        # missing-token state every thirty seconds.
+        from pathlib import Path as _Path
+
+        from cmd_daemon import _render_plist
+
+        plist = _render_plist(_Path("/tmp/project"))
+        assert plist["KeepAlive"] == {"SuccessfulExit": False}
+
+    def test_invoked_through_uv_not_a_fixed_interpreter(self) -> None:
+        # A venv rebuilt or a dependency added must not leave the job pointing
+        # at a stale interpreter that only fails at the next restart.
+        from pathlib import Path as _Path
+
+        from cmd_daemon import _render_plist
+
+        args = _render_plist(_Path("/tmp/project"))["ProgramArguments"]
+        assert args[0].endswith("uv")
+        assert args[1:3] == ["run", "python"]
