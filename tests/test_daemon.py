@@ -459,9 +459,9 @@ class TestButtonsOnStaleMessages:
     def test_an_expired_recommendation_records_nothing(self, db, roster) -> None:
         rec = self._add(db, expires_on="2020-01-01")
         message = daemon_module._record_decision(roster["adam"], rec, "approve")
-        assert "superseded" in message
+        assert "Expired" in message
         assert db.execute("SELECT COUNT(*) n FROM user_decision").fetchone()["n"] == 0
 
     def test_an_unknown_recommendation_is_handled(self, db, roster) -> None:
         message = daemon_module._record_decision(roster["adam"], 9999, "approve")
-        assert "no longer exists" in message
+        assert "No such recommendation" in message

@@ -140,6 +140,8 @@ from cmd_db import cmd_db  # noqa: E402
 from cmd_llm_log import cmd_llm_log  # noqa: E402
 from cmd_models import cmd_models  # noqa: E402
 from cmd_thesis import cmd_thesis  # noqa: E402
+from cmd_workflow import cmd_cash, cmd_executed, cmd_process
+from config import RESEARCH_MAX_PASSES
 from cmd_weekly import cmd_weekly  # noqa: E402
 from cmd_recommend import cmd_decide, cmd_recommend  # noqa: E402
 from cmd_report import cmd_report, cmd_telegram_setup  # noqa: E402
@@ -336,6 +338,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_thesis_show.add_argument("ticker")
     _add_db(p_thesis_show)
     thesis_sub.add_parser("list", help="Every current thesis")
+    for action in ("accept", "reject"):
+        command = thesis_sub.add_parser(
+            action, help=f"{action.title()} a proposed thesis"
+        )
+        command.add_argument("ticker")
+        command.add_argument("version", type=int)
+        _add_db(command)
     _add_db(p_thesis)
     p_thesis.set_defaults(func=cmd_thesis, thesis_cmd=None, ticker=None)
 
@@ -354,6 +363,12 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         default=None,
         help="Holding to research (default: whatever the last triage selected)",
+    )
+    p_research.add_argument(
+        "--evidence-file",
+        type=Path,
+        default=None,
+        help="Local JSON excerpts matched to research questions",
     )
     _add_db(p_research)
     p_research.set_defaults(func=cmd_research)
@@ -380,6 +395,32 @@ def build_parser() -> argparse.ArgumentParser:
     _add_db(p_decide)
     p_decide.set_defaults(func=cmd_decide)
 
+    p_exec = sub.add_parser(
+        "executed", help="Record an actual trade or a decision not to execute"
+    )
+    p_exec.add_argument("recommendation_id", type=int)
+    p_exec.add_argument("--quantity", type=float, default=0)
+    p_exec.add_argument(
+        "--amount", type=float, default=0, help="EUR consideration, excluding fee"
+    )
+    p_exec.add_argument("--fee", type=float, default=0)
+    p_exec.add_argument("--date", default=None)
+    p_exec.add_argument("--note", default=None)
+    p_exec.add_argument("--not-executed", action="store_true")
+    _add_db(p_exec)
+    p_exec.set_defaults(func=cmd_executed)
+    p_cash = sub.add_parser("cash", help="Record an actual EUR contribution")
+    p_cash.add_argument("amount", type=float)
+    p_cash.add_argument("--date", default=None)
+    p_cash.add_argument("--note", default=None)
+    _add_db(p_cash)
+    p_cash.set_defaults(func=cmd_cash)
+    p_process = sub.add_parser(
+        "process", help="Research coverage, citation checks, cost and limits"
+    )
+    _add_db(p_process)
+    p_process.set_defaults(func=cmd_process)
+
     p_weekly = sub.add_parser("weekly", help="Run the whole weekly cycle")
     p_weekly.add_argument(
         "--telegram", action="store_true", help="Send the report when done"
@@ -387,9 +428,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_weekly.add_argument(
         "--max-research",
         type=int,
-        default=4,
+        default=RESEARCH_MAX_PASSES,
         metavar="N",
-        help="Cap on deep passes (default: 4)",
+        help="Cap on deep passes; inspect defaults with process",
     )
     p_weekly.add_argument(
         "--skip-research",

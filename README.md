@@ -7,9 +7,10 @@ Researches holdings on a weekly cadence, proposes constrained
 judge those decisions later. Human-in-the-loop by design: the system recommends,
 you approve, you execute manually in Revolut.
 
-**Not built yet.** Today it is the portfolio ledger and market data — trades,
-live valuation, FX, and concentration reporting. No AI yet. See
-[docs/roadmap.md](docs/roadmap.md) for what comes next and why in that order.
+The app includes a trade ledger, market data, thesis-based research, constrained
+recommendations, Telegram review and scheduling, and a passive benchmark.
+The focus is a repeatable research habit: what changed, what remains unknown,
+and what would change your mind. Model output is not investment authority.
 
 ## Quick start
 
@@ -32,11 +33,48 @@ uv run python main.py doctor           # what is set up, what is still missing
 ```
 
 `profile add` also writes starter context files — `investor.md`, `strategy.md`,
-`log.md`, `watchlist.md` — under the profile's `context/` directory. Nothing
-reads them yet; the research pipeline will, from Phase 4. `main.py context`
+`log.md`, `watchlist.md` — under the profile's `context/` directory. Thesis bootstrap reads your written notes; untouched templates are excluded. `main.py context`
 shows which are still untouched templates.
 
 Full command list: [docs/commands.md](docs/commands.md).
+
+## Weekly review
+
+After writing your context files and configuring a model provider:
+
+```bash
+uv run python main.py thesis bootstrap
+uv run python main.py weekly
+uv run python main.py thesis show TEST
+uv run python main.py thesis accept TEST 2   # choose a proposed version after review
+uv run python main.py recommend             # reconsider with the accepted thesis
+uv run python main.py decide                # inspect recommendation IDs
+uv run python main.py process               # coverage, citation checks, cost and limits
+```
+
+A weekly cycle syncs data, ranks holdings, reserves research capacity for overdue
+coverage, researches selected companies and proposes actions. Findings remain
+separate from the owner's active thesis until explicitly accepted. Decisions
+receive dated findings, citations and unanswered questions.
+
+Reports distinguish completed, incomplete and unperformed reviews. Missing
+valuations suppress aggregate returns; stale prices or FX block trade proposals.
+A failed or deliberately skipped stage remains visible in Telegram and the CLI.
+
+Only actual cash funds recommendations. Record a deposit with `main.py cash`.
+Approval reserves capital; execution is a separate `main.py executed` command
+that records the actual broker fill and updates the trade ledger. Snoozed items
+return when due, with a daemon reminder. No command places a broker order.
+
+In Telegram: `/review`, `/pending`, `/evidence TEST`, `/thesis TEST`,
+`/accept TEST 2`, `/reject TEST 2`. Recommendation buttons open evidence and
+thesis details; review questions use acknowledgement instead of trade approval.
+
+Research uses recent news excerpts by default. Add question-linked company
+release or filing excerpts to your profile's `context/evidence.json` to supply
+primary material. Citations must reference supplied IDs and exact excerpts;
+that checks provenance, not whether the conclusion follows. See
+[commands and evidence format](docs/commands.md).
 
 ## How the book is kept
 

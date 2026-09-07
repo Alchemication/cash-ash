@@ -23,7 +23,11 @@ Example:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+import sqlite3
+from pathlib import Path
+from profiles import Profile
+from dataclasses import asdict, dataclass, field
+from config import RESEARCH_MAX_PASSES
 from datetime import date
 
 logger = logging.getLogger(__name__)
@@ -51,16 +55,16 @@ class WeeklyOutcome:
     @property
     def ok(self) -> bool:
         """True when nothing failed outright."""
-        return all(stage.ok or stage.skipped for stage in self.stages)
+        return all(stage.ok for stage in self.stages)
 
 
 def run_weekly(
-    conn,  # type: ignore[no-untyped-def]
+    conn: sqlite3.Connection,
     *,
-    profile=None,  # type: ignore[no-untyped-def]
+    profile: Profile | None = None,
     account_id: int = 1,
     today: date | None = None,
-    max_research: int = 4,
+    max_research: int = RESEARCH_MAX_PASSES,
     skip_research: bool = False,
 ) -> WeeklyOutcome:
     """Run the full weekly cycle, continuing past stages that fail.
@@ -77,6 +81,13 @@ def run_weekly(
     Returns:
         What each stage did, and the report to send.
     """
+    from store_workflow import start_cycle, finish_cycle
+    from research_coverage import select_research
+
+    if max_research < 0:
+        raise ValueError("Research cap must be nonnegative.")
+    now = today or date.today()
+    cycle_id = start_cycle(conn, now.isoformat())
     outcome = WeeklyOutcome()
     outcome.stages.append(_sync(conn, account_id=account_id))
 
@@ -84,20 +95,33 @@ def run_weekly(
 
     if skip_research:
         outcome.stages.append(
-            StageResult("research", ok=True, detail="skipped by request", skipped=True)
+            StageResult("research", ok=False, detail="skipped by request", skipped=True)
         )
     else:
-        _research(conn, outcome, selected=selected[:max_research], today=today)
-        if len(selected) > max_research:
-            deferred = ", ".join(ticker for ticker, _ in selected[max_research:])
-            logger.info("Deferred to next week: %s", deferred)
+        targets, deferred = select_research(
+            conn, selected, today=now, limit=max_research
+        )
+        _research(
+            conn,
+            outcome,
+            selected=targets,
+            today=today,
+            evidence_file=profile.context / "evidence.json" if profile else None,
+        )
+        if deferred:
+            outcome.stages[-1].ok = False
+            outcome.stages[-1].detail += "; deferred or manual review: " + ", ".join(
+                deferred
+            )
 
     _decide(conn, outcome, profile=profile, account_id=account_id, today=today)
+    finish_cycle(conn, cycle_id, [asdict(s) for s in outcome.stages])
     _report(conn, outcome, profile=profile, account_id=account_id, today=today)
+    finish_cycle(conn, cycle_id, [asdict(s) for s in outcome.stages])
     return outcome
 
 
-def _sync(conn, *, account_id: int) -> StageResult:  # type: ignore[no-untyped-def]
+def _sync(conn: sqlite3.Connection, *, account_id: int) -> StageResult:
     """Fetch prices, FX, dates and estimates."""
     from cmd_sync import sync_calendar, sync_prices
     from market_data import ProviderError, get_provider
@@ -112,7 +136,7 @@ def _sync(conn, *, account_id: int) -> StageResult:  # type: ignore[no-untyped-d
         return StageResult("sync", ok=False, detail=f"{exc}")
     return StageResult(
         "sync",
-        ok=True,
+        ok=not prices["unpriced"],
         detail=(
             f"{len(prices['priced'])} priced, {len(prices['unpriced'])} not, "
             f"{calendar['events']} new event(s)"
@@ -120,7 +144,13 @@ def _sync(conn, *, account_id: int) -> StageResult:  # type: ignore[no-untyped-d
     )
 
 
-def _triage(conn, outcome: WeeklyOutcome, *, account_id: int, today):  # type: ignore[no-untyped-def]
+def _triage(
+    conn: sqlite3.Connection,
+    outcome: WeeklyOutcome,
+    *,
+    account_id: int,
+    today: date | None,
+) -> list[tuple[str, str]]:
     """Rank the portfolio, returning what was selected for depth."""
     from research import run_triage
 
@@ -135,14 +165,22 @@ def _triage(conn, outcome: WeeklyOutcome, *, account_id: int, today):  # type: i
     outcome.stages.append(
         StageResult(
             "triage",
-            ok=True,
-            detail=f"{len(selected)} of {len(rankings)} selected for depth",
+            ok=not any("omitted" in item.get("signals", ()) for item in rankings),
+            detail=f"{len(selected)} of {len(rankings)} selected for depth; "
+            f"{sum('omitted' in item.get('signals', ()) for item in rankings)} omitted",
         )
     )
     return selected
 
 
-def _research(conn, outcome: WeeklyOutcome, *, selected, today) -> None:  # type: ignore[no-untyped-def]
+def _research(
+    conn: sqlite3.Connection,
+    outcome: WeeklyOutcome,
+    *,
+    selected: list[tuple[str, str]],
+    today: date | None,
+    evidence_file: Path | None = None,
+) -> None:
     """Run a deep pass per selected holding, continuing past failures."""
     from research import research_security
 
@@ -155,29 +193,53 @@ def _research(conn, outcome: WeeklyOutcome, *, selected, today) -> None:  # type
     failures: list[str] = []
     for ticker, trigger in selected:
         try:
-            research_security(conn, ticker=ticker, trigger=trigger, today=today)
+            research_security(
+                conn,
+                ticker=ticker,
+                trigger=trigger,
+                today=today,
+                evidence_file=evidence_file,
+            )
             outcome.researched.append(ticker)
+            assessment = conn.execute(
+                "SELECT coverage FROM research_assessment WHERE security_id=(SELECT id FROM securities WHERE ticker=?) ORDER BY run_id DESC LIMIT 1",
+                (ticker,),
+            ).fetchone()
+            if assessment and assessment["coverage"] == "insufficient":
+                failures.append(ticker)
+                logger.warning(
+                    "Research evidence does not answer all questions for %s", ticker
+                )
         except Exception as exc:  # noqa: BLE001 - one holding must not stop the rest
             logger.warning("Research failed for %s: %s", ticker, exc)
             failures.append(ticker)
 
     detail = f"{len(outcome.researched)} researched"
     if failures:
-        detail += f", {len(failures)} failed ({', '.join(failures)})"
-    outcome.stages.append(
-        StageResult(
-            "research", ok=not failures or bool(outcome.researched), detail=detail
-        )
-    )
+        detail += f", {len(failures)} failed or insufficient ({', '.join(failures)})"
+    outcome.stages.append(StageResult("research", ok=not failures, detail=detail))
 
 
-def _decide(conn, outcome: WeeklyOutcome, *, profile, account_id, today) -> None:  # type: ignore[no-untyped-def]
+def _decide(
+    conn: sqlite3.Connection,
+    outcome: WeeklyOutcome,
+    *,
+    profile: Profile | None,
+    account_id: int,
+    today: date | None,
+) -> None:
     """Propose recommendations, with the guardrails applied."""
-    from research import run_decision
+    from decisions import run_decision
 
     try:
         _, recommendations, _ = run_decision(
-            conn, profile=profile, account_id=account_id, today=today
+            conn,
+            profile=profile,
+            account_id=account_id,
+            today=today,
+            blocked_reason="Weekly review incomplete; resolve failed or deferred stages before trading."
+            if not outcome.ok
+            else None,
         )
     except Exception as exc:  # noqa: BLE001 - the report is still worth sending
         outcome.stages.append(StageResult("decide", ok=False, detail=f"{exc}"))
@@ -191,7 +253,14 @@ def _decide(conn, outcome: WeeklyOutcome, *, profile, account_id, today) -> None
     outcome.stages.append(StageResult("decide", ok=True, detail=detail))
 
 
-def _report(conn, outcome: WeeklyOutcome, *, profile, account_id, today) -> None:  # type: ignore[no-untyped-def]
+def _report(
+    conn: sqlite3.Connection,
+    outcome: WeeklyOutcome,
+    *,
+    profile: Profile | None,
+    account_id: int,
+    today: date | None,
+) -> None:
     """Render the report. Always attempted, whatever else failed."""
     from report import weekly_report
 

@@ -112,41 +112,39 @@ class TestBuyLimits:
         assert verdict.amount_eur < 100.0
         assert verdict.adjusted
 
-    def test_headroom_accounts_for_the_purchase_raising_the_total(self) -> None:
-        # Naive "cap% of today's total minus what is held" overstates the room,
-        # because buying raises the holding and the total together.
+    def test_cash_purchase_preserves_total_wealth(self) -> None:
         context = _context(
-            total_value_eur=1000.0,
-            weights_by_ticker={"BIG": 19.0},
-            values_by_ticker={"BIG": 190.0},
+            total_value_eur=1000,
+            cash_eur=100,
+            weights_by_ticker={"BIG": 19},
+            values_by_ticker={"BIG": 190},
         )
         verdict = check_proposal(
-            action="ADD", ticker="BIG", amount_eur=1000.0, context=context
+            action="ADD", ticker="BIG", amount_eur=100, context=context
         )
-        naive = MAX_POSITION_WEIGHT_PCT / 100 * 1000.0 - 190.0
-        assert verdict.amount_eur is not None
-        # The correct solution is larger than naive, and still respects the cap.
-        after = (190.0 + verdict.amount_eur) / (1000.0 + verdict.amount_eur) * 100
-        assert after <= MAX_POSITION_WEIGHT_PCT + 1e-6
-        assert verdict.amount_eur >= naive or verdict.amount_eur == MAX_NEW_TRADE_EUR
+        assert verdict.amount_eur == 10
+        assert (190 + verdict.amount_eur) / 1000 * 100 == MAX_POSITION_WEIGHT_PCT
 
     def test_single_trade_limit_binds(self) -> None:
         verdict = check_proposal(
-            action="BUY", ticker=None, amount_eur=10_000.0, context=_context()
+            action="BUY",
+            ticker="NEW",
+            amount_eur=10_000.0,
+            context=_context(cash_eur=500),
         )
         assert verdict.amount_eur == min(MAX_NEW_TRADE_EUR, MAX_WEEKLY_ALLOCATION_EUR)
 
     def test_available_capital_binds(self) -> None:
-        context = _context(cash_eur=0.0, monthly_contribution_eur=20.0)
+        context = _context(cash_eur=20.0, monthly_contribution_eur=150.0)
         verdict = check_proposal(
-            action="BUY", ticker=None, amount_eur=100.0, context=context
+            action="BUY", ticker="NEW", amount_eur=100.0, context=context
         )
         assert verdict.amount_eur == 20.0
 
     def test_weekly_allocation_is_consumed_across_proposals(self) -> None:
         context = _context(allocated_this_run_eur=MAX_WEEKLY_ALLOCATION_EUR)
         verdict = check_proposal(
-            action="BUY", ticker=None, amount_eur=50.0, context=context
+            action="BUY", ticker="NEW", amount_eur=50.0, context=context
         )
         assert verdict.refused
         assert "no capital left" in verdict.refusal
@@ -159,7 +157,7 @@ class TestBuyLimits:
 
     def test_zero_amount_is_refused(self) -> None:
         verdict = check_proposal(
-            action="BUY", ticker=None, amount_eur=0.0, context=_context()
+            action="BUY", ticker="NEW", amount_eur=0.0, context=_context()
         )
         assert verdict.refused
 
@@ -167,12 +165,12 @@ class TestBuyLimits:
 class TestAvailableCapital:
     """BUY and ADD are unreachable without the expected contribution."""
 
-    def test_includes_the_contribution(self) -> None:
+    def test_excludes_the_planned_contribution(self) -> None:
         assert (
             _context(
                 cash_eur=10.0, monthly_contribution_eur=150.0
             ).available_capital_eur
-            == 160.0
+            == 10.0
         )
 
     def test_without_a_contribution_only_cash_is_available(self) -> None:

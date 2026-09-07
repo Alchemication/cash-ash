@@ -224,7 +224,8 @@ class TestWeeklyReport:
     def test_quiet_week_says_so_plainly(self, seeded: sqlite3.Connection) -> None:
         # A report that manufactures content trains the reader to stop opening it.
         parts = weekly_report(seeded, today=self.TODAY)
-        assert "Nothing needs doing this week" in parts.body
+        assert "not reviewed" in parts.body
+        assert "No conclusion about this week" in parts.body
         assert parts.actionable == []
 
     def test_shows_the_total_and_the_gain(self, seeded: sqlite3.Connection) -> None:

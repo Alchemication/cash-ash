@@ -47,6 +47,8 @@ def stages(monkeypatch: pytest.MonkeyPatch):
             )[1],
         )
         import cmd_sync
+        import decisions
+        import research_coverage
         import research
 
         monkeypatch.setattr(
@@ -65,8 +67,17 @@ def stages(monkeypatch: pytest.MonkeyPatch):
             ),
         )
         monkeypatch.setattr(research, "research_security", stage("research", None))
-        monkeypatch.setattr(research, "run_decision", stage("decide", (2, [], "")))
+        monkeypatch.setattr(decisions, "run_decision", stage("decide", (2, [], "")))
         monkeypatch.setattr(cmd_sync, "sync_prices", lambda *a, **k: {})
+        # Orchestration tests isolate selection; deterministic rotation has its own tests.
+        monkeypatch.setattr(
+            research_coverage,
+            "select_research",
+            lambda conn, selected, *, today, limit: (
+                selected[:limit],
+                [t for t, _ in selected[limit:]],
+            ),
+        )
         return called
 
     return install

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+from review_text import recommendation_buttons
 import re
 
+from notify import escape
 from profiles import resolve_cli_profile
 from store import open_existing_db
 
@@ -15,6 +17,8 @@ _BOT_COMMANDS = [
     ("holdings", "Current positions and value"),
     ("review", "This week's portfolio review"),
     ("pending", "Recommendations awaiting your decision"),
+    ("thesis", "Compare owner thesis and proposed changes"),
+    ("evidence", "Dated findings and source excerpts"),
 ]
 
 
@@ -47,7 +51,7 @@ def cmd_report(args: argparse.Namespace) -> None:
         if parts.actionable:
             console.print(
                 f"[dim]{len(parts.actionable)} recommendation(s) would carry "
-                f"Approve / Reject / Later buttons.[/dim]"
+                f"action-specific review and snooze buttons.[/dim]"
             )
         console.print(
             "[dim]Send it with --telegram once TELEGRAM_BOT_TOKEN is set.[/dim]"
@@ -65,14 +69,8 @@ def cmd_report(args: argparse.Namespace) -> None:
         amount = f" — €{item['amount_eur']:,.2f}" if item["amount_eur"] else ""
         send_with_buttons(
             chat_id=profile.telegram_id,
-            text=f"<b>{item['action']}</b> {ticker}{amount}\n{item['rationale']}",
-            buttons=[
-                [
-                    ("Approve", f"rec:{item['id']}:approve"),
-                    ("Reject", f"rec:{item['id']}:reject"),
-                    ("Later", f"rec:{item['id']}:later"),
-                ]
-            ],
+            text=f"<b>{item['action']}</b> {ticker}{amount}\n{escape(item['rationale'])}",
+            buttons=recommendation_buttons(item),
         )
     console.print(
         f"[green]Sent[/green] to {profile.name} ({len(parts.actionable)} actionable)."

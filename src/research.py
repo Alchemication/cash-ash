@@ -22,12 +22,22 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass, replace
+import sqlite3
+from dataclasses import dataclass
 from datetime import date, timedelta
 
-from config import DECISION_MAX_TOKENS, PROMPTS_DIR, THESIS_MAX_TOKENS
+from config import (
+    PROMPTS_DIR,
+    THESIS_MAX_TOKENS,
+    TRIAGE_HORIZON_DAYS,
+    TRIAGE_LOOKBACK_DAYS,
+    RESEARCH_ASSET_CLASSES,
+)
+from pathlib import Path
 from llm import call_llm
-from models import Thesis
+from models import Security, Thesis
+from profiles import Profile
+from evidence import EvidenceSource
 from portfolio import positions
 from store_research import active_thesis, create_research_run, save_thesis
 
@@ -82,22 +92,16 @@ def extract_json(text: str) -> dict:
     if start == -1:
         raise ValueError(f"No JSON object in model output: {text[:200]!r}")
 
-    depth = 0
-    for index in range(start, len(stripped)):
-        if stripped[index] == "{":
-            depth += 1
-        elif stripped[index] == "}":
-            depth -= 1
-            if depth == 0:
-                candidate = stripped[start : index + 1]
-                try:
-                    parsed = json.loads(candidate)
-                except json.JSONDecodeError as exc:
-                    raise ValueError(f"Malformed JSON in model output: {exc}") from exc
-                if not isinstance(parsed, dict):
-                    raise ValueError("Model returned JSON that is not an object.")
-                return parsed
-    raise ValueError("Unterminated JSON object in model output.")
+    try:
+        parsed, _ = json.JSONDecoder().raw_decode(stripped[start:])
+    except json.JSONDecodeError as exc:
+        label = (
+            "Unterminated JSON object"
+            if not stripped.endswith("}")
+            else "Malformed JSON"
+        )
+        raise ValueError(f"{label} in model output: {exc}") from exc
+    return parsed
 
 
 def _string_list(value: object) -> tuple[str, ...]:
@@ -108,7 +112,7 @@ def _string_list(value: object) -> tuple[str, ...]:
     return tuple(cleaned[:_MAX_LIST_ENTRIES])
 
 
-def _read_context(profile) -> dict[str, str]:  # type: ignore[no-untyped-def]
+def _read_context(profile: Profile) -> dict[str, str]:
     """Read the owner's context files, skipping untouched templates."""
     from profiles import is_stub
 
@@ -121,9 +125,9 @@ def _read_context(profile) -> dict[str, str]:  # type: ignore[no-untyped-def]
 
 
 def bootstrap_theses(
-    conn,  # type: ignore[no-untyped-def]
+    conn: sqlite3.Connection,
     *,
-    profile,  # type: ignore[no-untyped-def]
+    profile: Profile,
     account_id: int = 1,
     only: str | None = None,
     overwrite: bool = False,
@@ -224,7 +228,7 @@ def bootstrap_theses(
     return results
 
 
-def _bootstrap_message(security, context: dict[str, str]) -> str:  # type: ignore[no-untyped-def]
+def _bootstrap_message(security: Security, context: dict[str, str]) -> str:
     """Build the user message for one security.
 
     The whole log is included rather than just this holding's line, so the
@@ -338,7 +342,7 @@ class TriageInput:
         return "\n".join(lines)
 
 
-def _price_move(conn, security_id: int) -> str | None:  # type: ignore[no-untyped-def]
+def _price_move(conn: sqlite3.Connection, security_id: int) -> str | None:
     """Describe the stored price change, or None when there is too little history.
 
     Week one has a single price per holding and no history to compare against.
@@ -359,7 +363,7 @@ def _price_move(conn, security_id: int) -> str | None:  # type: ignore[no-untype
     return f"{change:+.1f}% between {previous['price_date']} and {newest['price_date']}"
 
 
-def _estimate_change(conn, security_id: int) -> str | None:  # type: ignore[no-untyped-def]
+def _estimate_change(conn: sqlite3.Connection, security_id: int) -> str | None:
     """Describe how analyst expectations moved, if there are two observations."""
     rows = conn.execute(
         """
@@ -382,11 +386,11 @@ def _estimate_change(conn, security_id: int) -> str | None:  # type: ignore[no-u
 
 
 def triage_inputs(
-    conn,  # type: ignore[no-untyped-def]
+    conn: sqlite3.Connection,
     *,
     account_id: int = 1,
-    horizon_days: int = 21,
-    lookback_days: int = 14,
+    horizon_days: int = TRIAGE_HORIZON_DAYS,
+    lookback_days: int = TRIAGE_LOOKBACK_DAYS,
     today: date | None = None,
     include_sell_eligibility: bool = False,
 ) -> list[TriageInput]:
@@ -435,7 +439,9 @@ def triage_inputs(
     if include_sell_eligibility:
         from guardrails import check_proposal
 
-        context = build_guardrail_context(conn, account_id=account_id)
+        from decisions import build_guardrail_context
+
+        context = build_guardrail_context(conn, account_id=account_id, today=now)
         for row in rows:
             ticker = row.position.security.ticker
             sell_permitted_by_ticker[ticker] = not check_proposal(
@@ -472,7 +478,7 @@ def triage_inputs(
 
 
 def run_triage(
-    conn,  # type: ignore[no-untyped-def]
+    conn: sqlite3.Connection,
     *,
     account_id: int = 1,
     today: date | None = None,
@@ -560,6 +566,14 @@ def run_triage(
         if entry is None or ticker in seen:
             logger.warning("Triage returned an unknown or repeated ticker: %r", ticker)
             continue
+        if (
+            not isinstance(raw.get("selected", False), bool)
+            or type(raw.get("rank", 1)) is not int
+            or raw.get("rank", 1) < 1
+        ):
+            raise ValueError(
+                "Triage needs boolean selections and positive integer ranks. Retry main.py triage."
+            )
         seen.add(ticker)
         rankings.append(
             {
@@ -626,7 +640,7 @@ def run_triage(
 # ---------------------------------------------------------------------------
 
 PLAN_PROMPT_VERSION = "research_plan/1"
-ANALYST_PROMPT_VERSION = "research_analyst/2"
+ANALYST_PROMPT_VERSION = "research_analyst/3"
 
 _VALID_THESIS_STATUS = {"improving", "unchanged", "deteriorating", "broken"}
 
@@ -649,7 +663,14 @@ class ResearchResult:
     sourced_count: int
 
 
-def _plan_research(conn, *, security, thesis, trigger, trace_id):  # type: ignore[no-untyped-def]
+def _plan_research(
+    conn: sqlite3.Connection,
+    *,
+    security: Security,
+    thesis: Thesis,
+    trigger: str,
+    trace_id: int,
+) -> tuple[list[str], tuple[str, ...]]:
     """Choose this week's questions for one holding."""
     lines = [
         f"Holding: {security.ticker} ({security.name}).",
@@ -689,13 +710,14 @@ def _plan_research(conn, *, security, thesis, trigger, trace_id):  # type: ignor
 
 
 def research_security(
-    conn,  # type: ignore[no-untyped-def]
+    conn: sqlite3.Connection,
     *,
     ticker: str,
     trigger: str = "requested directly",
     account_id: int = 1,
     today: date | None = None,
-    source=None,  # type: ignore[no-untyped-def]
+    source: EvidenceSource | None = None,
+    evidence_file: Path | None = None,
 ) -> ResearchResult:
     """Run one deep research pass and propose — never apply — a thesis update.
 
@@ -729,6 +751,10 @@ def research_security(
         raise ValueError(f"Unknown ticker {ticker!r}. Known: {known}.")
     assert security.id is not None
 
+    if security.asset_class not in RESEARCH_ASSET_CLASSES:
+        raise ValueError(
+            f"{security.ticker}: company research does not support {security.asset_class}; review manually."
+        )
     thesis = active_thesis(conn, security_id=security.id)
     if thesis is None:
         raise ValueError(
@@ -755,7 +781,20 @@ def research_security(
     if not questions:
         raise ValueError(f"The planner produced no questions for {security.ticker}.")
 
-    items = (source or get_evidence_source()).fetch(security.price_symbol, limit=8)
+    from research_evidence import (
+        gather_evidence,
+        validate_answers,
+        store_evidence,
+        save_assessment,
+    )
+
+    items = gather_evidence(
+        source or get_evidence_source(),
+        security.price_symbol,
+        questions,
+        today=today or date.today(),
+        evidence_file=evidence_file,
+    )
 
     body = [
         f"Holding: {security.ticker} ({security.name}).",
@@ -769,7 +808,7 @@ def research_security(
     body += [f"{index}. {question}" for index, question in enumerate(questions, 1)]
     body += ["", f"Evidence ({len(items)} items):"]
     body += (
-        [item.render() for item in items]
+        [f"E{i}: {item.render()}" for i, item in enumerate(items, 1)]
         if items
         else [
             "None retrieved. That is an absence of evidence, not evidence that "
@@ -790,8 +829,8 @@ def research_security(
     )
     payload = extract_json(result.text)
 
-    answers = [a for a in payload.get("answers", []) if isinstance(a, dict)]
-    stored, sourced = _store_evidence(
+    answers = validate_answers(payload.get("answers"), items, questions)
+    stored, sourced = store_evidence(
         conn, run_id=run_id, security_id=security.id, answers=answers
     )
 
@@ -806,12 +845,27 @@ def research_security(
         status = "unchanged"
 
     triggered = _string_list(payload.get("breaking_conditions_triggered"))
+    if any(condition not in thesis.what_would_break_it for condition in triggered):
+        raise ValueError(
+            "Analyst invented a breaking condition. Review the research output."
+        )
+    if status != "unchanged" and (
+        not sourced or any(a.get("validation_error") for a in answers)
+    ):
+        status = "unchanged"
+        triggered = ()
+        payload["status_reason"] = (
+            "Insufficient verified citations to assess a thesis change."
+        )
+    if status == "broken" and not triggered:
+        status = "deteriorating"
     new_questions = _string_list(payload.get("new_open_questions"))
-    proposed_summary = payload.get("proposed_summary")
+    proposed_summary = payload.get("proposed_summary") if sourced else None
     proposed_version = None
 
     if (
         status != "unchanged"
+        or new_questions
         or triggered
         or (isinstance(proposed_summary, str) and proposed_summary.strip())
     ):
@@ -831,6 +885,19 @@ def research_security(
         )
         proposed_version = proposed.version
 
+    save_assessment(
+        conn,
+        run_id=run_id,
+        security_id=security.id,
+        thesis_id=thesis.id,
+        status=status,
+        reason=str(payload.get("status_reason", "")),
+        questions=questions,
+        answers=answers,
+        triggered=triggered,
+        open_questions=new_questions,
+        items=items,
+    )
     return ResearchResult(
         ticker=security.ticker,
         run_id=run_id,
@@ -847,99 +914,17 @@ def research_security(
     )
 
 
-def _store_evidence(
-    conn, *, run_id: int, security_id: int, answers: list[dict]
-) -> tuple[int, int]:  # type: ignore[no-untyped-def]
-    """Persist an analyst's claims, keeping provenance honest.
-
-    A claim marked sourced without a URL and a date is demoted to background
-    rather than rejected. The claim may still be true and worth keeping; what
-    it may not do is carry a provenance it does not have. The database would
-    refuse it either way, so demoting here makes the reason legible instead of
-    surfacing as a constraint error.
-
-    Args:
-        conn: Open database connection.
-        run_id: Research run the claims belong to.
-        security_id: Holding they concern.
-        answers: Raw answer objects from the model.
-
-    Returns:
-        ``(claims stored, of which sourced)``.
-    """
-    from datetime import datetime, UTC
-
-    rows: list[tuple] = []
-    sourced = 0
-    now = datetime.now(UTC).isoformat()
-
-    for answer in answers:
-        claim = str(answer.get("answer", "")).strip()
-        if not claim:
-            continue
-        kind = str(answer.get("kind", "background")).strip().lower()
-        url = answer.get("source_url")
-        published = answer.get("published_date")
-        url = url.strip() if isinstance(url, str) and url.strip() else None
-        published = (
-            published.strip()[:10]
-            if isinstance(published, str) and published.strip()
-            else None
-        )
-
-        if kind == "sourced" and not (url and published):
-            logger.warning(
-                "Claim marked sourced without a URL and date; storing as "
-                "background: %s",
-                claim[:80],
-            )
-            kind = "background"
-        if kind not in {"sourced", "background"}:
-            kind = "background"
-        if kind == "background":
-            url = published = None
-        else:
-            sourced += 1
-
-        rows.append(
-            (
-                run_id,
-                security_id,
-                claim,
-                url,
-                str(answer.get("question", "")).strip() or None,
-                published,
-                kind,
-                now,
-            )
-        )
-
-    if rows:
-        with conn:
-            conn.executemany(
-                """
-                INSERT INTO evidence (
-                    research_run_id, security_id, claim, source_url,
-                    source_title, published_date, kind, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                rows,
-            )
-    return len(rows), sourced
-
-
-def _propose_thesis(  # type: ignore[no-untyped-def]
-    conn,
+def _propose_thesis(
+    conn: sqlite3.Connection,
     *,
-    thesis,
+    thesis: Thesis,
     status: str,
     summary: str,
     reason: str,
     new_questions: tuple[str, ...],
     run_id: int,
     llm_call_id: int | None,
-):
+) -> Thesis:
     """Record a proposed revision without adopting it.
 
     Deliberately does not go through ``save_thesis``: that supersedes the
@@ -974,7 +959,9 @@ def _propose_thesis(  # type: ignore[no-untyped-def]
                 thesis.conviction,
                 status,
                 json.dumps(list(thesis.key_assumptions)),
-                json.dumps(list(new_questions) or list(thesis.open_questions)),
+                json.dumps(
+                    list(dict.fromkeys((*thesis.open_questions, *new_questions)))
+                ),
                 json.dumps(list(thesis.what_would_break_it)),
                 thesis.id,
                 llm_call_id,
@@ -988,317 +975,3 @@ def _propose_thesis(  # type: ignore[no-untyped-def]
             "SELECT * FROM thesis WHERE id = ?", (cursor.lastrowid,)
         ).fetchone()
     )
-
-
-# ---------------------------------------------------------------------------
-# Portfolio decision
-# ---------------------------------------------------------------------------
-
-DECIDE_PROMPT_VERSION = "decide/2"
-
-_VALID_ACTIONS = {"BUY", "ADD", "HOLD", "TRIM", "EXIT", "REVIEW", "KEEP_CASH"}
-_VALID_URGENCY = {"low", "medium", "high"}
-
-
-def build_guardrail_context(conn, *, profile=None, account_id: int = 1):  # type: ignore[no-untyped-def]
-    """Assemble the portfolio state the deterministic checks run against."""
-    from config import DEFAULT_MONTHLY_CONTRIBUTION_EUR
-    from guardrails import GuardrailContext
-    from portfolio import cash_eur, holdings, total_value
-    from store_research import active_theses
-
-    rows = holdings(conn, account_id=account_id)
-    cash = cash_eur(conn, account_id=account_id)
-    total = total_value(rows, cash=cash)
-    theses = active_theses(conn)
-
-    weights: dict[str, float] = {}
-    values: dict[str, float] = {}
-    statuses: dict[str, str] = {}
-    for row in rows:
-        security = row.position.security
-        assert security.id is not None
-        if row.value_eur is not None and total:
-            weights[security.ticker] = row.value_eur / total * 100
-            values[security.ticker] = row.value_eur
-        thesis = theses.get(security.id)
-        statuses[security.ticker] = thesis.thesis_status if thesis else "unexamined"
-
-    return GuardrailContext(
-        total_value_eur=total,
-        cash_eur=cash,
-        monthly_contribution_eur=(
-            profile.monthly_contribution_eur
-            if profile is not None
-            else DEFAULT_MONTHLY_CONTRIBUTION_EUR
-        ),
-        weights_by_ticker=weights,
-        values_by_ticker=values,
-        thesis_status_by_ticker=statuses,
-    )
-
-
-def run_decision(
-    conn,  # type: ignore[no-untyped-def]
-    *,
-    profile=None,  # type: ignore[no-untyped-def]
-    account_id: int = 1,
-    today: date | None = None,
-) -> tuple[int, list[dict], str]:
-    """Propose recommendations, then enforce the deterministic rules on them.
-
-    The model proposes; :mod:`guardrails` decides. A proposal that breaches a
-    position cap, a trade limit or the owner's own sell discipline is refused
-    or reduced here rather than argued with in a prompt, which is the reason a
-    model is allowed near this decision at all.
-
-    Every surviving recommendation records the price and FX rate at the time.
-    That is the forward-tracking the evaluation rests on and it cannot be
-    reconstructed later.
-
-    Args:
-        conn: Open database connection.
-        profile: Profile supplying the contribution figure.
-        account_id: Account to decide for.
-        today: Reference date, for tests.
-
-    Returns:
-        ``(research run id, stored recommendations, summary)``.
-
-    Raises:
-        ValueError: If there is nothing to decide on, or output is unusable.
-    """
-    from config import RECOMMENDATION_EXPIRY_DAYS
-    from guardrails import check_proposal
-    from store import latest_prices, load_securities
-    from store_research import create_research_run
-
-    inputs = triage_inputs(
-        conn, account_id=account_id, today=today, include_sell_eligibility=True
-    )
-    if not inputs:
-        raise ValueError("No holdings to decide on.")
-
-    context = build_guardrail_context(conn, profile=profile, account_id=account_id)
-    run_date = (today or date.today()).isoformat()
-    run_id = create_research_run(
-        conn, run_date=run_date, kind="deep", note="Portfolio decision"
-    )
-
-    message = "\n\n".join(
-        [
-            f"Portfolio decision for {run_date}.",
-            f"Total EUR {context.total_value_eur:,.2f} · cash EUR "
-            f"{context.cash_eur:,.2f} · new money this month EUR "
-            f"{context.monthly_contribution_eur:,.2f}.",
-            "\n\n".join(entry.render() for entry in inputs),
-        ]
-    )
-
-    result = call_llm(
-        conn,
-        feature="decision",
-        messages=[
-            {"role": "system", "content": load_prompt("decide.md")},
-            {"role": "user", "content": message},
-        ],
-        prompt_version=DECIDE_PROMPT_VERSION,
-        max_tokens=DECISION_MAX_TOKENS,
-    )
-    payload = extract_json(result.text)
-
-    securities = load_securities(conn)
-    prices = latest_prices(conn)
-    expires = (
-        (today or date.today()) + timedelta(days=RECOMMENDATION_EXPIRY_DAYS)
-    ).isoformat()
-
-    # Retire anything an earlier run left unanswered. Re-running is the normal
-    # repair when a stage fails, and without this the owner receives the same
-    # recommendation once per attempt.
-    with conn:
-        conn.execute(
-            """
-            UPDATE recommendation
-            SET superseded_by_run_id = ?
-            WHERE superseded_by_run_id IS NULL
-              AND research_run_id IS NOT ?
-              AND NOT EXISTS (
-                  SELECT 1 FROM user_decision d
-                  WHERE d.recommendation_id = recommendation.id
-              )
-            """,
-            (run_id, run_id),
-        )
-
-    stored: list[dict] = []
-    allocated = 0.0
-
-    for raw in payload.get("recommendations", []):
-        if not isinstance(raw, dict):
-            continue
-        action = str(raw.get("action", "")).strip().upper()
-        if action not in _VALID_ACTIONS:
-            logger.warning("Discarding proposal with unknown action %r", action)
-            continue
-        # HOLD carries no instruction and no consequence; storing one per
-        # untouched holding would bury the few rows that mean something.
-        if action == "HOLD":
-            continue
-
-        ticker = raw.get("ticker")
-        ticker = str(ticker).strip().upper() if ticker else None
-        if ticker and ticker not in securities:
-            logger.warning("Discarding proposal for unknown ticker %r", ticker)
-            continue
-
-        amount = raw.get("amount_eur")
-        try:
-            amount = float(amount) if amount is not None else None
-        except (TypeError, ValueError):
-            amount = None
-
-        verdict = check_proposal(
-            action=action,
-            ticker=ticker,
-            amount_eur=amount,
-            context=replace(context, allocated_this_run_eur=allocated),
-        )
-        if verdict.refused:
-            logger.info("Guardrail refused %s %s: %s", action, ticker, verdict.refusal)
-            stored.append(
-                {
-                    "id": None,
-                    "ticker": ticker,
-                    "action": action,
-                    "amount_eur": None,
-                    "refused": True,
-                    "refusal": verdict.refusal,
-                    "rationale": str(raw.get("rationale", "")).strip(),
-                    "urgency": "low",
-                    "adjustments": (),
-                }
-            )
-            continue
-
-        if verdict.amount_eur and verdict.action in {"BUY", "ADD"}:
-            allocated += verdict.amount_eur
-
-        urgency = str(raw.get("urgency", "low")).strip().lower()
-        security = securities.get(ticker) if ticker else None
-        price_row = prices.get(security.id) if security and security.id else None
-
-        recommendation_id = _store_recommendation(
-            conn,
-            run_date=run_date,
-            run_id=run_id,
-            security=security,
-            action=verdict.action,
-            amount_eur=verdict.amount_eur,
-            rationale=str(raw.get("rationale", "")).strip() or "no rationale given",
-            urgency=urgency if urgency in _VALID_URGENCY else "low",
-            price_row=price_row,
-            weight_pct=context.weights_by_ticker.get(ticker) if ticker else None,
-            expires_on=expires,
-            verdict=verdict,
-            llm_call_id=result.llm_call_id,
-        )
-        stored.append(
-            {
-                "id": recommendation_id,
-                "ticker": ticker,
-                "action": verdict.action,
-                "amount_eur": verdict.amount_eur,
-                "refused": False,
-                "refusal": None,
-                "rationale": str(raw.get("rationale", "")).strip(),
-                "urgency": urgency if urgency in _VALID_URGENCY else "low",
-                "adjustments": verdict.adjustments,
-            }
-        )
-
-    return run_id, stored, str(payload.get("summary", "")).strip()
-
-
-def _store_recommendation(  # type: ignore[no-untyped-def]
-    conn,
-    *,
-    run_date: str,
-    run_id: int,
-    security,
-    action: str,
-    amount_eur: float | None,
-    rationale: str,
-    urgency: str,
-    price_row,
-    weight_pct: float | None,
-    expires_on: str,
-    verdict,
-    llm_call_id: int | None,
-) -> int:
-    """Persist one recommendation with the price that stood behind it."""
-    from datetime import UTC, datetime
-
-    from store_research import active_thesis
-
-    fx = None
-    value_eur = None
-    price_native = price_row["close_native"] if price_row is not None else None
-    if price_row is not None:
-        row = conn.execute(
-            """
-            SELECT rate FROM fx_rates WHERE base = ? AND quote = 'EUR'
-            ORDER BY rate_date DESC LIMIT 1
-            """,
-            (price_row["currency"],),
-        ).fetchone()
-        fx = (
-            float(row["rate"])
-            if row
-            else (1.0 if price_row["currency"] == "EUR" else None)
-        )
-        if fx is not None and price_native is not None:
-            value_eur = price_native * fx
-
-    thesis = (
-        active_thesis(conn, security_id=security.id)
-        if security is not None and security.id is not None
-        else None
-    )
-
-    with conn:
-        cursor = conn.execute(
-            """
-            INSERT INTO recommendation (
-                run_date, research_run_id, security_id, action, amount_eur,
-                rationale, urgency, thesis_id, price_native, fx_rate, value_eur,
-                weight_pct, expires_on, guardrails, adjusted, llm_call_id, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                run_date,
-                run_id,
-                security.id if security is not None else None,
-                action,
-                amount_eur,
-                rationale,
-                urgency,
-                thesis.id if thesis else None,
-                price_native,
-                fx,
-                value_eur,
-                weight_pct,
-                expires_on,
-                json.dumps(
-                    {
-                        "checks": list(verdict.checks),
-                        "adjustments": list(verdict.adjustments),
-                    }
-                ),
-                int(verdict.adjusted),
-                llm_call_id,
-                datetime.now(UTC).isoformat(),
-            ),
-        )
-    return int(cursor.lastrowid)

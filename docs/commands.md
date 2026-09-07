@@ -93,9 +93,7 @@ Each profile owns personal markdown files under
 `$SKARBIE_HOME/profiles/<name>/context/`. `profile add` writes templates;
 `context` reports which are still templates and which you have written.
 
-Nothing reads them yet — the research pipeline will, from Phase 4. They exist
-now so `strategy.md` can be filled in over time rather than in a rush when the
-pipeline lands. An unedited template counts as unwritten, because placeholder
+Thesis bootstrap reads written context files to restate the owner’s reasons. An unedited template counts as unwritten, because placeholder
 prose read as intent is worse than no file at all.
 
 ## Market data
@@ -231,22 +229,24 @@ rules in `src/guardrails.py` decide, in code, afterwards. That is the reason a
 model is allowed near this decision at all — a prompt asking it to respect a
 position limit is a request, and this is not.
 
-Three kinds of rule are enforced:
+The deterministic checks enforce:
 
-- **Position caps.** An ADD that would push a holding past the weight limit is
-  reduced to the largest amount that stays under it, solved properly rather
-  than approximated — buying raises both the holding and the portfolio total.
-- **Capital.** Single-trade limit, weekly allocation, and cash plus the
-  planned contribution. The allocation is consumed across proposals within one
-  run, so three recommendations cannot each spend the same money.
-- **Sell discipline, taken from your own strategy file.** EXIT and TRIM require
-  a thesis that has actually deteriorated or broken, or a position that has
-  grown too large. A proposal to sell because a price fell is refused, not
-  argued with. An EXIT on an oversized position whose thesis is intact is
-  reduced to a TRIM, because being too large justifies trimming and never
-  closing.
+- **Funded cash.** Planned monthly contributions are informational. Approved
+  buys reserve cash until execution or rejection; current-week executions and
+  outstanding approvals consume the weekly allocation across reruns.
+- **Position caps.** Buying transfers cash into securities without increasing
+  total wealth. The full batch is checked cumulatively. Duplicate or conflicting
+  ticker proposals invalidate a batch before earlier advice is retired.
+- **Sell discipline and sizing.** Sales require a priced holding. TRIM is limited
+  by holding value and the single-trade cap. An EXIT requires a broken thesis;
+  deterioration reduces it to TRIM. An intact oversized position may only be
+  trimmed back toward the position cap. EXIT records the full holding value.
+- **Evidence and freshness.** Missing/stale prices or FX block trades. BUY, ADD
+  and EXIT require a recent assessment with sufficient cited coverage. Failed
+  or deferred weekly stages block trade proposals while still allowing REVIEW.
+  Citation presence is not a calibrated measure of investment quality.
 
-Refusals are shown rather than hidden. "The model wanted to sell and the rules
+Refusals are stored and shown in the weekly report. "The model wanted to sell and the rules
 would not let it" is a different event from "the model recommended nothing",
 and the two must not look alike.
 
@@ -290,9 +290,13 @@ on one holding does not stop the others. A failed decision still leaves a
 report to send. Abandoning the run on the first fault turns a partial answer
 into no answer, and the next attempt is seven days away.
 
-Deep research is capped, four by default. It is the expensive stage and the
-slow one — roughly eight minutes a holding — and anything triage selected
-beyond the cap waits a week rather than making the run enormous.
+`RESEARCH_MAX_PASSES` caps deep passes; `--max-research` overrides it for one
+cycle. `RESEARCH_ROTATION_SLOTS` reserves capacity for holdings older than
+`RESEARCH_OVERDUE_DAYS`, ordered by oldest completed assessment. Remaining slots
+follow triage priority; unused capacity checks additional overdue holdings.
+`main.py process` prints the effective limits. Deferred
+selections and unsupported instruments are reported explicitly. Company research
+supports `RESEARCH_ASSET_CLASSES`; other asset classes require manual review.
 
 Scheduled for Sunday evening: the week's news has landed, markets are shut so
 nothing moves mid-run, and there is a day before Monday's open to think about
@@ -339,14 +343,16 @@ to avoid.
 
 ## The weekly report
 
-`report` renders the week: value, anything needing a decision, and what is
-standing rather than new. `--telegram` sends it, with Approve / Reject / Later
-buttons on anything actionable.
+`report` renders review health, valuation coverage, pending actions, thesis
+proposals, blocked trade proposals and approved actions awaiting execution.
+`--telegram` sends action-specific buttons: acknowledge a review question,
+approve a trade, reject, snooze, view evidence or review the thesis.
 
-It is written to be read on a phone by someone learning, which shapes it: short,
-jargon expanded, and plain about a quiet week. A report that manufactures
-content to look useful trains the reader to stop opening it, so when nothing
-needs doing it says exactly that and explains why that is the normal outcome.
+A completed review with no pending actions is different from no review or a
+failed cycle. Stage outcomes persist, so `/review` continues to show failures.
+Missing holding prices suppress aggregate return; stale prices and FX are named.
+The first report after an upgrade has no verified cycle history until `weekly`
+runs. Opening an existing database applies the workflow migration automatically.
 
 Holdings with no real reason behind them are reported separately, under
 "standing, not new". They are not this week's finding and never will be, and
@@ -398,27 +404,43 @@ doing nothing.
 
 ## Evidence and provenance
 
-Two kinds of claim reach an analysis and they are not interchangeable.
+Every finding is `sourced`, `background` or `unanswered`. An unanswered question
+stays unanswered in storage. A sourced answer must reference a supplied evidence
+ID and copy an exact supporting excerpt. URL and date come from that item, not
+from model output. Unknown IDs and invented excerpts become unanswered findings.
+Membership and quote checks do not prove semantic support; inspect the source.
 
-A **sourced** claim is anchored to something published and carries a URL and a
-publication date. The database refuses to store one without both, so this is a
-constraint rather than an instruction a prompt could ignore. Anything
-time-sensitive has to be this kind — what a company just reported, how a market
-moved, what was announced last week — because that is precisely where a model's
-recollection is least reliable and most confident.
+Evidence packages are stored with a content hash alongside completed assessments,
+including unchanged assessments and open questions. These dated assessments feed
+the decision stage separately from the active thesis. A proposed thesis is never
+adopted automatically.
 
-A **background** claim is the model's own knowledge: how an industry works,
-what happened years ago, what a pattern usually implies. That is genuinely
-useful and is allowed. What it may not do is masquerade as a current fact.
-Where a stage relies on it, the output says so and tags the claim `unverified`,
-so a reader can see the trigger was recollection rather than a dated source.
+News aggregation is the default. For question-specific primary material, put a
+JSON list in `context/evidence.json` under your profile, or pass
+`main.py research TEST --evidence-file /path/to/evidence.json`. Local excerpts
+matching the symbol and question are considered before news. `questions: []`
+applies an excerpt to any question for that symbol. Use the provider symbol.
 
-The default source is free news aggregation needing no key. It supplies
-provenance but not quality — it carries retail commentary rather than filings,
-so an item establishes that something was said, not that it is true. A paid
-search API costs roughly ten dollars a year at this portfolio's usage and is a
-plausible upgrade, but adding a credential before the free source has been
-shown inadequate is a cost with no measured benefit.
+```json
+[
+  {
+    "symbol": "TEST",
+    "questions": ["What happened to operating margin?"],
+    "title": "Synthetic quarterly release",
+    "url": "https://example.com/investors/quarterly-release",
+    "published": "2026-09-01",
+    "publisher": "Synthetic issuer",
+    "excerpt": "Operating margin was 12% for the quarter."
+  }
+]
+```
+
+These are supplied excerpts; the app does not automatically fetch filings or
+verify their transcription. Keep personal research under `SKARBIE_HOME`.
+`EVIDENCE_ITEMS_PER_SECURITY` limits package size and `EVIDENCE_MAX_AGE_DAYS`
+excludes old material. `main.py process` prints both. Future-dated and malformed
+items are excluded. Unsupported instruments need manual review rather than an
+assumption that a company analyst can handle them.
 
 ## Model routing
 
@@ -507,3 +529,42 @@ real trades exist cannot double the book.
 `init` refuses to write when the derived total drifts from the snapshot's
 `reported_total_eur` by more than the tolerance in `src/config.py`. Omitting
 `reported_total_eur` skips that check and says so.
+
+
+## Thesis review and execution
+
+```bash
+uv run python main.py thesis show TEST
+uv run python main.py thesis accept TEST 2
+uv run python main.py thesis reject TEST 3
+uv run python main.py cash 25 --date 2026-09-07 --note "Actual deposit"
+uv run python main.py decide 12 approve
+uv run python main.py executed 12 --quantity 0.5 --amount 20 --fee 0.10 --date 2026-09-07
+uv run python main.py executed 13 --not-executed --note "Changed my mind"
+uv run python main.py process
+```
+
+Figures and IDs above are illustrative. `thesis show` labels the active version
+and pending revisions separately. Acceptance refuses a proposal based on a
+superseded thesis. Telegram equivalents are `/thesis TEST`, `/accept TEST 2`
+and `/reject TEST 3`; `/evidence TEST` opens the latest findings and excerpts.
+
+`cash` records an actual positive EUR contribution, never an expected deposit.
+`decide ID approve` rechecks trade constraints. A repeated identical decision is
+idempotent. Reject an approved action to release its reserved cash. An approval
+remains reserved after expiry until explicitly resolved.
+
+`decide ID later` snoozes until `SNOOZE_DAYS`, bounded by the recommendation's
+expiry. It returns in `/pending` when due; the daemon sends a reminder on its next
+scheduler check. Expired or replaced recommendations are not reminded.
+
+`executed` records one actual fill per approved trade recommendation and links
+it to the ledger atomically. Amount is EUR consideration excluding the fee.
+Oversells, duplicate execution, nonfinite values and invalid dates are refused.
+A recorded actual fill may differ from the proposal; it describes what happened.
+`--not-executed` closes an approved action without adding a trade. Partial fills
+across multiple executions and broker imports are not supported.
+
+`process` prints observed coverage, unanswered questions, verified/rejected
+citations, decision reversals, recorded model cost and effective research limits.
+It measures process, not investment skill. Unknown model costs remain unknown.

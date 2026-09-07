@@ -53,6 +53,16 @@ def cmd_thesis(args: argparse.Namespace) -> None:
     profile, db_path = resolve_cli_profile(args.profile, db=args.db)
     conn = open_existing_db(db_path)
 
+    if args.thesis_cmd in {"accept", "reject"}:
+        from store_workflow import review_thesis
+
+        security = _resolve_security(conn, args.ticker)
+        review_thesis(conn, security.id, args.version, args.thesis_cmd == "accept")
+        console.print(
+            f"{'Accepted' if args.thesis_cmd == 'accept' else 'Rejected'} {security.ticker} v{args.version}. Run main.py recommend to reconsider actions."
+        )
+        return
+
     if args.thesis_cmd == "bootstrap":
         from research import bootstrap_theses
 
@@ -112,7 +122,26 @@ def cmd_thesis(args: argparse.Namespace) -> None:
             )
             return
 
-        current = versions[0]
+        current = active_thesis(conn, security_id=security.id)
+        for proposal in versions:
+            if proposal.status == "proposed":
+                console.print(
+                    Panel(
+                        f"Active: {current.summary if current else 'none'}\n"
+                        f"Proposed: {proposal.summary}\n"
+                        f"Assessment: {proposal.thesis_status}\nWhy: {proposal.rationale}\n"
+                        f"Open questions: {'; '.join(proposal.open_questions)}\n"
+                        f"main.py thesis accept {security.ticker} {proposal.version}\n"
+                        f"main.py thesis reject {security.ticker} {proposal.version}",
+                        title=f"PROPOSED v{proposal.version} — not adopted",
+                        border_style="yellow",
+                    )
+                )
+        if current is None:
+            console.print(
+                "No active thesis. Review a proposal or bootstrap from your notes."
+            )
+            return
         console.print(
             Panel(
                 current.summary,

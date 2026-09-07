@@ -54,7 +54,7 @@ def cmd_research(args: argparse.Namespace) -> None:
     from research import research_security
 
     console = Console()
-    _, db_path = resolve_cli_profile(args.profile, db=args.db)
+    profile, db_path = resolve_cli_profile(args.profile, db=args.db)
     conn = open_existing_db(db_path)
 
     if args.ticker:
@@ -75,7 +75,13 @@ def cmd_research(args: argparse.Namespace) -> None:
     for ticker, trigger in targets:
         console.print(f"[bold]{ticker}[/bold] — {trigger}")
         try:
-            result = research_security(conn, ticker=ticker, trigger=trigger)
+            result = research_security(
+                conn,
+                ticker=ticker,
+                trigger=trigger,
+                evidence_file=getattr(args, "evidence_file", None)
+                or (profile.context / "evidence.json" if profile else None),
+            )
         except ValueError as exc:
             console.print(f"  [red]{exc}[/red]\n")
             continue
@@ -99,6 +105,12 @@ def cmd_research(args: argparse.Namespace) -> None:
                 f"[{colour}]{kind}[/{colour}]",
             )
         console.print(table)
+        for answer in result.answers:
+            if answer.get("source_url"):
+                console.print(
+                    f"  Source: {answer['source_url']} ({answer['published_date']})"
+                )
+                console.print(f"  Excerpt: {answer.get('supporting_quote', '')}")
 
         if result.triggered:
             console.print(

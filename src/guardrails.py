@@ -16,7 +16,7 @@ Public API:
     GuardrailContext  -- portfolio state the checks run against
     Verdict           -- what a check concluded about one proposal
     check_proposal    -- apply every rule to one proposed recommendation
-    available_capital -- cash plus the planning contribution
+    available_capital -- funded cash less outstanding approvals
 
 Example:
     from guardrails import check_proposal
@@ -29,6 +29,7 @@ Example:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 
 from config import (
@@ -63,16 +64,15 @@ class GuardrailContext:
     values_by_ticker: dict[str, float] = field(default_factory=dict)
     thesis_status_by_ticker: dict[str, str] = field(default_factory=dict)
     allocated_this_run_eur: float = 0.0
+    reserved_cash_eur: float = 0.0
+    weekly_committed_eur: float = 0.0
+    blocked_reason: str | None = None
+    pending_tickers: frozenset[str] = frozenset()
 
     @property
     def available_capital_eur(self) -> float:
-        """Cash plus the planning contribution.
-
-        The contribution is included because without it BUY and ADD are
-        unreachable — this portfolio holds almost no cash — and a decision
-        layer that can only ever say HOLD or SELL is half a system.
-        """
-        return self.cash_eur + self.monthly_contribution_eur
+        """Cash actually funded, less approved trades still awaiting execution."""
+        return max(0.0, self.cash_eur - self.reserved_cash_eur)
 
 
 @dataclass(frozen=True)
@@ -114,6 +114,53 @@ def check_proposal(
     checks: list[str] = []
     adjustments: list[str] = []
     amount = amount_eur
+    if action in BUY_ACTIONS | SELL_ACTIONS:
+        if ticker in context.pending_tickers:
+            return Verdict(
+                action,
+                None,
+                refused=True,
+                refusal="Approved action still awaiting execution; resolve it first.",
+            )
+        if context.blocked_reason:
+            return Verdict(action, None, refused=True, refusal=context.blocked_reason)
+        if not ticker:
+            return Verdict(
+                action, None, refused=True, refusal="Trade requires a ticker."
+            )
+        if amount is not None and (not math.isfinite(amount) or amount <= 0):
+            return Verdict(
+                action,
+                None,
+                refused=True,
+                refusal="Trade amount must be finite and positive.",
+            )
+        if action == "ADD" and ticker not in context.values_by_ticker:
+            return Verdict(
+                action, None, refused=True, refusal="ADD requires a priced holding."
+            )
+        if action == "BUY" and ticker in context.values_by_ticker:
+            return Verdict(
+                action, None, refused=True, refusal="Use ADD for an existing holding."
+            )
+        if action in SELL_ACTIONS:
+            held = context.values_by_ticker.get(ticker)
+            if held is None or held <= 0:
+                return Verdict(
+                    action,
+                    None,
+                    refused=True,
+                    refusal="Sale requires a priced holding.",
+                )
+            if amount is None:
+                amount = held if action == "EXIT" else min(held, MAX_NEW_TRADE_EUR)
+            if action == "TRIM" and amount > min(held, MAX_NEW_TRADE_EUR):
+                amount = min(held, MAX_NEW_TRADE_EUR)
+                adjustments.append(
+                    "Sale reduced to holding value and single-trade limit."
+                )
+            if action == "EXIT":
+                amount = held
 
     if action in SELL_ACTIONS and ticker:
         status = context.thesis_status_by_ticker.get(ticker, "unexamined")
@@ -136,16 +183,43 @@ def check_proposal(
                 ),
                 checks=tuple(checks),
             )
+        if action == "EXIT" and status == "deteriorating":
+            action = "TRIM"
+            amount = min(amount, MAX_NEW_TRADE_EUR)
+            adjustments.append(
+                "EXIT reduced to TRIM: thesis deteriorating, not broken."
+            )
         if status not in _THESIS_SUPPORTS_SELLING and oversized and action == "EXIT":
             adjustments.append(
                 "EXIT reduced to TRIM: the position is oversized, which justifies "
                 "trimming for size, but the thesis has not broken."
             )
             action = "TRIM"
+            amount = min(
+                amount,
+                MAX_NEW_TRADE_EUR,
+                max(
+                    0,
+                    context.values_by_ticker[ticker]
+                    - context.total_value_eur * MAX_POSITION_WEIGHT_PCT / 100,
+                ),
+            )
+        if oversized and status not in _THESIS_SUPPORTS_SELLING:
+            target = (
+                context.values_by_ticker[ticker]
+                - context.total_value_eur * MAX_POSITION_WEIGHT_PCT / 100
+            )
+            if amount > target:
+                amount = target
+                adjustments.append("Trim limited to the amount above the weight cap.")
 
     if action in BUY_ACTIONS:
         available = context.available_capital_eur - context.allocated_this_run_eur
-        weekly_left = MAX_WEEKLY_ALLOCATION_EUR - context.allocated_this_run_eur
+        weekly_left = (
+            MAX_WEEKLY_ALLOCATION_EUR
+            - context.weekly_committed_eur
+            - context.allocated_this_run_eur
+        )
         checks.append(f"EUR {available:.2f} capital left this run")
         checks.append(f"EUR {weekly_left:.2f} of the weekly allocation left")
 
@@ -212,29 +286,15 @@ def check_proposal(
 
 
 def _headroom_to_cap(ticker: str, context: GuardrailContext) -> float | None:
-    """Return the largest addition that keeps *ticker* under the weight cap.
-
-    Solved rather than approximated: adding to a position raises both the
-    holding and the portfolio total, so the naive "cap percentage of today's
-    total, minus what is held" overstates the room available.
-
-    Args:
-        ticker: Holding being added to.
-        context: Portfolio state.
-
-    Returns:
-        The headroom in EUR, or None when it cannot be computed.
-    """
-    held = context.values_by_ticker.get(ticker)
+    """Return headroom when buying transfers existing cash into a holding."""
     total = context.total_value_eur
-    if held is None or total <= 0:
-        return None
-    cap = MAX_POSITION_WEIGHT_PCT / 100
-    if cap >= 1:
-        return None
-    # (held + x) / (total + x) = cap  ->  x = (cap*total - held) / (1 - cap)
-    headroom = (cap * total - held) / (1 - cap)
-    return max(headroom, 0.0)
+    if total <= 0:
+        return 0.0
+    return max(
+        0.0,
+        MAX_POSITION_WEIGHT_PCT / 100 * total
+        - context.values_by_ticker.get(ticker, 0.0),
+    )
 
 
 def is_large_position(ticker: str, context: GuardrailContext) -> bool:

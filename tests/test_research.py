@@ -203,11 +203,13 @@ class TestProvenance:
 
     def _claim(self, **kw) -> dict:
         base = {
-            "question": "q",
+            "question": "Did anything change?",
             "answer": "a claim",
             "kind": "sourced",
             "source_url": "https://e.com/a",
             "published_date": "2026-09-05",
+            "source_id": "E1",
+            "supporting_quote": "a claim",
         }
         base.update(kw)
         return base
@@ -216,13 +218,23 @@ class TestProvenance:
         self, seeded: sqlite3.Connection, fake_llm
     ) -> None:
         fake_llm(_plan(), _analysis(answers=[self._claim()]))
-        result = research_security(seeded, ticker="AAA", source=_Source())
+        result = research_security(
+            seeded,
+            ticker="AAA",
+            source=_Source(
+                [
+                    EvidenceItem(
+                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                    )
+                ]
+            ),
+        )
         assert (result.evidence_count, result.sourced_count) == (1, 1)
         row = seeded.execute("SELECT kind, source_url FROM evidence").fetchone()
         assert row["kind"] == "sourced"
         assert row["source_url"] == "https://e.com/a"
 
-    def test_sourced_without_url_is_demoted_not_dropped(
+    def test_citation_not_in_package_is_unanswered(
         self, seeded: sqlite3.Connection, fake_llm
     ) -> None:
         # The claim may still be true; what it may not do is carry provenance
@@ -232,7 +244,7 @@ class TestProvenance:
         assert (result.evidence_count, result.sourced_count) == (1, 0)
         assert (
             seeded.execute("SELECT kind FROM evidence").fetchone()["kind"]
-            == "background"
+            == "unanswered"
         )
 
     def test_sourced_without_date_is_demoted(
@@ -242,15 +254,12 @@ class TestProvenance:
         result = research_security(seeded, ticker="AAA", source=_Source())
         assert result.sourced_count == 0
 
-    def test_invented_kind_becomes_background(
+    def test_invented_kind_is_rejected(
         self, seeded: sqlite3.Connection, fake_llm
     ) -> None:
         fake_llm(_plan(), _analysis(answers=[self._claim(kind="vibes")]))
-        research_security(seeded, ticker="AAA", source=_Source())
-        assert (
-            seeded.execute("SELECT kind FROM evidence").fetchone()["kind"]
-            == "background"
-        )
+        with pytest.raises(ValueError, match="kind"):
+            research_security(seeded, ticker="AAA", source=_Source())
 
     def test_background_claim_keeps_no_source(
         self, seeded: sqlite3.Connection, fake_llm
@@ -262,12 +271,12 @@ class TestProvenance:
         ).fetchone()
         assert row["source_url"] is None and row["published_date"] is None
 
-    def test_empty_claims_are_skipped(
+    def test_empty_claims_are_rejected(
         self, seeded: sqlite3.Connection, fake_llm
     ) -> None:
         fake_llm(_plan(), _analysis(answers=[self._claim(answer="  ")]))
-        result = research_security(seeded, ticker="AAA", source=_Source())
-        assert result.evidence_count == 0
+        with pytest.raises(ValueError, match="blank"):
+            research_security(seeded, ticker="AAA", source=_Source())
 
 
 class TestProposalOnly:
@@ -277,7 +286,17 @@ class TestProposalOnly:
         self, seeded: sqlite3.Connection, fake_llm
     ) -> None:
         fake_llm(_plan(), _analysis())
-        result = research_security(seeded, ticker="AAA", source=_Source())
+        result = research_security(
+            seeded,
+            ticker="AAA",
+            source=_Source(
+                [
+                    EvidenceItem(
+                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                    )
+                ]
+            ),
+        )
         assert result.proposed_version is None
         assert len(thesis_history(seeded, security_id=1)) == 1
 
@@ -287,11 +306,22 @@ class TestProposalOnly:
         fake_llm(
             _plan(),
             _analysis(
+                answers=[TestProvenance()._claim()],
                 thesis_status="broken",
-                breaking_conditions_triggered=["they stopped making it"],
+                breaking_conditions_triggered=["they stop making it"],
             ),
         )
-        result = research_security(seeded, ticker="AAA", source=_Source())
+        result = research_security(
+            seeded,
+            ticker="AAA",
+            source=_Source(
+                [
+                    EvidenceItem(
+                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                    )
+                ]
+            ),
+        )
         assert result.proposed_version == 2
 
     def test_the_active_thesis_is_untouched(
@@ -300,8 +330,21 @@ class TestProposalOnly:
         # The invariant the whole design rests on: a pipeline able to rewrite
         # the thesis would be editing the baseline it is measured against.
         before = active_thesis(seeded, security_id=1)
-        fake_llm(_plan(), _analysis(thesis_status="broken"))
-        research_security(seeded, ticker="AAA", source=_Source())
+        fake_llm(
+            _plan(),
+            _analysis(answers=[TestProvenance()._claim()], thesis_status="broken"),
+        )
+        research_security(
+            seeded,
+            ticker="AAA",
+            source=_Source(
+                [
+                    EvidenceItem(
+                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                    )
+                ]
+            ),
+        )
         after = active_thesis(seeded, security_id=1)
         assert after.id == before.id
         assert after.version == before.version
@@ -311,8 +354,23 @@ class TestProposalOnly:
     def test_proposal_is_marked_proposed_and_sourced_to_research(
         self, seeded: sqlite3.Connection, fake_llm
     ) -> None:
-        fake_llm(_plan(), _analysis(thesis_status="deteriorating"))
-        research_security(seeded, ticker="AAA", source=_Source())
+        fake_llm(
+            _plan(),
+            _analysis(
+                answers=[TestProvenance()._claim()], thesis_status="deteriorating"
+            ),
+        )
+        research_security(
+            seeded,
+            ticker="AAA",
+            source=_Source(
+                [
+                    EvidenceItem(
+                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                    )
+                ]
+            ),
+        )
         row = seeded.execute(
             "SELECT status, source, thesis_status FROM thesis WHERE version = 2"
         ).fetchone()
@@ -323,8 +381,23 @@ class TestProposalOnly:
     def test_proposal_records_which_run_made_it(
         self, seeded: sqlite3.Connection, fake_llm
     ) -> None:
-        fake_llm(_plan(), _analysis(thesis_status="deteriorating"))
-        result = research_security(seeded, ticker="AAA", source=_Source())
+        fake_llm(
+            _plan(),
+            _analysis(
+                answers=[TestProvenance()._claim()], thesis_status="deteriorating"
+            ),
+        )
+        result = research_security(
+            seeded,
+            ticker="AAA",
+            source=_Source(
+                [
+                    EvidenceItem(
+                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                    )
+                ]
+            ),
+        )
         row = seeded.execute(
             "SELECT research_run_id FROM thesis WHERE version = 2"
         ).fetchone()
@@ -333,8 +406,24 @@ class TestProposalOnly:
     def test_a_revised_summary_alone_proposes(
         self, seeded: sqlite3.Connection, fake_llm
     ) -> None:
-        fake_llm(_plan(), _analysis(proposed_summary="A different reason entirely"))
-        result = research_security(seeded, ticker="AAA", source=_Source())
+        fake_llm(
+            _plan(),
+            _analysis(
+                answers=[TestProvenance()._claim()],
+                proposed_summary="A different reason entirely",
+            ),
+        )
+        result = research_security(
+            seeded,
+            ticker="AAA",
+            source=_Source(
+                [
+                    EvidenceItem(
+                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                    )
+                ]
+            ),
+        )
         assert result.proposed_version == 2
         row = seeded.execute("SELECT summary FROM thesis WHERE version = 2").fetchone()
         assert row["summary"] == "A different reason entirely"
@@ -342,7 +431,20 @@ class TestProposalOnly:
     def test_rewording_is_not_required_to_propose(
         self, seeded: sqlite3.Connection, fake_llm
     ) -> None:
-        fake_llm(_plan(), _analysis(thesis_status="improving"))
-        research_security(seeded, ticker="AAA", source=_Source())
+        fake_llm(
+            _plan(),
+            _analysis(answers=[TestProvenance()._claim()], thesis_status="improving"),
+        )
+        research_security(
+            seeded,
+            ticker="AAA",
+            source=_Source(
+                [
+                    EvidenceItem(
+                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                    )
+                ]
+            ),
+        )
         row = seeded.execute("SELECT summary FROM thesis WHERE version = 2").fetchone()
         assert row["summary"] == "I like the product"

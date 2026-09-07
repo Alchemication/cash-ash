@@ -33,7 +33,7 @@ def cmd_recommend(args: argparse.Namespace) -> None:
     from rich.panel import Panel
     from rich.table import Table
 
-    from research import build_guardrail_context, run_decision
+    from decisions import build_guardrail_context, run_decision
 
     console = Console()
     profile, db_path = resolve_cli_profile(args.profile, db=args.db)
@@ -42,8 +42,8 @@ def cmd_recommend(args: argparse.Namespace) -> None:
 
     console.print(
         f"Capital available: [bold]EUR {context.available_capital_eur:,.2f}[/bold] "
-        f"({context.cash_eur:,.2f} cash + {context.monthly_contribution_eur:,.2f} "
-        f"planned)\n"
+        f"({context.cash_eur:,.2f} cash; {context.reserved_cash_eur:,.2f} reserved). "
+        f"Future monthly plan: EUR {context.monthly_contribution_eur:,.2f}; not funded.\n"
     )
 
     run_id, recommendations, summary = run_decision(conn, profile=profile)
@@ -53,11 +53,11 @@ def cmd_recommend(args: argparse.Namespace) -> None:
 
     if not live:
         console.print(
-            "[green]Nothing to do this week.[/green] That is the system working, "
-            "not failing."
+            "No actionable recommendations. Inspect any refusals and review health below."
         )
     else:
         table = Table(title=f"Recommendations — run {run_id}")
+        table.add_column("ID", justify="right")
         table.add_column("Action", style="bold")
         table.add_column("Ticker")
         table.add_column("Amount", justify="right")
@@ -71,6 +71,7 @@ def cmd_recommend(args: argparse.Namespace) -> None:
                 else "—"
             )
             table.add_row(
+                str(item["id"]),
                 f"[{style}]{item['action']}[/{style}]",
                 item["ticker"] or "—",
                 amount,
@@ -113,7 +114,6 @@ def cmd_decide(args: argparse.Namespace) -> None:
         ValueError: If the recommendation is unknown or already expired.
         ProfileConfigError: If the profile or its database is missing.
     """
-    from datetime import UTC, datetime
 
     from rich.console import Console
     from rich.table import Table
@@ -128,6 +128,7 @@ def cmd_decide(args: argparse.Namespace) -> None:
             """
             SELECT r.id, r.run_date, r.action, r.amount_eur, r.expires_on,
                    r.rationale, r.superseded_by_run_id, s.ticker,
+                   (SELECT snoozed_until FROM user_decision d WHERE d.recommendation_id=r.id ORDER BY d.id DESC LIMIT 1) AS snoozed_until,
                    (SELECT decision FROM user_decision d
                      WHERE d.recommendation_id = r.id
                      ORDER BY d.id DESC LIMIT 1) AS decision
@@ -151,7 +152,15 @@ def cmd_decide(args: argparse.Namespace) -> None:
         for row in rows:
             # Ordered by what the reader most needs to know: a decision they
             # made, then a replacement they did not, then plain lapsing.
-            if row["decision"]:
+            if row["decision"] == "later":
+                status = (
+                    f"snoozed until {row['snoozed_until']}"
+                    if row["snoozed_until"] and row["snoozed_until"] > today
+                    else "pending after snooze"
+                )
+                if row["superseded_by_run_id"] is not None or row["expires_on"] < today:
+                    status = "replaced or expired"
+            elif row["decision"]:
                 status = row["decision"]
             elif row["superseded_by_run_id"] is not None:
                 status = "[dim]replaced by a later run[/dim]"
@@ -170,41 +179,12 @@ def cmd_decide(args: argparse.Namespace) -> None:
         console.print(table)
         return
 
-    row = conn.execute(
-        "SELECT * FROM recommendation WHERE id = ?", (args.recommendation_id,)
-    ).fetchone()
-    if row is None:
-        raise ValueError(f"No recommendation with id {args.recommendation_id}.")
-    if row["superseded_by_run_id"] is not None:
-        raise ValueError(
-            f"Recommendation {row['id']} was replaced by a later run. Deciding "
-            f"on it would record an answer to advice that has been withdrawn; "
-            f"see 'main.py decide' for what is live."
-        )
-    if row["expires_on"] < today:
-        raise ValueError(
-            f"Recommendation {row['id']} expired on {row['expires_on']}. A weekly "
-            f"cadence supersedes itself, so acting on it now would execute "
-            f"research that has been replaced, at a price that has moved."
-        )
+    from workflow import record_response
 
-    with conn:
-        conn.execute(
-            """
-            INSERT INTO user_decision (recommendation_id, decision, note, decided_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            (
-                row["id"],
-                args.decision,
-                args.note,
-                datetime.now(UTC).isoformat(),
-            ),
-        )
-    console.print(
-        f"[green]Recorded[/green] {args.decision} on recommendation {row['id']} "
-        f"({row['action']})."
+    result = record_response(
+        conn, args.recommendation_id, args.decision, note=args.note
     )
+    console.print(result)
     if args.decision == "approve":
         console.print(
             "[dim]Nothing has been traded. Execute it yourself, then record it "

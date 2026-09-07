@@ -60,7 +60,10 @@ def fake_llm(monkeypatch: pytest.MonkeyPatch):
                 text=text, model="fake", requested_model="fake", llm_call_id=1
             )
 
+        import decisions
+
         monkeypatch.setattr(research_module, "call_llm", fake)
+        monkeypatch.setattr(decisions, "call_llm", fake)
         return seen
 
     return install
@@ -375,6 +378,24 @@ class TestSellEligibility:
     def test_an_oversized_position_is_sellable_whatever_the_thesis(
         self, seeded: sqlite3.Connection
     ) -> None:
+        from store import save_fx_rate
+
+        save_fx_rate(
+            seeded,
+            rate_date=TODAY.isoformat(),
+            base="USD",
+            quote="EUR",
+            rate=1,
+            source="test",
+        )
+        save_prices(
+            seeded,
+            [
+                (1, TODAY.isoformat(), 55, "USD", "test"),
+                (2, TODAY.isoformat(), 90, "USD", "test"),
+                (3, TODAY.isoformat(), 37.5, "USD", "test"),
+            ],
+        )
         # Trimming for size is a portfolio decision, not a view on the company.
         entry = triage_inputs(seeded, today=TODAY, include_sell_eligibility=True)[0]
         assert entry.weight_pct > 20
@@ -385,6 +406,16 @@ class TestSellEligibility:
         from store_research import save_thesis
 
         self._dilute(seeded)
+        from store import save_fx_rate
+
+        save_fx_rate(
+            seeded,
+            rate_date=TODAY.isoformat(),
+            base="USD",
+            quote="EUR",
+            rate=1,
+            source="test",
+        )
         save_thesis(
             seeded,
             Thesis(
@@ -393,6 +424,14 @@ class TestSellEligibility:
                 source="research",
                 thesis_status="broken",
             ),
+        )
+        save_prices(
+            seeded,
+            [
+                (1, TODAY.isoformat(), 55, "USD", "test"),
+                (2, TODAY.isoformat(), 90, "USD", "test"),
+                (3, TODAY.isoformat(), 37.5, "USD", "test"),
+            ],
         )
         entries = {
             e.ticker: e
@@ -406,7 +445,7 @@ class TestSellEligibility:
     ) -> None:
         # The model proposed a refused sale once, and its other recommendation
         # then referred to a sale that never happened.
-        from research import run_decision
+        from decisions import run_decision
 
         self._dilute(seeded)
         seen = fake_llm('{"recommendations": [], "summary": "quiet"}')

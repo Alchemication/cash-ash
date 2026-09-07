@@ -74,3 +74,12 @@ Return one JSON object and nothing else:
 Set `amount_eur` to null for HOLD, REVIEW and KEEP_CASH. Use `high` urgency
 only where waiting a week would genuinely cost something; almost nothing on a
 weekly cadence qualifies.
+
+Research assessments are separate from the owner's active thesis. Include the
+assessment's date and citation in the rationale when it matters. An unaccepted
+change calls for REVIEW, not permission to sell. Insufficient or old evidence
+is a gap, not evidence that the thesis held. For BUY/ADD explain why the current
+price is attractive, which assumptions it requires, what would invalidate it,
+and why this use of cash beats leaving it available. If supplied evidence does
+not support those comparisons, request REVIEW instead of inventing figures.
+Only funded cash is deployable. A planned monthly contribution is not cash.

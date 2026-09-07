@@ -30,11 +30,13 @@ from __future__ import annotations
 
 import json
 import logging
+from review_text import recommendation_buttons
+from notify import escape
 import re
 import threading
 import time
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from datetime import time as time_of_day
 
 from config import (
@@ -51,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 STATE_PATH = APP_HOME / "daemon_state.json"
 
-_CALLBACK = re.compile(r"^rec:(\d+):(approve|reject|later)$")
+_CALLBACK = re.compile(r"^rec:(\d+):(approve|reject|later|evidence|thesis)$")
 """Callback payloads a recommendation button may carry.
 
 Anchored and explicit: callback_data arrives from the network and is the one
@@ -109,36 +111,15 @@ def _record_decision(profile, recommendation_id: int, decision: str) -> str:  # 
         A short line to show in the button's toast.
     """
     from store import open_existing_db
+    from workflow import record_response
 
-    conn = open_existing_db(profile.db)
-    row = conn.execute(
-        """
-        SELECT id, action, expires_on, superseded_by_run_id
-        FROM recommendation WHERE id = ?
-        """,
-        (recommendation_id,),
-    ).fetchone()
-    if row is None:
-        return "That recommendation no longer exists."
-    if row["superseded_by_run_id"] is not None:
-        # A message stays on the phone after the advice in it is withdrawn, so
-        # the button outlives what it refers to. Recording an answer here would
-        # count as engagement with a recommendation that was never live.
-        return "A later run replaced this one — no need to answer it."
-    if row["expires_on"] < date.today().isoformat():
-        return f"Expired on {row['expires_on']}, so it has been superseded."
-
-    with conn:
-        conn.execute(
-            """
-            INSERT INTO user_decision (recommendation_id, decision, note, decided_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            (row["id"], decision, "via Telegram", datetime.now(UTC).isoformat()),
-        )
-    if decision == "approve":
-        return "Recorded. Nothing has been traded — execute it yourself."
-    return f"Recorded: {decision}."
+    try:
+        with open_existing_db(profile.db) as conn:
+            return record_response(
+                conn, recommendation_id, decision, note="via Telegram"
+            )
+    except ValueError as exc:
+        return str(exc)
 
 
 def _chat_reply(profile, text: str) -> str:  # type: ignore[no-untyped-def]
@@ -149,6 +130,32 @@ def _chat_reply(profile, text: str) -> str:  # type: ignore[no-untyped-def]
     command = text.strip().split()[0].lstrip("/").split("@")[0].lower()
     conn = open_existing_db(profile.db)
 
+    if command in {"evidence", "thesis", "accept", "reject"}:
+        from review_text import evidence_text, thesis_text
+        from store_workflow import review_thesis
+        from store import load_securities
+
+        words = text.split()
+        if len(words) < 2:
+            return f"Use /{command} TICKER" + (
+                " VERSION" if command in {"accept", "reject"} else ""
+            )
+        if command in {"accept", "reject"}:
+            try:
+                security = load_securities(conn).get(words[1].upper())
+                if security is None or len(words) != 3:
+                    raise ValueError(
+                        "Use /accept TICKER VERSION or /reject TICKER VERSION."
+                    )
+                review_thesis(conn, security.id, int(words[2]), command == "accept")
+                return "Thesis decision recorded. Run main.py recommend to reconsider actions."
+            except ValueError as exc:
+                return escape(str(exc))
+        return (
+            evidence_text(conn, words[1])
+            if command == "evidence"
+            else thesis_text(conn, words[1])
+        )
     if command in {"review", "start"}:
         return weekly_report(conn, profile=profile).body
     if command == "holdings":
@@ -156,7 +163,12 @@ def _chat_reply(profile, text: str) -> str:  # type: ignore[no-untyped-def]
 
         rows = holdings(conn, account_id=1)
         cash = cash_eur(conn, account_id=1)
+        from quality import valuation_gaps
+
+        gaps = valuation_gaps(conn, rows, date.today())
         lines = [f"<b>€{total_value(rows, cash=cash):,.2f}</b>", ""]
+        if gaps:
+            lines.append(escape("; ".join(gaps)))
         for row in sorted(rows, key=lambda r: -(r.value_eur or 0)):
             value = f"€{row.value_eur:,.2f}" if row.value_eur is not None else "—"
             change = (
@@ -171,10 +183,10 @@ def _chat_reply(profile, text: str) -> str:  # type: ignore[no-untyped-def]
         if not parts.actionable:
             return "Nothing is waiting on you."
         return "\n".join(
-            f"{item['action']} {item['ticker'] or ''} — {item['rationale']}"
+            f"{item['action']} {item['ticker'] or ''} — {escape(item['rationale'])}"
             for item in parts.actionable
         )
-    return "I know /review, /holdings and /pending."
+    return "Use /review, /holdings, /pending, /evidence TICKER or /thesis TICKER."
 
 
 def handle_update(update: dict) -> Handled:
@@ -201,6 +213,25 @@ def handle_update(update: dict) -> Handled:
             answer_callback(callback_id=callback["id"], text="Unrecognised button.")
             return Handled(kind="bad_callback", profile=profile.name)
 
+        if match.group(2) in {"evidence", "thesis"}:
+            from store import open_existing_db
+            from review_text import evidence_text, thesis_text
+
+            with open_existing_db(profile.db) as conn:
+                row = conn.execute(
+                    "SELECT s.ticker FROM recommendation r JOIN securities s ON s.id=r.security_id WHERE r.id=?",
+                    (int(match.group(1)),),
+                ).fetchone()
+                body = (
+                    (evidence_text if match.group(2) == "evidence" else thesis_text)(
+                        conn, row["ticker"]
+                    )
+                    if row
+                    else "No holding linked to this recommendation."
+                )
+            send_message(chat_id=profile.telegram_id, text=body)
+            answer_callback(callback_id=callback["id"], text="Details sent.")
+            return Handled(kind="reply", profile=profile.name)
         message = _record_decision(profile, int(match.group(1)), match.group(2))
         answer_callback(callback_id=callback["id"], text=message)
         return Handled(kind="decision", profile=profile.name, detail=match.group(2))
@@ -363,14 +394,8 @@ def _send_weekly(profile, outcome) -> None:  # type: ignore[no-untyped-def]
             amount = f" — €{item['amount_eur']:,.2f}" if item["amount_eur"] else ""
             send_with_buttons(
                 chat_id=profile.telegram_id,
-                text=f"<b>{item['action']}</b> {ticker}{amount}\n{item['rationale']}",
-                buttons=[
-                    [
-                        ("Approve", f"rec:{item['id']}:approve"),
-                        ("Reject", f"rec:{item['id']}:reject"),
-                        ("Later", f"rec:{item['id']}:later"),
-                    ]
-                ],
+                text=f"<b>{item['action']}</b> {ticker}{amount}\n{escape(item['rationale'])}",
+                buttons=recommendation_buttons(item),
             )
     except Exception:  # noqa: BLE001 - the run itself already succeeded
         logger.exception("Could not send the report for %s", profile.name)
@@ -378,11 +403,14 @@ def _send_weekly(profile, outcome) -> None:  # type: ignore[no-untyped-def]
 
 def _scheduler_loop(stop: threading.Event) -> None:
     """Check periodically whether a weekly run is due."""
+    from reminders import send_due_snoozes
+
     while not stop.wait(SCHEDULED_CHECK_INTERVAL_S):
-        try:
-            _run_weekly_for_profiles()
-        except Exception:  # noqa: BLE001 - the scheduler must outlive a bad week
-            logger.exception("Scheduler cycle failed")
+        for task in (send_due_snoozes, _run_weekly_for_profiles):
+            try:
+                task()
+            except Exception:  # noqa: BLE001 - one delivery must not stop the weekly run
+                logger.exception("Scheduler task failed: %s", task.__name__)
 
 
 def run_daemon(

@@ -450,3 +450,28 @@ Recording begins in week one because the series cannot be reconstructed later;
 reading it as a verdict should not, and a number displayed without that caveat
 invites exactly the mistake the system is built to avoid.
 """
+
+
+RESEARCH_MAX_PASSES: int = _env_int("SKARBIE_RESEARCH_MAX_PASSES", 4)
+"""Weekly deep-pass cap; limits latency and spend while allowing rotation."""
+
+RESEARCH_OVERDUE_DAYS: int = _env_int("SKARBIE_RESEARCH_OVERDUE_DAYS", 42)
+"""Six-week coverage floor so quiet holdings cannot be skipped forever."""
+
+RESEARCH_ROTATION_SLOTS: int = 1
+"""Reserve one weekly slot for the oldest coverage gap without crowding out events."""
+
+SNOOZE_DAYS: int = _env_int("SKARBIE_SNOOZE_DAYS", 2)
+"""Two days to reconsider an item while keeping it inside the weekly review."""
+
+EVIDENCE_MAX_AGE_DAYS: int = _env_int("SKARBIE_EVIDENCE_MAX_AGE_DAYS", 120)
+"""Allow the latest quarterly disclosure, but exclude old news from current evidence."""
+
+RESEARCH_ASSET_CLASSES: tuple[str, ...] = ("equity",)
+"""The company-thesis analyst supports equities; other instruments require manual review."""
+
+TRIAGE_HORIZON_DAYS: int = 21
+"""Three weeks captures upcoming reporting dates without a distant-event backlog."""
+
+TRIAGE_LOOKBACK_DAYS: int = 14
+"""Two weeks tolerates one missed review when collecting recent events."""
