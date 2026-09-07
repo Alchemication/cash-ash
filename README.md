@@ -7,6 +7,10 @@ Researches holdings on a weekly cadence, proposes constrained
 judge those decisions later. Human-in-the-loop by design: the system recommends,
 you approve, you execute manually in Revolut.
 
+Site: <https://alchemication.github.io/cash-ash/> — with the
+[docs](https://alchemication.github.io/cash-ash/docs/) rendered from this repo
+on every push.
+
 The app includes a trade ledger, market data, thesis-based research, constrained
 recommendations, Telegram review and scheduling, and a passive benchmark.
 The focus is a repeatable research habit: what changed, what remains unknown,
@@ -137,6 +141,7 @@ directory.
 ```bash
 uv run ruff check . && uv run ruff format .
 uv run pytest
+uv run --group site python marketing/build.py   # build the public site into _site/
 ```
 
 Conventions: [CLAUDE.md](CLAUDE.md) (identical to `AGENTS.md`).

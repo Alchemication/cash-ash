@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" fill="#0b0b0d"/>
+  <!-- A coin's edge going to ember: solid disc above, breaking into sparks below. -->
+  <path d="M16 5a8 8 0 0 1 8 8v3H8v-3a8 8 0 0 1 8-8z" fill="#ece6da"/>
+  <rect x="8" y="17" width="16" height="3" fill="#ff6a1f"/>
+  <rect x="10" y="22" width="3" height="3" fill="#ff6a1f"/>
+  <rect x="16" y="23" width="3" height="3" fill="#ffb054"/>
+  <rect x="21" y="21" width="3" height="3" fill="#ff6a1f"/>
+  <rect x="13" y="27" width="2" height="2" fill="#ffb054"/>
+  <rect x="19" y="28" width="2" height="2" fill="#c8461a"/>
+</svg>

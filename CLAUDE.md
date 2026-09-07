@@ -100,6 +100,26 @@ someone configures against, and then it appears once.
 
 Keep `AGENTS.md` and `CLAUDE.md` identical. When editing either, update both.
 
+## Public site
+
+The public site is built by `marketing/build.py` (`uv run --group site python
+marketing/build.py`) into a gitignored `_site/`, and deployed by
+`.github/workflows/pages.yml` on every push to `main` that touches it. It has
+two inputs: the hand-written landing page in `marketing/site/`, and `docs/*.md`
+rendered to HTML. Docs pages are generated — never hand-write a second copy of
+a doc for the web. Guardrail figures the landing page cites are `{{PLACEHOLDER}}`
+tokens resolved at build time from `src/config.py`; the build fails on an
+unresolved token rather than publishing it.
+
+`marketing/site/assets/base.css` is the only place the site's palette and chrome
+are defined. Every page inlines it at build time, so each page stays
+self-contained without forking the design. Never redeclare a colour token in a
+page's own stylesheet.
+
+The landing page must obey the same rules as the code: invented tickers only,
+no figure that reads as a return, a hit rate or a confidence, and the
+learning-project trade-off stated as bluntly as it is here.
+
 ## Code Style
 
 - **Linter/formatter:** `uv run ruff check .` and `uv run ruff format .`
@@ -141,6 +161,8 @@ Layers, bottom up:
 - `src/portfolio.py` — derived positions, valuation, concentration
 - `src/seed.py` — the 2026-09-02 Revolut snapshot and its cost-basis derivation
 - `src/commands.py`, `src/cmd_*.py` — CLI handlers and rendering
+- `marketing/` — the public site: `build.py`, the landing page under `site/`,
+  and the source imagery; not imported by the app
 
 `accounts` holds a single row. It exists so a second broker is an INSERT rather
 than a rewrite of every valuation query; do not build multi-account features on

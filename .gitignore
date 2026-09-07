@@ -18,3 +18,6 @@ seed_snapshot.toml
 *.db
 *.db-wal
 *.db-shm
+
+# Built public site (marketing/build.py)
+_site/

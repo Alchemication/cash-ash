@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Two different jobs, so two different lines. <title> is a search result:
+       it has to contain the words someone would type, and it gets truncated
+       around 60 characters. og:title is a link preview, where the positioning
+       line does the work. -->
+  <title>CashAsh — weekly, sourced, human-approved stock research</title>
+  <meta name="description" content="AI-assisted research and decision support for a small personal stock portfolio. It proposes constrained actions with cited evidence; you approve; you place the order. Open source, self-hosted.">
+  <link rel="canonical" href="https://alchemication.github.io/cash-ash/">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="CashAsh">
+  <meta property="og:title" content="Don't let your cash turn into ash.">
+  <meta property="og:description" content="A weekly research habit for a small stock portfolio. Sourced findings, deterministic guardrails, a Telegram approve button — and no order ever placed by software.">
+  <meta property="og:url" content="https://alchemication.github.io/cash-ash/">
+  <meta property="og:image" content="https://alchemication.github.io/cash-ash/assets/og-image.jpg">
+  <meta property="og:image:alt" content="A stack of euro coins on a dark surface. The bottom coin is crumbling into ash, and a few small sparks drift upward from it.">
+  <meta name="twitter:card" content="summary_large_image">
+  <style>
+/* The shared palette and site chrome (assets/base.css) are inlined in place of
+   the token below by marketing/build.py. Everything after it is specific to
+   this page. Opening index.html straight from disk therefore looks unstyled —
+   build the site to view it. */
+{{BASE_CSS}}
+
+    body {
+      position: relative;
+      background:
+        radial-gradient(ellipse 70% 40% at 50% 100%, rgba(255, 106, 31, .10), transparent 70%),
+        repeating-linear-gradient(0deg, rgba(236,230,218,.018) 0 1px, transparent 1px 4px),
+        var(--ash);
+    }
+
+    /* Film grain over everything, so flat panels read as paper rather than
+       as a screen. */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      pointer-events: none;
+      opacity: .14;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.95' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.3'/%3E%3C/svg%3E");
+      mix-blend-mode: screen;
+    }
+
+    /* The sparks. A fixed canvas behind the content, drawn by the script at
+       the foot of the page. It is decoration and nothing on the page depends
+       on it: no canvas, no script, no motion preference — the page is the
+       same page. */
+    #sparks {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    header, main, footer { position: relative; z-index: 1; }
+
+    /* Two voices. Georgia carries headlines and every paragraph longer than a
+       label, because 13px mono is a readability tax on long copy. The mono
+       stays for kickers, buttons, data and UI chrome. */
+
+    h1 {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(44px, 5.2vw, 76px);
+      font-weight: 500;
+      line-height: .94;
+      letter-spacing: -.05em;
+      text-wrap: balance;
+    }
+
+    /* "cash" and "ash" are the same letters minus one. The ember colour on the
+       second word is the whole joke, and the headline's whole argument. */
+    h1 em { font-style: italic; color: var(--ember); }
+    h1 .burn { position: relative; white-space: nowrap; }
+    h1 .burn::after {
+      content: "";
+      position: absolute;
+      left: 0; right: 0; bottom: .02em;
+      height: 3px;
+      background: linear-gradient(90deg, var(--ember), var(--amber) 60%, transparent);
+      animation: smoulder 3.2s ease-in-out infinite;
+    }
+    @keyframes smoulder {
+      0%, 100% { opacity: .55; }
+      50% { opacity: 1; }
+    }
+
+    h2 {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(30px, 3.4vw, 46px);
+      font-weight: 500;
+      line-height: 1.02;
+      letter-spacing: -.035em;
+      text-wrap: balance;
+    }
+
+    .dek { margin: 0; max-width: 540px; font-family: Georgia, serif; font-size: 19px; line-height: 1.5; color: var(--bone-2); }
+    .prose { margin: 0; font-family: Georgia, serif; font-size: 16px; line-height: 1.62; }
+    .prose.muted { color: var(--bone-2); }
+    .prose + .prose { margin-top: 14px; }
+    .prose a { color: var(--amber); }
+    .prose strong { color: var(--bone); font-weight: 600; }
+
+    .section-label {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--ember);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    .section-label::after { content: ""; height: 2px; flex: 1; background: var(--line-strong); }
+
+    .stack { display: flex; flex-direction: column; gap: 28px; }
+    .illustrative { margin: 0; color: var(--smoke); font-size: 11px; line-height: 1.6; }
+
+    /* A grid item's minimum width is its content's, so a long line of code in
+       the quick-start block would widen its column past the viewport and give
+       the whole page a horizontal scrollbar on a phone. Let the columns shrink
+       and the code block scroll inside itself instead. */
+    .hero > *, .cycle-intro > *, .rails-grid > *, .honest-grid > *, .two-up > * { min-width: 0; }
+
+    /* Entry animation: a short rise as sections arrive. Purely cosmetic and
+       switched off with reduced motion by the shared rule in base.css. */
+    .rise { animation: rise .7s ease-out both; }
+    @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+    /* ---- Hero: the claim on the left, the product on the right. ---- */
+    .hero {
+      display: grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap: clamp(32px, 4vw, 56px);
+      align-items: start;
+      padding: clamp(40px, 4vw, 60px) 0 clamp(56px, 6vw, 84px);
+    }
+    .hero-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 26px; }
+    .hero .eyebrow { transform: rotate(-1deg); }
+    .cta { display: flex; flex-wrap: wrap; gap: 12px; }
+
+    .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; width: 100%; }
+    .fact { padding: 14px 16px; border: 2px solid var(--line-strong); background: rgba(255,255,255,.025); }
+    .fact b { display: block; font-family: Georgia, serif; font-size: 26px; font-weight: 500; letter-spacing: -.02em; line-height: 1; color: var(--amber); }
+    .fact span { display: block; margin-top: 6px; color: var(--smoke); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+
+    /* The Telegram thread. It is the product, shown above the fold: a
+       recommendation card with the same buttons the bot sends. */
+    .phone { border: 2px solid var(--bone); background: var(--soot); box-shadow: var(--shadow); }
+    .phone-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 2px solid var(--bone);
+      color: var(--bone);
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .phone-head .who { display: flex; align-items: center; gap: 8px; }
+    .phone-head .avatar { width: 18px; height: 18px; border: 1px solid var(--bone-2); }
+    .phone-body { display: flex; flex-direction: column; gap: 22px; padding: 18px 22px 22px 18px; }
+    .live { display: inline-block; width: 8px; height: 8px; margin-right: 6px; background: var(--ember); animation: pulse 1.6s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+
+    .message { padding: 16px; border: 2px solid var(--bone-2); background: var(--cinder); box-shadow: 4px 4px 0 var(--ember-deep); }
+    .message-type {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding-bottom: 9px;
+      border-bottom: 1px solid var(--line-strong);
+      color: var(--amber);
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: .1em;
+    }
+    .message h3 { margin: 12px 0 7px; font-family: Georgia, serif; font-size: 22px; font-weight: 500; line-height: 1.08; letter-spacing: -.02em; }
+    .message h3 .verb { color: var(--ember); }
+    .message p { margin: 0; color: var(--bone-2); font-family: Georgia, serif; font-size: 14.5px; line-height: 1.5; }
+    .message p + p { margin-top: 8px; }
+    .message .q { padding-left: 10px; border-left: 3px solid var(--ember); color: var(--bone); }
+    .message .src { margin-top: 10px; color: var(--smoke); font-family: inherit; font-size: 10.5px; line-height: 1.5; }
+    .message .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .pill { padding: 7px 10px; border: 1px solid var(--bone-2); font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+    .pill-yes { background: var(--ember); border-color: var(--ember); color: var(--soot); }
+    .pill-ghost { border-style: dashed; color: var(--bone-2); }
+    .reply { align-self: flex-end; max-width: 80%; padding: 10px 14px; border: 2px solid var(--line-strong); background: var(--ash); color: var(--bone-2); font-family: Georgia, serif; font-size: 14px; }
+    .reply b { display: block; margin-bottom: 4px; color: var(--smoke); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+
+    /* ---- The picture: the failure mode, once, full width. ---- */
+    .banner { padding: 0 0 clamp(56px, 6vw, 84px); }
+    .banner-frame {
+      position: relative;
+      margin: 0;
+      max-height: 520px;
+      aspect-ratio: 1600 / 840;
+      overflow: hidden;
+      border: 2px solid var(--bone);
+      background: var(--soot);
+      box-shadow: var(--shadow);
+    }
+    /* The coins sit left of centre in the source, so the crop anchors there and
+       gives up the empty right-hand side first when the frame is narrow. */
+    .banner-frame img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 30% 55%; }
+    .banner-frame figcaption {
+      position: absolute;
+      right: 28px;
+      bottom: 28px;
+      max-width: 380px;
+      padding: 18px 20px;
+      border: 2px solid var(--line-strong);
+      background: rgba(11, 11, 13, .8);
+    }
+    .banner-frame figcaption b { display: block; color: var(--ember); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+    .banner-frame figcaption span { display: block; margin-top: 10px; color: var(--bone-2); font-family: Georgia, serif; font-size: 15.5px; line-height: 1.5; }
+
+    /* ---- The cycle: a darker stage. ---- */
+    .cycle-stage { position: relative; padding: 74px 0 84px; background: var(--soot); overflow: hidden; }
+    .cycle-stage::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      opacity: .05;
+      background: repeating-linear-gradient(90deg, transparent 0 34px, var(--bone) 34px 35px);
+      pointer-events: none;
+    }
+    .cycle-stage .shell { position: relative; }
+    .cycle-intro { display: grid; grid-template-columns: 1fr 1.6fr; gap: 56px; align-items: end; }
+    .cycle-intro .prose { max-width: 640px; }
+
+    .cycle { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; margin-top: 44px; }
+    .stage { position: relative; padding: 22px 18px 24px; border: 2px solid var(--line-strong); border-right-width: 0; background: var(--ash); }
+    .stage:last-child { border-right-width: 2px; }
+    .stage::after {
+      content: "→";
+      position: absolute;
+      top: 18px; right: -8px;
+      z-index: 1;
+      width: 16px;
+      color: var(--ember);
+      font-size: 14px;
+      text-align: center;
+      background: var(--soot);
+    }
+    .stage:last-child::after { content: none; }
+    .stage b { display: block; color: var(--ember); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
+    .stage span { display: block; margin-top: 14px; font-family: Georgia, serif; font-size: 22px; letter-spacing: -.02em; }
+    .stage p { margin: 8px 0 0; color: var(--bone-2); font-family: Georgia, serif; font-size: 13.5px; line-height: 1.5; }
+    .stage code { display: inline-block; margin-top: 12px; color: var(--amber); }
+    .stage.human { background: var(--cinder); border-color: var(--ember); }
+    .stage.human + .stage { border-left-color: var(--ember); }
+    .cycle-note { margin-top: 22px; }
+
+    /* ---- Guardrails: a rules table that reads as one. ---- */
+    .rails { padding: 84px 0; }
+    .rails-grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: clamp(28px, 5vw, 64px); align-items: start; }
+    .rails-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 22px; }
+    .rules { border: 2px solid var(--line-strong); }
+    .rule { display: grid; grid-template-columns: 150px 1fr; gap: 18px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+    .rule:last-child { border-bottom: 0; }
+    .rule b { font-family: Georgia, serif; font-size: 24px; font-weight: 500; letter-spacing: -.02em; line-height: 1; color: var(--amber); }
+    .rule b small { display: block; margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--smoke); }
+    .rule span { font-family: Georgia, serif; font-size: 14.5px; line-height: 1.5; color: var(--bone-2); }
+    .rule.hard { background: rgba(255, 106, 31, .06); }
+    .rule.hard b { color: var(--ember); }
+
+    /* ---- Evidence: two columns, findings vs. thesis. ---- */
+    .evidence { padding: 0 0 84px; }
+    .evidence-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .card { padding: 22px; border: 2px solid var(--line-strong); background: rgba(255,255,255,.025); }
+    .card b { display: block; color: var(--ember); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+    .card span { display: block; margin-top: 12px; font-family: Georgia, serif; font-size: 22px; letter-spacing: -.02em; line-height: 1.15; }
+    .card p { margin: 10px 0 0; color: var(--bone-2); font-family: Georgia, serif; font-size: 14.5px; line-height: 1.55; }
+
+    /* ---- The honest bit. ---- */
+    .honest { padding: 74px 0 84px; border-top: 2px solid var(--line-strong); border-bottom: 2px solid var(--line-strong); background: var(--soot); }
+    .honest-grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: clamp(28px, 5vw, 64px); align-items: start; }
+    .honest-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 22px; }
+    .honest h2 em { font-style: italic; color: var(--ember); }
+    .points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+    .points li { display: grid; grid-template-columns: 34px 1fr; gap: 14px; padding: 18px 0; border-top: 1px solid var(--line); font-family: Georgia, serif; font-size: 16px; line-height: 1.55; color: var(--bone-2); }
+    .points li:first-child { border-top: 0; padding-top: 0; }
+    .points li i { font-style: normal; color: var(--ember); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 900; letter-spacing: .1em; padding-top: 4px; }
+    .points li strong { color: var(--bone); font-weight: 600; }
+
+    /* ---- Setup. ---- */
+    .setup { padding: 84px 0 72px; }
+    .terminal { border: 2px solid var(--bone); background: var(--soot); box-shadow: var(--shadow); }
+    .terminal-head { display: flex; gap: 6px; padding: 10px 14px; border-bottom: 2px solid var(--bone); }
+    .terminal-head i { width: 9px; height: 9px; border: 1px solid var(--bone-2); }
+    .terminal-head i:first-child { background: var(--ember); border-color: var(--ember); }
+    .terminal pre { margin: 0; padding: 18px 20px 22px; overflow-x: auto; font-size: 12.5px; line-height: 1.7; color: var(--bone); }
+    .terminal .c { color: var(--smoke); }
+    .terminal .p { color: var(--ember); }
+    .two-up { display: grid; grid-template-columns: 1fr 1.2fr; gap: clamp(28px, 4vw, 48px); align-items: start; }
+    .need { margin: 14px 0 0; padding: 0; list-style: none; }
+    .need li { padding: 9px 0; border-top: 1px solid var(--line); font-family: Georgia, serif; font-size: 15px; color: var(--bone-2); }
+    .closing { display: flex; flex-direction: column; align-items: flex-start; gap: 22px; }
+
+    @media (max-width: 960px) {
+      .hero, .cycle-intro, .rails-grid, .honest-grid, .two-up { grid-template-columns: 1fr; }
+      .cycle { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .stage:nth-child(3)::after { content: none; }
+      .stage:nth-child(3) { border-right-width: 2px; }
+      .stage:nth-child(n+4) { border-top-width: 0; }
+      .evidence-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) {
+      .facts { grid-template-columns: 1fr; }
+      .banner-frame { aspect-ratio: auto; max-height: none; }
+      .banner-frame img { aspect-ratio: 4 / 3; }
+      .banner-frame figcaption { position: static; max-width: none; border-width: 2px 0 0; }
+      .cycle { grid-template-columns: 1fr; }
+      .stage { border-right-width: 2px; border-top-width: 0; }
+      .stage:first-child { border-top-width: 2px; }
+      .stage::after { content: none; }
+      .rule { grid-template-columns: 1fr; gap: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="sparks" aria-hidden="true"></canvas>
+
+  <header class="shell topbar">
+    <a class="wordmark" href="./">CASH<span>//</span>ASH</a>
+    <nav>
+      <a href="docs/">Docs</a>
+      <a href="docs/roadmap.html">Roadmap</a>
+      <a href="https://github.com/Alchemication/cash-ash">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="shell hero">
+      <div class="hero-copy rise">
+        <span class="eyebrow">Open source · Self-hosted · Human-in-the-loop</span>
+        <h1>Don't let your <span class="burn">cash</span> turn into <em>ash</em>.</h1>
+        <p class="dek">
+          A weekly research habit for a small stock portfolio. It reads the news,
+          argues with your thesis, proposes a constrained action with its sources
+          attached — and then waits for you to press a button.
+        </p>
+        <div class="cta">
+          <a class="btn btn-primary" href="#setup">Get started</a>
+          <a class="btn" href="docs/commands.html">Read the commands</a>
+        </div>
+        <div class="facts">
+          <div class="fact"><b>6 verbs</b><span>buy · add · hold · trim · exit · review</span></div>
+          <div class="fact"><b>1 a week</b><span>Research cycle, on a schedule</span></div>
+          <div class="fact"><b>0 orders</b><span>Ever placed by the software</span></div>
+        </div>
+      </div>
+
+      <aside class="phone rise" aria-label="An illustrative CashAsh conversation in Telegram">
+        <div class="phone-head">
+          <span class="who"><svg class="avatar" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" fill="#0b0b0d"/><path d="M16 5a8 8 0 0 1 8 8v3H8v-3a8 8 0 0 1 8-8z" fill="#ece6da"/><rect x="8" y="17" width="16" height="3" fill="#ff6a1f"/><rect x="10" y="22" width="3" height="3" fill="#ff6a1f"/><rect x="16" y="23" width="3" height="3" fill="#ffb054"/><rect x="21" y="21" width="3" height="3" fill="#ff6a1f"/></svg> CashAsh</span>
+          <span><i class="live"></i>Monday 18:00</span>
+        </div>
+        <div class="phone-body">
+          <article class="message">
+            <div class="message-type"><span>Recommendation · pending</span><span>expires in 7 days</span></div>
+            <h3><span class="verb">TRIM</span> GLOBEX — EUR 40</h3>
+            <p>Position is 21% of the book, above the 20% cap. Q2 release cut full-year guidance; the thesis assumed guidance would hold through the product transition.</p>
+            <p class="q">Unanswered: is the guidance cut demand or timing? The call transcript is not in the evidence set.</p>
+            <p class="src">[ev-3f9a] "…now expects full-year revenue growth of 4–6%, down from 8–10%…" — company release, 3 days ago</p>
+            <div class="actions">
+              <span class="pill pill-yes">Approve</span>
+              <span class="pill">Reject</span>
+              <span class="pill">Snooze</span>
+            </div>
+            <div class="actions">
+              <span class="pill pill-ghost">View evidence</span>
+              <span class="pill pill-ghost">Review thesis</span>
+            </div>
+          </article>
+          <div class="reply"><b>You · 18:12</b>Approved. Sold 0.4 GLOBEX at 98.20 in the app.</div>
+          <article class="message">
+            <div class="message-type"><span>Executed · recorded</span><span>ledger updated</span></div>
+            <h3>GLOBEX now 16.8%</h3>
+            <p>Fill recorded against the approved recommendation. Reserved capital released. The open question stays on the thesis until it is answered or the thesis is revised.</p>
+          </article>
+          <p class="illustrative">Illustrative thread. Tickers, figures and excerpts are invented; the buttons and the flow are real.</p>
+        </div>
+      </aside>
+    </section>
+
+    <section class="shell banner">
+      <figure class="banner-frame rise">
+        <img src="assets/coins-ash.jpg" width="1600" height="840" alt="A stack of euro coins on a dark surface. The bottom coin is crumbling into ash, and a few small sparks drift upward from it.">
+        <figcaption>
+          <b>The failure mode</b>
+          <span>Not a crash. A slow burn: a thesis nobody re-read, a position that drifted past its cap, a guidance cut that went unnoticed for a quarter.</span>
+        </figcaption>
+      </figure>
+    </section>
+
+    <section class="cycle-stage" aria-labelledby="cycle-label">
+      <div class="shell stack">
+        <div class="section-label" id="cycle-label">01 / The weekly cycle</div>
+        <div class="cycle-intro rise">
+          <h2>Six stages. Software runs five. You run the one that moves money.</h2>
+          <p class="prose muted">
+            One command runs the lot on a schedule. Each stage leaves its own
+            record, so a week that failed halfway is a week the report describes
+            as failed halfway — never a week that quietly looks fine.
+          </p>
+        </div>
+        <div class="cycle rise">
+          <article class="stage"><b>01</b><span>Sync</span><p>Prices, FX, earnings dates and consensus, from a free feed.</p><code>main.py sync</code></article>
+          <article class="stage"><b>02</b><span>Triage</span><p>Rank holdings by what changed. Reserve capacity for anything overdue.</p><code>main.py triage</code></article>
+          <article class="stage"><b>03</b><span>Research</span><p>A deep pass on the selected few, against the thesis, with sources.</p><code>main.py research</code></article>
+          <article class="stage"><b>04</b><span>Recommend</span><p>Propose actions. Deterministic rules trim or refuse them.</p><code>main.py recommend</code></article>
+          <article class="stage human"><b>05 · you</b><span>Decide</span><p>Approve, reject or snooze in Telegram. Approval reserves the cash.</p><code>/review</code></article>
+          <article class="stage"><b>06</b><span>Execute</span><p>You place the order in the app and record the real fill.</p><code>main.py executed</code></article>
+        </div>
+        <p class="prose muted cycle-note">
+          Findings stay separate from your thesis until you accept a revision.
+          A model can propose a new version of why you hold something; it cannot
+          overwrite the one you wrote.
+        </p>
+      </div>
+    </section>
+
+    <section class="shell rails" aria-labelledby="rails-label">
+      <div class="stack">
+        <div class="section-label" id="rails-label">02 / What it will not do</div>
+        <div class="rails-grid rise">
+          <div class="rails-copy">
+            <h2>The rules are code. The model never sees them as a suggestion.</h2>
+            <p class="prose muted">
+              Every proposal passes through the same deterministic checks before
+              anyone reads it. A brilliant argument for adding to your largest
+              position gets the same answer as a bad one: no. The defaults below
+              are sized for a portfolio of about EUR 1,400 across 14 names, where
+              equal weight is 7%. Each one is an environment variable, documented
+              where it is defined.
+            </p>
+            <p class="prose muted">
+              <a href="docs/commands.html#recommendations">How recommendations are checked →</a>
+            </p>
+          </div>
+          <div class="rules">
+            <div class="rule hard"><b>0<small>orders placed</small></b><span>No command talks to a broker. Execution is you, in the app, then a command that records what actually filled.</span></div>
+            <div class="rule"><b>{{MAX_POSITION_WEIGHT_PCT}}%<small>position cap</small></b><span>ADD is refused above this weight regardless of how good the research looks. Set to bind on day one, not to decorate.</span></div>
+            <div class="rule"><b>EUR {{MAX_NEW_TRADE_EUR}}<small>per trade</small></b><span>At this size a EUR 100 trade is already a 7% position. Anything bigger is a portfolio decision, not a research conclusion.</span></div>
+            <div class="rule"><b>EUR {{MAX_WEEKLY_ALLOCATION_EUR}}<small>per week</small></b><span>A ceiling on new money in one review. Actual funded cash is still the binding constraint; only recorded deposits count.</span></div>
+            <div class="rule"><b>{{RECOMMENDATION_EXPIRY_DAYS}} days<small>then it expires</small></b><span>Next week's review supersedes this one. A stale BUY cannot be approved at a price that has moved on.</span></div>
+            <div class="rule"><b>{{PRICE_STALE_AFTER_DAYS}} days<small>price stale</small></b><span>Older than that and a price is reported stale and blocks trade proposals, rather than valuing the book on it silently.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="shell evidence stack" aria-labelledby="evidence-label">
+      <div class="section-label" id="evidence-label">03 / Sourced, or labelled as background</div>
+      <div class="evidence-grid rise">
+        <div class="card">
+          <b>A claim needs a citation</b>
+          <span>Every finding cites a supplied evidence id and an exact excerpt.</span>
+          <p>Citations are checked mechanically: the id must exist in what the model was given and the quote must be verbatim. That establishes provenance, not truth — the report says so, every time.</p>
+        </div>
+        <div class="card">
+          <b>Model memory is not news</b>
+          <span>What the model knew from training is stored as background.</span>
+          <p>It cannot pose as a current fact. Research by default runs on recent news excerpts; you can add company releases and filings, linked to the questions they answer.</p>
+        </div>
+        <div class="card">
+          <b>Unknowns are the output</b>
+          <span>Each review ends with what would change your mind.</span>
+          <p>Unanswered questions are recorded on the thesis and carried forward. The habit being built is: what changed, what is still unknown, what evidence would settle it.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="honest" aria-labelledby="honest-label">
+      <div class="shell stack">
+        <div class="section-label" id="honest-label">04 / A learning project, and the numbers say so</div>
+        <div class="honest-grid rise">
+          <div class="honest-copy">
+            <h2>It will probably cost more than it <em>earns</em>. That is the deal.</h2>
+            <p class="prose muted">
+              On EUR 1,400, a weekly multi-model pipeline can spend more per year
+              than any excess return it could find. The goal is a better research
+              habit and an interesting system, not alpha. So the defaults are cheap,
+              and every honest limit is printed rather than hidden.
+            </p>
+          </div>
+          <ul class="points">
+            <li><i>01</i><span><strong>Model output carries no investment authority.</strong> A model's "confidence: 91%" is not a calibrated probability, so it is never stored and never rendered as one.</span></li>
+            <li><i>02</i><span><strong>Outcome evals are dead on arrival at this scale.</strong> Fourteen tickers a week will never tell one model's stock picking from another's, and replaying history leaks the future through the model's own weights. Evals measure process: schema validity, sourced claims, guardrails respected, stability across reruns.</span></li>
+            <li><i>03</i><span><strong>The benchmark is recorded, never claimed.</strong> The same money in {{BENCHMARK_NAME}} is tracked forward from the seed date. It is the only comparison that will ever mean much, and it needs years before it means anything.</span></li>
+            <li><i>04</i><span><strong>Cheap by default, expensive by choice.</strong> Each stage routes to its own model; the defaults reason on a budget tier and stronger models are opt-in and metered. Every call and its cost is logged.</span></li>
+            <li><i>05</i><span><strong>Your holdings never enter the repository.</strong> The broker snapshot, the database, the context files and the Telegram ids live in your home directory. The repo ships invented example figures only.</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="shell setup stack" id="setup" aria-labelledby="setup-label">
+      <div class="section-label" id="setup-label">05 / Get running in an evening</div>
+      <div class="two-up rise">
+        <div class="stack">
+          <h2>A screenshot of your broker is enough to start.</h2>
+          <p class="prose muted">
+            The book is seeded from a snapshot you write by hand: a quantity, a
+            value and a blended return per position. Cost basis is derived from
+            those, and <code>init</code> refuses to write if the derived total
+            drifts from the broker's stated total. A mistyped figure cannot
+            quietly become your cost basis.
+          </p>
+          <div class="card" style="box-shadow: none">
+            <b>What you need</b>
+            <ul class="need">
+              <li>Python 3.12+ and uv</li>
+              <li>A macOS or Linux machine for the scheduled run</li>
+              <li>A Telegram bot token and an LLM provider key</li>
+              <li>A broker that shows you quantity, value and return</li>
+            </ul>
+          </div>
+        </div>
+        <div class="terminal" aria-label="Quick start commands">
+          <div class="terminal-head"><i></i><i></i><i></i></div>
+<pre><span class="c"># 1. Create your profile. --operator makes it the default.</span>
+<span class="p">$</span> uv run python main.py profile add adam --telegram-id 123456789 --operator
+
+<span class="c"># 2. Describe your holdings. This file never leaves your machine.</span>
+<span class="p">$</span> cp seed_snapshot.example.toml ~/Documents/cash-ash/profiles/adam/seed_snapshot.toml
+
+<span class="c"># 3. Check it reconciles against the broker's total, then seed.</span>
+<span class="p">$</span> uv run python main.py init --dry-run
+<span class="p">$</span> uv run python main.py init
+
+<span class="p">$</span> uv run python main.py sync           <span class="c"># prices and FX</span>
+<span class="p">$</span> uv run python main.py holdings       <span class="c"># positions, cost basis, P&amp;L</span>
+<span class="p">$</span> uv run python main.py concentration  <span class="c"># weights, and what breaches</span>
+<span class="p">$</span> uv run python main.py doctor         <span class="c"># what is still missing</span>
+
+<span class="c"># Then write your thesis notes, and run the first week.</span>
+<span class="p">$</span> uv run python main.py thesis bootstrap
+<span class="p">$</span> uv run python main.py weekly</pre>
+        </div>
+      </div>
+      <div class="closing rise">
+        <h2>Recommend. Approve. Execute by hand. Judge it later.</h2>
+        <div class="cta">
+          <a class="btn btn-primary" href="https://github.com/Alchemication/cash-ash">Clone the repo</a>
+          <a class="btn" href="docs/">Read the docs</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="shell">
+    <span>CASHASH — not advice, not a broker, not a forecast</span>
+    <nav>
+      <a href="docs/">Docs</a>
+      <a href="docs/roadmap.html">Roadmap</a>
+      <a href="https://github.com/Alchemication/cash-ash">GitHub</a>
+    </nav>
+  </footer>
+
+  <script>
+  // Sparks. A handful of embers drifting up from the foot of the page and a
+  // few flakes of ash sinking past them. Kept deliberately sparse: it should
+  // register as warmth at the edge of vision, not as a screensaver.
+  //
+  // Off entirely when the visitor asks for reduced motion, paused when the tab
+  // is hidden, and capped at a 2x backing store so a retina display does not
+  // pay four times for decoration.
+  (function () {
+    var canvas = document.getElementById("sparks");
+    if (!canvas || !canvas.getContext) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    var ctx = canvas.getContext("2d");
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var width = 0, height = 0, particles = [], running = true, last = 0;
+
+    function resize() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    // Density scales with the viewport so a phone gets a dozen and a wide
+    // monitor gets a few dozen, never a swarm.
+    function population() { return Math.max(14, Math.min(48, Math.round(width * height / 36000))); }
+
+    function spawn(fresh) {
+      var ember = Math.random() < 0.72;
+      return {
+        ember: ember,
+        x: Math.random() * width,
+        // On first fill, scatter through the whole height so the page does not
+        // start empty and then fill from the bottom; afterwards, embers are
+        // born below the fold and ash above it.
+        y: fresh ? Math.random() * height : (ember ? height + 10 : -10),
+        r: ember ? 0.8 + Math.random() * 1.6 : 1 + Math.random() * 1.8,
+        vy: ember ? -(10 + Math.random() * 22) : (6 + Math.random() * 10),
+        vx: (Math.random() - 0.5) * 8,
+        life: 0,
+        ttl: 9 + Math.random() * 9,
+        phase: Math.random() * Math.PI * 2,
+        hue: 18 + Math.random() * 20
+      };
+    }
+
+    function fill() {
+      particles = [];
+      var n = population();
+      for (var i = 0; i < n; i++) particles.push(spawn(true));
+    }
+
+    function step(now) {
+      if (!running) return;
+      var dt = Math.min((now - last) / 1000 || 0, 0.05);
+      last = now;
+      ctx.clearRect(0, 0, width, height);
+      for (var i = 0; i < particles.length; i++) {
+        var p = particles[i];
+        p.life += dt;
+        p.x += (p.vx + Math.sin(now / 1400 + p.phase) * 6) * dt;
+        p.y += p.vy * dt;
+        var out = p.ember ? p.y < -12 : p.y > height + 12;
+        if (out || p.life > p.ttl) { particles[i] = spawn(false); continue; }
+        // Fade in, hold, fade out — with a flicker on the embers.
+        var t = p.life / p.ttl;
+        var alpha = t < 0.15 ? t / 0.15 : t > 0.8 ? (1 - t) / 0.2 : 1;
+        if (p.ember) {
+          alpha *= 0.55 + 0.45 * Math.sin(now / 90 + p.phase * 7) * Math.sin(now / 310 + p.phase);
+          ctx.fillStyle = "hsla(" + p.hue + ", 100%, 60%, " + (alpha * 0.85).toFixed(3) + ")";
+          ctx.shadowBlur = 6;
+          ctx.shadowColor = "hsla(" + p.hue + ", 100%, 55%, .6)";
+        } else {
+          ctx.fillStyle = "rgba(207, 200, 186, " + (alpha * 0.22).toFixed(3) + ")";
+          ctx.shadowBlur = 0;
+        }
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      requestAnimationFrame(step);
+    }
+
+    resize();
+    fill();
+    window.addEventListener("resize", function () { resize(); fill(); });
+    document.addEventListener("visibilitychange", function () {
+      running = !document.hidden;
+      if (running) { last = performance.now(); requestAnimationFrame(step); }
+    });
+    requestAnimationFrame(function (now) { last = now; step(now); });
+  })();
+  </script>
+</body>
+</html>

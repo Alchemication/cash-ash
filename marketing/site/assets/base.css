@@ -1,0 +1,145 @@
+/* Shared foundation for every page of the public site: the landing page and
+ * the generated docs pages.
+ *
+ * This file is the single source of truth for the palette and the site chrome.
+ * It is never linked with <link>; each page inlines it at build time so every
+ * page stays a self-contained file with no external requests. Consumers:
+ *
+ *   - marketing/build.py   landing page and docs template
+ *
+ * Note for editors: never write the landing page's CSS placeholder token
+ * literally in this file. It is inlined into that page, so the token would
+ * reappear after substitution and fail the build's unresolved-token check.
+ *
+ * Page-specific rules belong with their page, not here. Only add something if
+ * more than one page needs it.
+ */
+
+:root {
+  /* Ash: the ground. Three steps of grey-black, warm rather than blue. */
+  --soot: #0b0b0d;
+  --ash: #141416;
+  --cinder: #1f1f23;
+  --cinder-2: #2a2a30;
+  /* Ember: the accent. One hot orange, one deeper for hover and rules, one
+     amber for the sparks. */
+  --ember: #ff6a1f;
+  --ember-deep: #c8461a;
+  --amber: #ffb054;
+  /* Bone: the type. Warm off-white on dark, never pure white. */
+  --bone: #ece6da;
+  --bone-2: #cfc8ba;
+  --smoke: #8f8a80;
+  --line: rgba(236, 230, 218, .18);
+  --line-strong: rgba(236, 230, 218, .42);
+  --shadow: 6px 6px 0 var(--ember-deep);
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  color: var(--bone);
+  background:
+    repeating-linear-gradient(0deg, rgba(236, 230, 218, .018) 0 1px, transparent 1px 4px),
+    var(--ash);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 14px;
+}
+
+a { color: inherit; }
+
+::selection { background: var(--ember); color: var(--soot); }
+
+code {
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, .05);
+  font-family: inherit;
+  font-size: .92em;
+}
+
+.shell {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 21px 0 17px;
+  border-bottom: 2px solid var(--line-strong);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.topbar a { text-decoration: none; }
+.topbar nav { display: flex; gap: 18px; }
+.topbar nav a:hover { color: var(--ember); }
+
+.wordmark { font-size: 17px; letter-spacing: -.05em; text-decoration: none; }
+.wordmark span { color: var(--ember); }
+
+.eyebrow {
+  display: inline-block;
+  padding: 7px 10px;
+  border: 2px solid var(--ember);
+  background: var(--soot);
+  color: var(--ember);
+  box-shadow: 3px 3px 0 var(--ember-deep);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.btn {
+  padding: 13px 18px;
+  border: 2px solid var(--bone);
+  background: var(--ash);
+  color: var(--bone);
+  box-shadow: 4px 4px 0 var(--ember-deep);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.btn:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ember-deep); }
+.btn-primary { background: var(--ember); border-color: var(--ember); color: var(--soot); }
+
+footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 22px 0 40px;
+  border-top: 2px solid var(--line-strong);
+  color: var(--smoke);
+  font-size: 11px;
+}
+
+footer nav { display: flex; flex-wrap: wrap; gap: 18px; }
+footer a { color: var(--smoke); }
+footer a:hover { color: var(--ember); }
+
+@media (max-width: 520px) {
+  .shell { width: min(100% - 22px, 1180px); }
+  .topbar { flex-direction: column; align-items: flex-start; gap: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
