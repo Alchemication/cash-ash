@@ -25,7 +25,7 @@ import re
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
-from config import PROMPTS_DIR, THESIS_MAX_TOKENS
+from config import DECISION_MAX_TOKENS, PROMPTS_DIR, THESIS_MAX_TOKENS
 from llm import call_llm
 from models import Thesis
 from portfolio import positions
@@ -1060,7 +1060,7 @@ def run_decision(
             {"role": "user", "content": message},
         ],
         prompt_version=DECIDE_PROMPT_VERSION,
-        max_tokens=THESIS_MAX_TOKENS,
+        max_tokens=DECISION_MAX_TOKENS,
     )
     payload = extract_json(result.text)
 

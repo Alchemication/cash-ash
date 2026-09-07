@@ -15,7 +15,7 @@ import pytest
 
 import llm as llm_module
 from config import MIN_MAX_TOKENS
-from llm import LLMError, _is_transient, _was_truncated_before_answering, call_llm
+from llm import LLMError, _is_transient, _was_truncated, call_llm
 from store_research import create_llm_trace, llm_cost_summary, load_llm_calls
 
 
@@ -102,24 +102,22 @@ class TestTransientClassification:
 
 
 class TestTruncationDetection:
-    """An always-reasoning model runs out of budget mid-thought."""
+    """Any reply cut off by the budget is worth retrying larger."""
 
     def test_empty_content_after_reasoning_is_truncation(self) -> None:
-        assert _was_truncated_before_answering("", "thinking hard", "length") is True
+        assert _was_truncated("length") is True
 
-    def test_whitespace_only_content_counts_as_empty(self) -> None:
-        assert _was_truncated_before_answering("  \n ", "thinking", "length") is True
-
-    def test_content_present_is_not_truncation(self) -> None:
-        assert _was_truncated_before_answering("answer", "thinking", "length") is False
+    def test_partial_content_is_also_truncation(self) -> None:
+        # The case the first version missed: the model thinks for most of the
+        # budget, starts answering, and stops mid-sentence. For structured
+        # output a half-written object is as unusable as none at all.
+        assert _was_truncated("length") is True
 
     def test_natural_stop_is_not_truncation(self) -> None:
-        assert _was_truncated_before_answering("", "thinking", "stop") is False
+        assert _was_truncated("stop") is False
 
-    def test_no_reasoning_is_not_this_failure(self) -> None:
-        # An empty reply from a non-reasoning model is a different problem and
-        # a bigger budget will not fix it.
-        assert _was_truncated_before_answering("", None, "length") is False
+    def test_absent_finish_reason_is_not_truncation(self) -> None:
+        assert _was_truncated(None) is False
 
 
 class TestCallLLM:
@@ -182,6 +180,24 @@ class TestCallLLM:
             conn, feature="analyst", messages=self.MESSAGES, max_tokens=2000
         )
         assert result.text == "finally an answer"
+        assert script.calls[1]["max_tokens"] > script.calls[0]["max_tokens"]
+
+    def test_partial_json_is_retried_not_returned(
+        self, conn: sqlite3.Connection, patched
+    ) -> None:
+        # A live decision call stopped 2,579 characters into its answer after
+        # 34,501 characters of reasoning. Returning that half-object as a
+        # success is what the first implementation did.
+        script = patched(
+            _response(
+                '{"recommendations": [{"ticker": "AMD"',
+                reasoning="long",
+                finish_reason="length",
+            ),
+            _response('{"recommendations": []}'),
+        )
+        result = call_llm(conn, feature="decision", messages=self.MESSAGES)
+        assert result.text == '{"recommendations": []}'
         assert script.calls[1]["max_tokens"] > script.calls[0]["max_tokens"]
 
     def test_truncation_is_retried_once_per_model(

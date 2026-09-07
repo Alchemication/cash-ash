@@ -260,6 +260,19 @@ that costs money and contains nothing. Any budget small enough to be consumed
 entirely by reasoning is a bug, so callers cannot set one.
 """
 
+DECISION_MAX_TOKENS: int = _env_int("SKARBIE_DECISION_MAX_TOKENS", 20000)
+"""Output budget for the portfolio decision.
+
+The largest of any stage, and measured rather than chosen. Deciding across
+fourteen holdings at once produced 34,500 characters of reasoning — roughly
+8,600 tokens — before the answer began, then ran out mid-object. The budget has
+to cover the thinking, the answer, and the margin between them.
+
+An unused budget costs nothing, since billing is on tokens produced. Too small
+a budget costs the whole call and then the retry, which on this stage is eight
+minutes each time.
+"""
+
 TRUNCATION_RETRY_MULTIPLIER: float = _env_float(
     "SKARBIE_TRUNCATION_RETRY_MULTIPLIER", 2.5
 )

@@ -139,20 +139,22 @@ def _extract(response: Any) -> tuple[str, str | None, str | None]:
     return content, reasoning, _field(choice, "finish_reason")
 
 
-def _was_truncated_before_answering(
-    content: str, reasoning: str | None, finish_reason: str | None
-) -> bool:
-    """Return True when the budget ran out during reasoning, before any answer.
+def _was_truncated(finish_reason: str | None) -> bool:
+    """Return True when the reply was cut off by the output budget.
 
-    The distinctive failure of an always-reasoning model: it thinks until the
-    budget is gone and returns empty content. That is not a short answer, it is
-    no answer, and retrying at the same size simply pays for it twice.
+    Any ``length`` finish counts, not only one that produced nothing. The first
+    version of this fired solely on empty content, on the reasoning that a
+    model which thinks until the budget is gone has produced no answer. That
+    missed the more common case: it thinks for most of the budget, starts
+    answering, and stops mid-sentence. For structured output the two are
+    identical in effect — a half-written JSON object is exactly as unusable as
+    no JSON object — and it took a live decision call, cut off 2,579 characters
+    into its answer after 34,501 characters of reasoning, to make that obvious.
+
+    Retrying a genuinely long prose answer that merely reached the cap is the
+    cost of this, and it is small: one retry at a larger budget, once.
     """
-    return (
-        not content.strip()
-        and finish_reason == "length"
-        and bool(reasoning and reasoning.strip())
-    )
+    return finish_reason == "length"
 
 
 def call_llm(
@@ -311,15 +313,16 @@ def call_llm(
                 cost_usd=_response_cost(response),
             )
 
-            if _was_truncated_before_answering(content, reasoning, finish_reason):
+            if _was_truncated(finish_reason):
                 if not retried_for_truncation:
                     retried_for_truncation = True
                     current_budget = int(current_budget * TRUNCATION_RETRY_MULTIPLIER)
                     logger.warning(
-                        "%s on %s spent its whole budget reasoning; retrying with "
-                        "max_tokens=%d",
+                        "%s on %s was cut off by its %d-token budget; retrying "
+                        "with max_tokens=%d",
                         feature,
                         candidate,
+                        int(current_budget / TRUNCATION_RETRY_MULTIPLIER),
                         current_budget,
                     )
                     continue
@@ -329,12 +332,12 @@ def call_llm(
                 # glm-4.7 answered a prompt glm-5.3-flash could not finish.
                 # The enlarged budget goes with it.
                 last_error = LLMError(
-                    f"{candidate} produced no content within {current_budget} "
-                    f"tokens even after a larger budget."
+                    f"{candidate} was still cut off at {current_budget} tokens "
+                    f"after a larger budget."
                 )
                 if candidate == candidates[-1]:
                     raise LLMError(
-                        f"{feature}: no model produced content within "
+                        f"{feature}: every model was still cut off at "
                         f"{current_budget} tokens. The prompt is asking for "
                         f"more output than fits — shorten it or split the "
                         f"task, rather than raising the budget again."
