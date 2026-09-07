@@ -337,3 +337,51 @@ class TestRunTriage:
         ).fetchone()
         assert row["kind"] == "triage"
         assert row["run_date"] == "2026-09-06"
+
+
+class TestSellEligibility:
+    """The decision stage is told, as a fact, what the rules will allow."""
+
+    def test_absent_unless_asked_for(self, seeded: sqlite3.Connection) -> None:
+        # Triage only ranks; computing it there would be work with no reader.
+        entry = triage_inputs(seeded, today=TODAY)[0]
+        assert entry.sell_permitted is None
+        assert "selling:" not in entry.render()
+
+    def test_unexamined_thesis_is_not_sellable(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        entry = triage_inputs(seeded, today=TODAY, include_sell_eligibility=True)[0]
+        assert entry.sell_permitted is False
+        assert "NOT permitted" in entry.render()
+
+    def test_broken_thesis_is_sellable(self, seeded: sqlite3.Connection) -> None:
+        from models import Thesis
+        from store_research import save_thesis
+
+        save_thesis(
+            seeded,
+            Thesis(
+                security_id=1,
+                summary="was true, no longer",
+                source="research",
+                thesis_status="broken",
+            ),
+        )
+        entries = {
+            e.ticker: e
+            for e in triage_inputs(seeded, today=TODAY, include_sell_eligibility=True)
+        }
+        assert entries["AAA"].sell_permitted is True
+        assert "selling: permitted" in entries["AAA"].render()
+
+    def test_the_decision_stage_asks_for_it(
+        self, seeded: sqlite3.Connection, fake_llm
+    ) -> None:
+        # The model proposed a refused sale once, and its other recommendation
+        # then referred to a sale that never happened.
+        from research import run_decision
+
+        seen = fake_llm('{"recommendations": [], "summary": "quiet"}')
+        run_decision(seeded, today=TODAY)
+        assert "selling: NOT permitted" in seen[0]

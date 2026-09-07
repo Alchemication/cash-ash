@@ -278,6 +278,17 @@ class TriageInput:
     upcoming: tuple[str, ...]
     recent: tuple[str, ...]
     estimate_change: str | None
+    sell_permitted: bool | None = None
+    """Whether the deterministic rules would allow selling this holding.
+
+    Stated rather than implied. The prompt asks the model not to propose a sale
+    the rules will refuse, and it proposed one anyway — reasoning from the
+    owner's own remark that a thesis had lapsed, which is an opinion the owner
+    holds rather than a finding research has confirmed. Worse, the refusal came
+    after the fact, leaving a second recommendation referring to a sale that
+    never happened. A fact in the input is harder to overlook than a rule in
+    the instructions.
+    """
 
     def render(self) -> str:
         """Format this holding for the triage prompt."""
@@ -304,6 +315,19 @@ class TriageInput:
         ):
             if items:
                 lines.append(f"- {label}: " + "; ".join(items))
+        if self.sell_permitted is not None:
+            lines.append(
+                "- selling: "
+                + (
+                    "permitted"
+                    if self.sell_permitted
+                    else (
+                        f"NOT permitted — thesis is '{self.thesis_status}' and the "
+                        f"position is within its weight cap. A TRIM or EXIT here "
+                        f"will be refused."
+                    )
+                )
+            )
         if self.upcoming:
             lines.append("- upcoming: " + "; ".join(self.upcoming))
         if self.recent:
@@ -364,6 +388,7 @@ def triage_inputs(
     horizon_days: int = 21,
     lookback_days: int = 14,
     today: date | None = None,
+    include_sell_eligibility: bool = False,
 ) -> list[TriageInput]:
     """Assemble what triage needs to know about every holding.
 
@@ -373,6 +398,10 @@ def triage_inputs(
         horizon_days: How far ahead an event counts as upcoming.
         lookback_days: How far back an event counts as recent.
         today: Reference date, for tests.
+        include_sell_eligibility: State whether the deterministic rules would
+            currently allow selling each holding. Wanted by the decision stage,
+            which must not propose a sale that will be refused; pointless for
+            triage, which only ranks.
 
     Returns:
         One entry per holding, ordered by descending weight.
@@ -402,6 +431,17 @@ def triage_inputs(
         target = upcoming_by_security if days >= 0 else recent_by_security
         target.setdefault(int(event["security_id"]), []).append(label)
 
+    sell_permitted_by_ticker: dict[str, bool] = {}
+    if include_sell_eligibility:
+        from guardrails import check_proposal
+
+        context = build_guardrail_context(conn, account_id=account_id)
+        for row in rows:
+            ticker = row.position.security.ticker
+            sell_permitted_by_ticker[ticker] = not check_proposal(
+                action="TRIM", ticker=ticker, amount_eur=None, context=context
+            ).refused
+
     result: list[TriageInput] = []
     for row in rows:
         security = row.position.security
@@ -425,6 +465,7 @@ def triage_inputs(
                 upcoming=tuple(upcoming_by_security.get(security.id, ())),
                 recent=tuple(recent_by_security.get(security.id, ())),
                 estimate_change=_estimate_change(conn, security.id),
+                sell_permitted=sell_permitted_by_ticker.get(security.ticker),
             )
         )
     return result
@@ -953,7 +994,7 @@ def _propose_thesis(  # type: ignore[no-untyped-def]
 # Portfolio decision
 # ---------------------------------------------------------------------------
 
-DECIDE_PROMPT_VERSION = "decide/1"
+DECIDE_PROMPT_VERSION = "decide/2"
 
 _VALID_ACTIONS = {"BUY", "ADD", "HOLD", "TRIM", "EXIT", "REVIEW", "KEEP_CASH"}
 _VALID_URGENCY = {"low", "medium", "high"}
@@ -1032,7 +1073,9 @@ def run_decision(
     from store import latest_prices, load_securities
     from store_research import create_research_run
 
-    inputs = triage_inputs(conn, account_id=account_id, today=today)
+    inputs = triage_inputs(
+        conn, account_id=account_id, today=today, include_sell_eligibility=True
+    )
     if not inputs:
         raise ValueError("No holdings to decide on.")
 
