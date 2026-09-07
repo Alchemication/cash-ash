@@ -337,3 +337,26 @@ fails identically every time, so retrying it only delays the error.
 
 TELEGRAM_TIMEOUT_S: float = _env_float("SKARBIE_TELEGRAM_TIMEOUT_S", 20.0)
 """Per-request timeout for the Telegram API."""
+
+
+LAUNCHD_LABEL: str = "com.skarbie.daemon"
+"""launchd job label, and the stem of the installed plist filename.
+
+Defined here rather than beside the install command because install, stop
+and restart all need the same answer, and three copies of a literal is how
+one of them ends up managing a different job."""
+
+DAEMON_POLL_TIMEOUT_S: int = _env_int("SKARBIE_DAEMON_POLL_TIMEOUT_S", 30)
+"""How long each long-poll waits for an update before returning empty.
+
+Long polling rather than repeated short requests: Telegram holds the connection
+until something arrives, so a quiet day costs almost nothing and a button press
+is handled in about a second.
+"""
+
+DAEMON_ERROR_BACKOFF_S: int = _env_int("SKARBIE_DAEMON_ERROR_BACKOFF_S", 15)
+"""Pause after a failed poll before trying again.
+
+Long enough that a provider outage does not become a request flood, short
+enough that a button press is not left unanswered for minutes once it clears.
+"""

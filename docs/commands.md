@@ -15,6 +15,8 @@ uv run python main.py recommend        # propose actions, rules applied
 uv run python main.py decide           # list and record your decisions
 uv run python main.py report           # the weekly review
 uv run python main.py telegram-setup   # register the bot command menu
+uv run python main.py daemon           # listen for button presses
+uv run python main.py daemon install   # run the listener under launchd
 uv run python main.py models           # which model each stage calls
 uv run python main.py llm-log          # recorded model calls and their cost
 uv run python main.py price TICKER --close AMOUNT   # record a price by hand
@@ -55,6 +57,8 @@ uv run python main.py research AMD            # deep pass on one holding
 uv run python main.py decide 3 approve --note "agreed, buying Monday"
 uv run python main.py decide 3 reject
 uv run python main.py report --telegram       # send it to your phone
+uv run python main.py daemon stop
+uv run python main.py daemon restart
 ```
 
 ## Profiles
@@ -278,6 +282,40 @@ Sending is retried on a network fault but never on a refusal — a bad chat id o
 malformed markup fails identically every time, so retrying only delays the
 error. A message carrying buttons is never split, because the buttons would end
 up detached from what they act on.
+
+## The listener
+
+Sending needs no daemon. Receiving does, because Telegram delivers updates by
+being asked for them and something has to keep asking.
+
+```bash
+uv run python main.py daemon           # foreground, Ctrl-C to stop
+uv run python main.py daemon install   # under launchd, survives logout
+```
+
+`daemon install` writes a launchd job with `KeepAlive`, which is what makes the
+listener survive the machine sleeping — a connection dropped while asleep kills
+the poll, and without it the daemon would stay dead until noticed by hand. A
+crash loop is throttled rather than relaunched as fast as launchd can manage.
+
+Every update is routed by the sender's numeric Telegram id to a profile in the
+roster. **An update from an id not in the roster is ignored in silence** — not
+answered, not acknowledged. The bot's username is discoverable, and replying
+would confirm the bot is live and tell a stranger their id is merely not on the
+list. A disabled profile is treated the same way.
+
+Button payloads are matched against a fixed anchored pattern rather than
+parsed. `callback_data` arrives from the network and is the one piece of
+user-controlled input that reaches a database write.
+
+The update offset is advanced and persisted even when handling an update
+raised. A message that crashes the handler would crash it again on every
+restart, and a stuck offset means nothing after it is ever seen.
+
+Two pollers steal each other's updates, so button presses would be handled at
+random. Telegram signals this with a 409, and the daemon stops rather than
+retrying — a failure that would otherwise present as buttons intermittently
+doing nothing.
 
 ## Evidence and provenance
 

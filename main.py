@@ -12,6 +12,7 @@ Subcommands:
     decide         Record approve / reject / later on a recommendation.
     report         The weekly review, on screen or sent to Telegram.
     telegram-setup Register the bot's command menu.
+    daemon         Listen for button presses; install it under launchd.
     models         Inspect or change which model each stage calls.
     llm-log        Inspect recorded model calls and what they cost.
     price          Record one price by hand when a feed cannot.
@@ -84,6 +85,12 @@ Examples:
     uv run python main.py report --telegram
         Send it, with Approve / Reject / Later buttons on anything actionable.
 
+    uv run python main.py daemon
+        Listen for button presses in the foreground.
+
+    uv run python main.py daemon install
+        Run it under launchd, so it survives logout and sleep.
+
     uv run python main.py models
         Which model each stage calls, and what tier it is.
 
@@ -115,6 +122,7 @@ from dotenv import load_dotenv
 # Ensure src/ is on the path when running from the project root
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+from cmd_daemon import cmd_daemon  # noqa: E402
 from cmd_db import cmd_db  # noqa: E402
 from cmd_llm_log import cmd_llm_log  # noqa: E402
 from cmd_models import cmd_models  # noqa: E402
@@ -367,6 +375,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_tg = sub.add_parser("telegram-setup", help="Register the bot command menu")
     p_tg.set_defaults(func=cmd_telegram_setup)
+
+    p_daemon = sub.add_parser("daemon", help="Listen for Telegram replies")
+    daemon_sub = p_daemon.add_subparsers(dest="daemon_cmd", required=False)
+    daemon_sub.add_parser("install", help="Install and start the launchd job")
+    daemon_sub.add_parser("stop", help="Stop the launchd job")
+    daemon_sub.add_parser("restart", help="Restart the launchd job")
+    p_daemon.set_defaults(func=cmd_daemon, daemon_cmd=None)
 
     p_models = sub.add_parser("models", help="Inspect or change model routing")
     models_sub = p_models.add_subparsers(dest="models_cmd", required=False)

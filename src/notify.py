@@ -271,3 +271,45 @@ def set_commands(commands: list[tuple[str, str]]) -> None:
             ]
         },
     )
+
+
+def get_updates(*, offset: int, timeout: int = 30) -> list[dict]:
+    """Long-poll Telegram for new updates.
+
+    Args:
+        offset: Return only updates with an id at or above this. Acknowledging
+            by offset is how Telegram is told an update was handled; without it
+            every restart replays the backlog.
+        timeout: Seconds to hold the connection open waiting for something.
+
+    Returns:
+        Update objects, oldest first.
+
+    Raises:
+        TelegramError: If Telegram refused, including the 409 that means
+            another poller is already running for this bot.
+    """
+    token = _require_token()
+    url = (
+        _API.format(token=token, method="getUpdates")
+        + f"?offset={offset}&timeout={timeout}"
+    )
+    try:
+        with urllib.request.urlopen(
+            url, timeout=timeout + TELEGRAM_TIMEOUT_S
+        ) as response:
+            parsed = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 409:
+            raise TelegramError(
+                "Another poller is already running for this bot. Two pollers "
+                "steal each other's updates, so button presses would be "
+                "handled at random or not at all. Stop the other one first."
+            ) from exc
+        raise TelegramError(f"getUpdates refused: {_error_detail(exc)}") from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise TelegramError(f"getUpdates failed: {exc}") from exc
+
+    if not parsed.get("ok"):
+        raise TelegramError(f"getUpdates not ok: {parsed.get('description')}")
+    return list(parsed.get("result", []))

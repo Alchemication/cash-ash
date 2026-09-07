@@ -62,7 +62,7 @@ day one — which is why it shipped in Phase 1.
 | 5 | Frozen hashed evidence package, N neutral analysts across providers, disagreement scoring, synthesis | |
 | 6 | Decision layer: deterministic guardrails, recommendations with expiry, decisions | done |
 | 7a | Telegram: notifier, weekly report, Approve/Reject/Later keyboards | done |
-| 7b | Long-polling daemon for button callbacks, launchd scheduling | next |
+| 7b | Long-polling daemon for button callbacks, launchd scheduling | done |
 | 8 | Process evals, curated cases, passive-benchmark tracking | |
 
 ## Why profiles landed before market data
