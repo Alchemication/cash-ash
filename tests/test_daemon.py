@@ -400,3 +400,68 @@ class TestWeeklySchedule:
         daemon_module._record_weekly("adam", now=sunday)
         daemon_module._save_offset(99)
         assert daemon_module.weekly_is_due("adam", now=sunday) is False
+
+
+class TestButtonsOnStaleMessages:
+    """A message stays on the phone after its advice is withdrawn."""
+
+    @pytest.fixture
+    def db(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import sqlite3
+
+        from db.migrations import apply_migrations
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        apply_migrations(conn)
+        conn.execute(
+            "INSERT INTO research_run (run_date, kind, created_at) "
+            "VALUES ('2026-09-07', 'deep', 'x')"
+        )
+        monkeypatch.setattr(
+            daemon_module, "open_existing_db", lambda _p: conn, raising=False
+        )
+        import store
+
+        monkeypatch.setattr(store, "open_existing_db", lambda _p: conn)
+        return conn
+
+    def _add(self, conn, **kw) -> int:
+        base = {
+            "expires_on": "2099-01-01",
+            "superseded_by_run_id": None,
+        }
+        base.update(kw)
+        cursor = conn.execute(
+            """
+            INSERT INTO recommendation (run_date, research_run_id, action, rationale,
+                                        urgency, expires_on, superseded_by_run_id,
+                                        created_at)
+            VALUES ('2026-09-07', 1, 'REVIEW', 'because', 'low', ?, ?, 'x')
+            """,
+            (base["expires_on"], base["superseded_by_run_id"]),
+        )
+        conn.commit()
+        return int(cursor.lastrowid)
+
+    def test_a_live_recommendation_records(self, db, roster) -> None:
+        rec = self._add(db)
+        message = daemon_module._record_decision(roster["adam"], rec, "approve")
+        assert "Recorded" in message
+        assert db.execute("SELECT COUNT(*) n FROM user_decision").fetchone()["n"] == 1
+
+    def test_a_superseded_recommendation_records_nothing(self, db, roster) -> None:
+        rec = self._add(db, superseded_by_run_id=1)
+        message = daemon_module._record_decision(roster["adam"], rec, "approve")
+        assert "replaced" in message
+        assert db.execute("SELECT COUNT(*) n FROM user_decision").fetchone()["n"] == 0
+
+    def test_an_expired_recommendation_records_nothing(self, db, roster) -> None:
+        rec = self._add(db, expires_on="2020-01-01")
+        message = daemon_module._record_decision(roster["adam"], rec, "approve")
+        assert "superseded" in message
+        assert db.execute("SELECT COUNT(*) n FROM user_decision").fetchone()["n"] == 0
+
+    def test_an_unknown_recommendation_is_handled(self, db, roster) -> None:
+        message = daemon_module._record_decision(roster["adam"], 9999, "approve")
+        assert "no longer exists" in message

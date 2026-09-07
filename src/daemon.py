@@ -112,13 +112,21 @@ def _record_decision(profile, recommendation_id: int, decision: str) -> str:  # 
 
     conn = open_existing_db(profile.db)
     row = conn.execute(
-        "SELECT id, action, expires_on FROM recommendation WHERE id = ?",
+        """
+        SELECT id, action, expires_on, superseded_by_run_id
+        FROM recommendation WHERE id = ?
+        """,
         (recommendation_id,),
     ).fetchone()
     if row is None:
         return "That recommendation no longer exists."
+    if row["superseded_by_run_id"] is not None:
+        # A message stays on the phone after the advice in it is withdrawn, so
+        # the button outlives what it refers to. Recording an answer here would
+        # count as engagement with a recommendation that was never live.
+        return "A later run replaced this one — no need to answer it."
     if row["expires_on"] < date.today().isoformat():
-        return f"Expired on {row['expires_on']} — it has been superseded."
+        return f"Expired on {row['expires_on']}, so it has been superseded."
 
     with conn:
         conn.execute(
