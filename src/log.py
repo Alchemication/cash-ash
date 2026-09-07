@@ -1,4 +1,4 @@
-"""Console logging setup for skarbie.
+"""Console logging setup for CashAsh.
 
 Public API:
     setup_logging(verbose) -- configure root logger with a stderr handler

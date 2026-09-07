@@ -96,7 +96,7 @@ def open_existing_db(path: Path) -> sqlite3.Connection:
     """Open an existing database at *path*, refusing to create one.
 
     ``sqlite3.connect`` happily creates an empty file, which turns a typo in
-    ``--db`` or a wrong ``SKARBIE_HOME`` into a silent empty portfolio that
+    ``--db`` or a wrong ``CASH_ASH_HOME`` into a silent empty portfolio that
     reports no holdings rather than an error. Read commands must not be able to
     do that.
 

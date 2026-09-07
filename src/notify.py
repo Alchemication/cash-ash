@@ -1,6 +1,6 @@
 """Sending messages to Telegram.
 
-Deliberately small. skarbie builds its own reports, so it emits Telegram's HTML
+Deliberately small. CashAsh builds its own reports, so it emits Telegram's HTML
 subset directly rather than converting arbitrary markdown into it — the
 conversion is the part that goes wrong, and there is nothing here to convert.
 

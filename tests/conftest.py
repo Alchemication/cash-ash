@@ -1,4 +1,4 @@
-"""Shared fixtures for skarbie tests."""
+"""Shared fixtures for CashAsh tests."""
 
 from __future__ import annotations
 

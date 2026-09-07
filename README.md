@@ -1,4 +1,4 @@
-# skarbie
+# CashAsh
 
 AI-assisted research and decision support for a small personal stock portfolio.
 
@@ -19,8 +19,8 @@ and what would change your mind. Model output is not investment authority.
 uv run python main.py profile add adam --telegram-id 123456789 --operator
 
 # 2. Describe your holdings. This file never leaves your machine.
-cp seed_snapshot.example.toml ~/Documents/skarbie/profiles/adam/seed_snapshot.toml
-$EDITOR ~/Documents/skarbie/profiles/adam/seed_snapshot.toml
+cp seed_snapshot.example.toml ~/Documents/cash-ash/profiles/adam/seed_snapshot.toml
+$EDITOR ~/Documents/cash-ash/profiles/adam/seed_snapshot.toml
 
 # 3. Check it reconciles against your broker's stated total, then seed.
 uv run python main.py init --dry-run
@@ -88,7 +88,7 @@ so a mistyped figure cannot quietly become your cost basis.
 
 **Personal data never enters the repository.** The snapshot holds real holdings
 and euro amounts, and git history is permanent, so it lives under
-`~/Documents/skarbie/` beside the database it produces. The repository ships
+`~/Documents/cash-ash/` beside the database it produces. The repository ships
 only `seed_snapshot.example.toml` with invented figures. Copy it across and
 fill in your own.
 
@@ -112,7 +112,7 @@ and Telegram id. A household shares one bot — the token is infrastructure in
 by, so nobody needs their own BotFather registration.
 
 ```
-~/Documents/skarbie/
+~/Documents/cash-ash/
   profiles.toml                 the roster
   profiles/adam/
     portfolio.db
@@ -129,7 +129,7 @@ databases.
 Copy `.env_example` to `.env`. Every tunable — guardrails, defaults, tolerances
 — is defined in `src/config.py` with a docstring explaining how its value was
 chosen. Per-person settings such as the monthly contribution live in
-`profiles.toml`, not in `config.py`. Set `SKARBIE_HOME` to move the whole app
+`profiles.toml`, not in `config.py`. Set `CASH_ASH_HOME` to move the whole app
 directory.
 
 ## Development

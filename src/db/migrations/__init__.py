@@ -1,4 +1,4 @@
-"""Versioned SQLite migrations for skarbie.
+"""Versioned SQLite migrations for CashAsh.
 
 Migration files are named ``<UTC timestamp>__<NNN>_<slug>.py`` and expose a
 module-level ``NAME`` plus an ``upgrade(conn)`` function. They are discovered
@@ -61,7 +61,7 @@ def ensure_migration_table(conn: sqlite3.Connection) -> None:
 
 def _migration_module_name(path: Path) -> str:
     sanitized = path.stem.replace("-", "_").replace(".", "_")
-    return f"skarbie_migration_{sanitized}"
+    return f"cash_ash_migration_{sanitized}"
 
 
 def _load_module(path: Path) -> ModuleType:

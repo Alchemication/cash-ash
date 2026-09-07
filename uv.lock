@@ -2096,7 +2096,7 @@ wheels = [
 ]
 
 [[package]]
-name = "skarbie"
+name = "cash-ash"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

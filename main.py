@@ -1,4 +1,4 @@
-"""skarbie — research and decision support for a small personal stock portfolio.
+"""CashAsh — research and decision support for a small personal stock portfolio.
 
 Subcommands:
     profile        Create and list profiles — one per person.

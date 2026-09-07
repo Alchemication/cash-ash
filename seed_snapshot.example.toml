@@ -1,5 +1,5 @@
 # Broker snapshot used to seed the database. Copy this file to
-# ~/Documents/skarbie/seed_snapshot.toml (or $SKARBIE_HOME/seed_snapshot.toml)
+# ~/Documents/cash-ash/seed_snapshot.toml (or $CASH_ASH_HOME/seed_snapshot.toml)
 # and replace the invented figures below with your own.
 #
 # The real file stays on your machine and is never committed: it holds actual

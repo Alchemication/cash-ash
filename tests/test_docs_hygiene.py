@@ -70,13 +70,13 @@ class TestCommandsDoc:
 
 
 class TestEnvExample:
-    """Every SKARBIE_* override read by config.py must be listed in .env_example."""
+    """Every CASH_ASH_* override read by config.py must be listed in .env_example."""
 
     def test_documents_every_override(self) -> None:
         config_source = (ROOT / "src" / "config.py").read_text()
         env_example = (ROOT / ".env_example").read_text()
-        names = set(re.findall(r'"(SKARBIE_[A-Z_]+)"', config_source))
-        assert names, "No SKARBIE_* variables found in config.py; the regex is stale."
+        names = set(re.findall(r'"(CASH_ASH_[A-Z_]+)"', config_source))
+        assert names, "No CASH_ASH_* variables found in config.py; the regex is stale."
         missing = sorted(name for name in names if name not in env_example)
         assert not missing, f"Undocumented environment variables: {missing}"
 

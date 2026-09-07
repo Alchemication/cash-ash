@@ -23,7 +23,7 @@ from profiles import (
 
 @pytest.fixture
 def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """An isolated SKARBIE_HOME with module paths repointed at it."""
+    """An isolated CASH_ASH_HOME with module paths repointed at it."""
     monkeypatch.setattr(profiles_module, "PROFILES_FILE", tmp_path / "profiles.toml")
     monkeypatch.setattr(profiles_module, "PROFILES_DIR", tmp_path / "profiles")
     return tmp_path

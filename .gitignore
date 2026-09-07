@@ -12,7 +12,7 @@ wheels/
 # My files
 .env
 
-# Real broker snapshot. Belongs in $SKARBIE_HOME, never here, but ignore
+# Real broker snapshot. Belongs in $CASH_ASH_HOME, never here, but ignore
 # it in the project root too in case a copy lands during setup.
 seed_snapshot.toml
 *.db

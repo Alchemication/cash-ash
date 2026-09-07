@@ -91,7 +91,7 @@ path or a profile name cannot silently produce an empty portfolio.
 ## Context files
 
 Each profile owns personal markdown files under
-`$SKARBIE_HOME/profiles/<name>/context/`. `profile add` writes templates;
+`$CASH_ASH_HOME/profiles/<name>/context/`. `profile add` writes templates;
 `context` reports which are still templates and which you have written.
 
 Thesis bootstrap reads written context files to restate the owner’s reasons. An unedited template counts as unwritten, because placeholder
@@ -132,7 +132,7 @@ must still make sense.
 **Curated** — everything no feed carries, and often what actually moves a
 holding: a product keynote, an IPO lockup expiry, a quarterly delivery report,
 a court date, a rate decision. These live in
-`$SKARBIE_HOME/profiles/<name>/events.toml`; `events.example.toml` in the
+`$CASH_ASH_HOME/profiles/<name>/events.toml`; `events.example.toml` in the
 project root shows the format. `sync` imports the file and reports any entry it
 had to skip, so a typo surfaces rather than silently losing a date.
 
@@ -468,7 +468,7 @@ applies an excerpt to any question for that symbol. Use the provider symbol.
 ```
 
 These are supplied excerpts; the app does not automatically fetch filings or
-verify their transcription. Keep personal research under `SKARBIE_HOME`.
+verify their transcription. Keep personal research under `CASH_ASH_HOME`.
 `EVIDENCE_ITEMS_PER_SECURITY` limits package size and `EVIDENCE_MAX_AGE_DAYS`
 excludes old material. `main.py process` prints both. Future-dated and malformed
 items are excluded. Unsupported instruments need manual review rather than an
@@ -547,7 +547,7 @@ themes would understate every one of them.
 
 ## Seeding
 
-`init` reads a broker snapshot from `$SKARBIE_HOME/seed_snapshot.toml`. That
+`init` reads a broker snapshot from `$CASH_ASH_HOME/seed_snapshot.toml`. That
 file holds real holdings and euro amounts, so it lives beside the database and
 never in the repository; `seed_snapshot.example.toml` in the project root shows
 the format with invented figures.

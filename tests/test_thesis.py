@@ -319,7 +319,7 @@ class TestBootstrap:
         fake_llm()
         stub = _FakeProfile(tmp_path / "stub")
         stub.context_path("log.md").write_text(
-            "<!-- skarbie:template -->\n\n# Log\n\n> Replace this.\n", encoding="utf-8"
+            "<!-- cash-ash:template -->\n\n# Log\n\n> Replace this.\n", encoding="utf-8"
         )
         with pytest.raises(ValueError, match="No written log"):
             bootstrap_theses(seeded, profile=stub)

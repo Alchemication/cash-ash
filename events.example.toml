@@ -1,6 +1,6 @@
 # Curated events — the dates no market-data feed carries.
 #
-# Copy to $SKARBIE_HOME/profiles/<name>/events.toml and edit. Earnings,
+# Copy to $CASH_ASH_HOME/profiles/<name>/events.toml and edit. Earnings,
 # ex-dividend and dividend dates arrive automatically from the price feed and
 # do NOT belong here; this file is for everything else, which is frequently
 # what actually moves a holding:

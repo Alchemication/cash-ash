@@ -6,7 +6,7 @@ portfolio decision layer will enforce over LLM recommendations. Nothing is
 inlined at its point of use, so this file is the one place to look for what a
 value is and why it is that value.
 
-Most values accept a ``SKARBIE_*`` environment override, read once at import.
+Most values accept a ``CASH_ASH_*`` environment override, read once at import.
 
 Example:
     from config import DB_PATH, MAX_POSITION_WEIGHT_PCT
@@ -43,9 +43,9 @@ def _env_int(name: str, default: int) -> int:
 # ---------------------------------------------------------------------------
 
 APP_HOME: Path = Path(
-    os.environ.get("SKARBIE_HOME", "~/Documents/skarbie")
+    os.environ.get("CASH_ASH_HOME", "~/Documents/cash-ash")
 ).expanduser()
-"""Root directory for user-owned skarbie state."""
+"""Root directory for user-owned CashAsh state."""
 
 # Per-profile paths — the database, the broker snapshot, the context files —
 # are owned by ``profiles.Profile``, not defined here. A path that depends on
@@ -74,7 +74,7 @@ does, and why it cannot be used as an input to a decision.
 """
 
 SEED_RECONCILIATION_TOLERANCE_EUR: float = _env_float(
-    "SKARBIE_SEED_RECONCILIATION_TOLERANCE_EUR", 1.0
+    "CASH_ASH_SEED_RECONCILIATION_TOLERANCE_EUR", 1.0
 )
 """How far the derived book may sit from the broker's stated total before
 seeding refuses to proceed.
@@ -91,7 +91,7 @@ tight enough that a transposed digit or a missing row cannot slip through.
 # ---------------------------------------------------------------------------
 
 DEFAULT_MONTHLY_CONTRIBUTION_EUR: float = _env_float(
-    "SKARBIE_DEFAULT_MONTHLY_CONTRIBUTION_EUR", 150.0
+    "CASH_ASH_DEFAULT_MONTHLY_CONTRIBUTION_EUR", 150.0
 )
 """Default new money per month for a newly created profile.
 
@@ -114,7 +114,7 @@ as a ``cash_flow`` row and is what the allocator is really limited by.
 # for a ~EUR 1,400 portfolio of 14 positions, where equal weight is ~7%.
 # ---------------------------------------------------------------------------
 
-MAX_POSITION_WEIGHT_PCT: float = _env_float("SKARBIE_MAX_POSITION_WEIGHT_PCT", 20.0)
+MAX_POSITION_WEIGHT_PCT: float = _env_float("CASH_ASH_MAX_POSITION_WEIGHT_PCT", 20.0)
 """Weight above which ADD is refused regardless of how good the research looks.
 
 Set just above the largest existing position (BRK.B at 19.2% on the seed date)
@@ -122,14 +122,16 @@ so the cap binds immediately rather than being decorative, and so the first
 thing the system does is refuse to concentrate further into its biggest bet.
 """
 
-LARGE_POSITION_WEIGHT_PCT: float = _env_float("SKARBIE_LARGE_POSITION_WEIGHT_PCT", 12.0)
+LARGE_POSITION_WEIGHT_PCT: float = _env_float(
+    "CASH_ASH_LARGE_POSITION_WEIGHT_PCT", 12.0
+)
 """Weight at which a position is flagged 'large' — roughly 1.7x equal weight.
 
 Not a limit. It marks positions where an ADD needs a stronger argument and a
 TRIM needs a weaker one.
 """
 
-MAX_NEW_TRADE_EUR: float = _env_float("SKARBIE_MAX_NEW_TRADE_EUR", 100.0)
+MAX_NEW_TRADE_EUR: float = _env_float("CASH_ASH_MAX_NEW_TRADE_EUR", 100.0)
 """Largest single recommended trade.
 
 At this portfolio size a EUR 100 trade is already a 7% position, so anything
@@ -137,7 +139,7 @@ larger is a portfolio-level decision rather than a research conclusion.
 """
 
 MAX_WEEKLY_ALLOCATION_EUR: float = _env_float(
-    "SKARBIE_MAX_WEEKLY_ALLOCATION_EUR", 100.0
+    "CASH_ASH_MAX_WEEKLY_ALLOCATION_EUR", 100.0
 )
 """Ceiling on new money deployed in one weekly review.
 
@@ -148,7 +150,7 @@ is still the binding constraint; this only stops a single week from committing
 several months ahead.
 """
 
-CONCENTRATION_ALERT_PCT: float = _env_float("SKARBIE_CONCENTRATION_ALERT_PCT", 40.0)
+CONCENTRATION_ALERT_PCT: float = _env_float("CASH_ASH_CONCENTRATION_ALERT_PCT", 40.0)
 """Theme or sector weight that gets reported as a concentration warning.
 
 On the seed date US mega-cap tech is 53% of the portfolio, so this fires on day
@@ -156,7 +158,7 @@ one. That is the intended behaviour — it is the single most useful thing the
 system can say before any model is involved.
 """
 
-RECOMMENDATION_EXPIRY_DAYS: int = _env_int("SKARBIE_RECOMMENDATION_EXPIRY_DAYS", 7)
+RECOMMENDATION_EXPIRY_DAYS: int = _env_int("CASH_ASH_RECOMMENDATION_EXPIRY_DAYS", 7)
 """How long an unactioned recommendation stays approvable.
 
 A weekly cadence means the next review supersedes the last one. Approving a
@@ -169,7 +171,7 @@ already moved.
 # Market data
 # ---------------------------------------------------------------------------
 
-MARKET_DATA_PROVIDER: str = os.environ.get("SKARBIE_MARKET_DATA_PROVIDER", "yfinance")
+MARKET_DATA_PROVIDER: str = os.environ.get("CASH_ASH_MARKET_DATA_PROVIDER", "yfinance")
 """Which market-data adapter to use.
 
 yfinance by default: free, no key, covers prices and FX in one dependency. It
@@ -177,7 +179,7 @@ is scraped rather than licensed and breaks occasionally, which is why it sits
 behind an abstraction instead of being called directly.
 """
 
-MARKET_DATA_LOOKBACK: str = os.environ.get("SKARBIE_MARKET_DATA_LOOKBACK", "5d")
+MARKET_DATA_LOOKBACK: str = os.environ.get("CASH_ASH_MARKET_DATA_LOOKBACK", "5d")
 """How much history to request in order to find one usable close.
 
 Not a window of interest — only the most recent close is kept. Five days is
@@ -185,7 +187,7 @@ enough to reach back past a long weekend plus a public holiday, which is the
 realistic worst case for a Monday-morning sync finding an empty series.
 """
 
-PRICE_STALE_AFTER_DAYS: int = _env_int("SKARBIE_PRICE_STALE_AFTER_DAYS", 4)
+PRICE_STALE_AFTER_DAYS: int = _env_int("CASH_ASH_PRICE_STALE_AFTER_DAYS", 4)
 """Age at which a stored price is reported as stale rather than used silently.
 
 A Friday close read on Monday is three days old and perfectly normal; add a
@@ -203,7 +205,7 @@ review quietly reviews last month.
 # so the strong tier is opt-in per feature and its cost is measured.
 # ---------------------------------------------------------------------------
 
-FLASH_MODEL: str = os.environ.get("SKARBIE_FLASH_MODEL", "zai/glm-5.3-flash")
+FLASH_MODEL: str = os.environ.get("CASH_ASH_FLASH_MODEL", "zai/glm-5.3-flash")
 """Default model for every feature. Cheap, fast, and always reasoning.
 
 Roughly USD 0.15 per million input tokens and 0.50 per million output. A full
@@ -211,7 +213,7 @@ weekly pass over fourteen holdings costs a few cents at this rate, which is
 what makes running the whole pipeline every week defensible at all.
 """
 
-FAST_MODEL: str = os.environ.get("SKARBIE_FAST_MODEL", "openai/gpt-5.6-luna")
+FAST_MODEL: str = os.environ.get("CASH_ASH_FAST_MODEL", "openai/gpt-5.6-luna")
 """Non-reasoning model on a second provider, used as the fallback.
 
 Its value here is redundancy, not capability. Being on a different provider
@@ -225,7 +227,7 @@ reasoning is the product, the reasoning is what you are paying for. Which model
 is actually better at research is an evaluation question, not a pricing one.
 """
 
-PRO_MODEL: str = os.environ.get("SKARBIE_PRO_MODEL", "zai/glm-4.7")
+PRO_MODEL: str = os.environ.get("CASH_ASH_PRO_MODEL", "zai/glm-4.7")
 """Stronger model, roughly four times the price of the flash tier.
 
 Not used by any feature by default. Route a feature here with `main.py models`
@@ -233,10 +235,10 @@ when there is a measured reason to, not on the assumption that a bigger model
 must be better at a task nobody has evaluated yet.
 """
 
-MAX_TOKENS_DEFAULT: int = _env_int("SKARBIE_MAX_TOKENS_DEFAULT", 4000)
+MAX_TOKENS_DEFAULT: int = _env_int("CASH_ASH_MAX_TOKENS_DEFAULT", 4000)
 """Default output budget for a model call."""
 
-THESIS_MAX_TOKENS: int = _env_int("SKARBIE_THESIS_MAX_TOKENS", 9000)
+THESIS_MAX_TOKENS: int = _env_int("CASH_ASH_THESIS_MAX_TOKENS", 9000)
 """Output budget for a thesis restatement.
 
 Measured rather than chosen. At 3,000 tokens, eight of fourteen bootstrap calls
@@ -250,7 +252,7 @@ Generous on purpose: an unused budget costs nothing, since billing is on tokens
 produced, while too small a budget costs the entire call and then the retry.
 """
 
-MIN_MAX_TOKENS: int = _env_int("SKARBIE_MIN_MAX_TOKENS", 1024)
+MIN_MAX_TOKENS: int = _env_int("CASH_ASH_MIN_MAX_TOKENS", 1024)
 """Floor under any output budget, enforced rather than merely defaulted.
 
 Measured, not guessed: GLM-5.3-Flash always reasons and cannot be told not to.
@@ -260,7 +262,7 @@ that costs money and contains nothing. Any budget small enough to be consumed
 entirely by reasoning is a bug, so callers cannot set one.
 """
 
-DECISION_MAX_TOKENS: int = _env_int("SKARBIE_DECISION_MAX_TOKENS", 20000)
+DECISION_MAX_TOKENS: int = _env_int("CASH_ASH_DECISION_MAX_TOKENS", 20000)
 """Output budget for the portfolio decision.
 
 The largest of any stage, and measured rather than chosen. Deciding across
@@ -274,7 +276,7 @@ minutes each time.
 """
 
 TRUNCATION_RETRY_MULTIPLIER: float = _env_float(
-    "SKARBIE_TRUNCATION_RETRY_MULTIPLIER", 2.5
+    "CASH_ASH_TRUNCATION_RETRY_MULTIPLIER", 2.5
 )
 """Budget multiplier when a reply is truncated before any content appeared.
 
@@ -291,7 +293,7 @@ Three attempts spanning about a minute. A weekly batch job can afford to wait;
 what it cannot afford is to abandon a run because one provider blipped.
 """
 
-LLM_TIMEOUT_S: float = _env_float("SKARBIE_LLM_TIMEOUT_S", 180.0)
+LLM_TIMEOUT_S: float = _env_float("CASH_ASH_LLM_TIMEOUT_S", 180.0)
 """Per-request timeout. Generous because reasoning models are slow, and a
 research call that takes two minutes is still cheaper than a failed run.
 """
@@ -301,7 +303,7 @@ research call that takes two minutes is still cheaper than a failed run.
 # Evidence
 # ---------------------------------------------------------------------------
 
-EVIDENCE_SOURCE: str = os.environ.get("SKARBIE_EVIDENCE_SOURCE", "yfinance-news")
+EVIDENCE_SOURCE: str = os.environ.get("CASH_ASH_EVIDENCE_SOURCE", "yfinance-news")
 """Where the facts an analysis reasons over are retrieved from.
 
 Free news aggregation by default, needing no key. It supplies provenance — a
@@ -312,7 +314,7 @@ this portfolio's usage, but adding a credential before the free source has been
 shown inadequate is a cost with no measured benefit.
 """
 
-EVIDENCE_ITEMS_PER_SECURITY: int = _env_int("SKARBIE_EVIDENCE_ITEMS_PER_SECURITY", 8)
+EVIDENCE_ITEMS_PER_SECURITY: int = _env_int("CASH_ASH_EVIDENCE_ITEMS_PER_SECURITY", 8)
 """How many items to retrieve per security for one research pass.
 
 Enough to see what a week actually contained without burying the thesis in
@@ -348,18 +350,18 @@ Only transient faults are retried. A refusal — a bad chat id, malformed HTML �
 fails identically every time, so retrying it only delays the error.
 """
 
-TELEGRAM_TIMEOUT_S: float = _env_float("SKARBIE_TELEGRAM_TIMEOUT_S", 20.0)
+TELEGRAM_TIMEOUT_S: float = _env_float("CASH_ASH_TELEGRAM_TIMEOUT_S", 20.0)
 """Per-request timeout for the Telegram API."""
 
 
-LAUNCHD_LABEL: str = "com.skarbie.daemon"
+LAUNCHD_LABEL: str = "com.cash-ash.daemon"
 """launchd job label, and the stem of the installed plist filename.
 
 Defined here rather than beside the install command because install, stop
 and restart all need the same answer, and three copies of a literal is how
 one of them ends up managing a different job."""
 
-DAEMON_POLL_TIMEOUT_S: int = _env_int("SKARBIE_DAEMON_POLL_TIMEOUT_S", 30)
+DAEMON_POLL_TIMEOUT_S: int = _env_int("CASH_ASH_DAEMON_POLL_TIMEOUT_S", 30)
 """How long each long-poll waits for an update before returning empty.
 
 Long polling rather than repeated short requests: Telegram holds the connection
@@ -367,7 +369,7 @@ until something arrives, so a quiet day costs almost nothing and a button press
 is handled in about a second.
 """
 
-DAEMON_ERROR_BACKOFF_S: int = _env_int("SKARBIE_DAEMON_ERROR_BACKOFF_S", 15)
+DAEMON_ERROR_BACKOFF_S: int = _env_int("CASH_ASH_DAEMON_ERROR_BACKOFF_S", 15)
 """Pause after a failed poll before trying again.
 
 Long enough that a provider outage does not become a request flood, short
@@ -375,7 +377,7 @@ enough that a button press is not left unanswered for minutes once it clears.
 """
 
 
-WEEKLY_RUN_WEEKDAY: int = _env_int("SKARBIE_WEEKLY_RUN_WEEKDAY", 0)
+WEEKLY_RUN_WEEKDAY: int = _env_int("CASH_ASH_WEEKLY_RUN_WEEKDAY", 0)
 """Day the weekly run fires, with Sunday as 0.
 
 Sunday by default: the week's news has landed, markets are shut so no price
@@ -384,16 +386,16 @@ it proposes. The strategy asks for a cooling-off period, and a Sunday report
 gives one for free.
 """
 
-WEEKLY_RUN_HOUR: int = _env_int("SKARBIE_WEEKLY_RUN_HOUR", 18)
+WEEKLY_RUN_HOUR: int = _env_int("CASH_ASH_WEEKLY_RUN_HOUR", 18)
 """Hour the weekly run fires, local time."""
 
 
 def _log_file() -> Path:
     """Resolve where background jobs write, honouring an override."""
-    override = os.environ.get("SKARBIE_LOG_FILE", "").strip()
+    override = os.environ.get("CASH_ASH_LOG_FILE", "").strip()
     if override:
         return Path(override).expanduser()
-    return Path.home() / "Library" / "Logs" / "skarbie.daemon.log"
+    return Path.home() / "Library" / "Logs" / "cash-ash.daemon.log"
 
 
 DAEMON_LOG_FILE: Path = _log_file()
@@ -406,7 +408,7 @@ of a directory otherwise holding only the user's own files.
 
 
 SCHEDULED_CHECK_INTERVAL_S: int = _env_int(
-    "SKARBIE_SCHEDULED_CHECK_INTERVAL_S", 30 * 60
+    "CASH_ASH_SCHEDULED_CHECK_INTERVAL_S", 30 * 60
 )
 """How often the daemon asks whether the week's run has happened.
 
@@ -417,7 +419,7 @@ hour runs within half an hour of waking.
 """
 
 
-BENCHMARK_TICKER: str = os.environ.get("SKARBIE_BENCHMARK_TICKER", "VWCE.DE")
+BENCHMARK_TICKER: str = os.environ.get("CASH_ASH_BENCHMARK_TICKER", "VWCE.DE")
 """The passive alternative the portfolio is measured against.
 
 A global all-world tracker quoted in EUR, so the comparison needs no currency
@@ -431,13 +433,13 @@ from noise.
 """
 
 BENCHMARK_NAME: str = os.environ.get(
-    "SKARBIE_BENCHMARK_NAME", "FTSE All-World (accumulating)"
+    "CASH_ASH_BENCHMARK_NAME", "FTSE All-World (accumulating)"
 )
 """Human-readable name for the benchmark, shown in reports."""
 
 
 BENCHMARK_MEANINGFUL_AFTER_DAYS: int = _env_int(
-    "SKARBIE_BENCHMARK_MEANINGFUL_AFTER_DAYS", 3 * 365
+    "CASH_ASH_BENCHMARK_MEANINGFUL_AFTER_DAYS", 3 * 365
 )
 """How long the benchmark comparison must run before it is worth reading.
 
@@ -452,19 +454,19 @@ invites exactly the mistake the system is built to avoid.
 """
 
 
-RESEARCH_MAX_PASSES: int = _env_int("SKARBIE_RESEARCH_MAX_PASSES", 4)
+RESEARCH_MAX_PASSES: int = _env_int("CASH_ASH_RESEARCH_MAX_PASSES", 4)
 """Weekly deep-pass cap; limits latency and spend while allowing rotation."""
 
-RESEARCH_OVERDUE_DAYS: int = _env_int("SKARBIE_RESEARCH_OVERDUE_DAYS", 42)
+RESEARCH_OVERDUE_DAYS: int = _env_int("CASH_ASH_RESEARCH_OVERDUE_DAYS", 42)
 """Six-week coverage floor so quiet holdings cannot be skipped forever."""
 
 RESEARCH_ROTATION_SLOTS: int = 1
 """Reserve one weekly slot for the oldest coverage gap without crowding out events."""
 
-SNOOZE_DAYS: int = _env_int("SKARBIE_SNOOZE_DAYS", 2)
+SNOOZE_DAYS: int = _env_int("CASH_ASH_SNOOZE_DAYS", 2)
 """Two days to reconsider an item while keeping it inside the weekly review."""
 
-EVIDENCE_MAX_AGE_DAYS: int = _env_int("SKARBIE_EVIDENCE_MAX_AGE_DAYS", 120)
+EVIDENCE_MAX_AGE_DAYS: int = _env_int("CASH_ASH_EVIDENCE_MAX_AGE_DAYS", 120)
 """Allow the latest quarterly disclosure, but exclude old news from current evidence."""
 
 RESEARCH_ASSET_CLASSES: tuple[str, ...] = ("equity",)

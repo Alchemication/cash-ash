@@ -32,7 +32,7 @@ it must be able to skip a security rather than assume all holdings can be
 analysed alike.
 
 **No personal data in the repository.** Holdings, quantities, euro amounts,
-Telegram ids and API keys live under `SKARBIE_HOME`, never in tracked files.
+Telegram ids and API keys live under `CASH_ASH_HOME`, never in tracked files.
 Git history is permanent, so a value committed once is committed forever. The
 repository ships `.env_example` and `seed_snapshot.example.toml` with invented
 figures; tests use synthetic fixtures under `tests/fixtures/`.
