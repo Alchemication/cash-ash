@@ -34,7 +34,8 @@ import re
 import threading
 import time
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
+from datetime import time as time_of_day
 
 from config import (
     APP_HOME,
@@ -232,13 +233,42 @@ def _write_state(**changes) -> None:  # type: ignore[no-untyped-def]
     STATE_PATH.write_text(json.dumps(state), encoding="utf-8")
 
 
-def weekly_is_due(profile_name: str, *, now: datetime | None = None) -> bool:
-    """Return True when this week's run has not happened yet and its time has passed.
+def _last_slot(now: datetime) -> datetime | None:
+    """Return the most recent scheduled moment that has already passed.
 
-    Keyed on the ISO week rather than on a timestamp comparison. Asking "has a
-    run been recorded for this week?" makes a missed slot self-correcting: a
-    machine asleep on Sunday evening runs on Monday instead of skipping, and a
-    daemon restarted twice in an hour does not run twice.
+    Computed by walking back to the configured weekday rather than comparing
+    weekday numbers, because the two calendars disagree in a way that bites.
+    ISO weeks start on Monday, so a Sunday run falls at the *end* of its week
+    and the very next morning belongs to a new one — keying the schedule on an
+    ISO week therefore fired a second run within a day of the first.
+
+    Args:
+        now: Reference time.
+
+    Returns:
+        The datetime of the last scheduled slot, or None if none has passed.
+    """
+    for delta in range(8):
+        day = (now - timedelta(days=delta)).date()
+        if (day.weekday() + 1) % 7 != WEEKLY_RUN_WEEKDAY:
+            continue
+        slot = datetime.combine(day, time_of_day(hour=WEEKLY_RUN_HOUR))
+        if slot <= now:
+            return slot
+    return None
+
+
+def weekly_is_due(profile_name: str, *, now: datetime | None = None) -> bool:
+    """Return True when the current scheduled slot has not been run yet.
+
+    Keyed on the slot itself, so the question is "has this occurrence
+    happened?" rather than "is it that time?". A machine asleep at the
+    scheduled hour runs on waking; a daemon restarted twice in an hour does
+    not run twice.
+
+    A profile seen for the first time has its current slot recorded without
+    running, so installing the daemon on a Saturday does not immediately fire
+    the run that was due last Sunday. The first run is the next scheduled one.
 
     Args:
         profile_name: Whose run is being considered.
@@ -247,26 +277,33 @@ def weekly_is_due(profile_name: str, *, now: datetime | None = None) -> bool:
     Returns:
         Whether to run.
     """
-    moment = now or datetime.now()
-    year, week, _ = moment.isocalendar()
-    if _read_state().get("last_weekly", {}).get(profile_name) == f"{year}-W{week:02d}":
+    slot = _last_slot(now or datetime.now())
+    if slot is None:
         return False
 
-    # launchd weekdays put Sunday at 0; Python puts Monday at 0 and Sunday at 6.
-    weekday = (moment.weekday() + 1) % 7
-    if weekday < WEEKLY_RUN_WEEKDAY:
+    recorded = _read_state().get("last_weekly", {})
+    if profile_name not in recorded:
+        _record_slot(profile_name, slot)
+        logger.info(
+            "First run for %s scheduled from the next slot, not the missed one",
+            profile_name,
+        )
         return False
-    return not (weekday == WEEKLY_RUN_WEEKDAY and moment.hour < WEEKLY_RUN_HOUR)
+    return recorded[profile_name] != slot.isoformat(timespec="minutes")
+
+
+def _record_slot(profile_name: str, slot: datetime) -> None:
+    """Mark one scheduled slot as handled for a profile."""
+    last = dict(_read_state().get("last_weekly", {}))
+    last[profile_name] = slot.isoformat(timespec="minutes")
+    _write_state(last_weekly=last)
 
 
 def _record_weekly(profile_name: str, *, now: datetime | None = None) -> None:
-    """Mark this week's run as done for a profile."""
-    moment = now or datetime.now()
-    year, week, _ = moment.isocalendar()
-    state = _read_state()
-    last = dict(state.get("last_weekly", {}))
-    last[profile_name] = f"{year}-W{week:02d}"
-    _write_state(last_weekly=last)
+    """Mark the current slot as run for a profile."""
+    slot = _last_slot(now or datetime.now())
+    if slot is not None:
+        _record_slot(profile_name, slot)
 
 
 def _run_weekly_for_profiles(send: bool = True) -> None:

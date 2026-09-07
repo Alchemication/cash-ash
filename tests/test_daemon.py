@@ -300,7 +300,7 @@ class TestLaunchdJob:
 
 
 class TestWeeklySchedule:
-    """One process schedules the week; the question is about state, not clocks."""
+    """One process schedules the week, keyed on the slot rather than the clock."""
 
     @pytest.fixture
     def state(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -308,10 +308,22 @@ class TestWeeklySchedule:
         monkeypatch.setattr(daemon_module, "STATE_PATH", path)
         return path
 
-    def test_not_due_before_the_scheduled_day(self, state) -> None:
+    @staticmethod
+    def _seen(name: str = "adam", *, at=None) -> None:
+        """Mark the profile as known, so the first-run guard does not apply.
+
+        Defaults to the previous Sunday's slot, so a later check within the
+        same week sees a slot that has genuinely already passed.
+        """
         from datetime import datetime
 
-        # Saturday, with Sunday configured.
+        daemon_module.weekly_is_due(name, now=at or datetime(2026, 8, 30, 18))
+
+    def test_a_new_profile_does_not_backfill_a_missed_slot(self, state) -> None:
+        # Installing on a Saturday must not immediately fire the run that was
+        # due last Sunday.
+        from datetime import datetime
+
         assert (
             daemon_module.weekly_is_due("adam", now=datetime(2026, 9, 5, 20)) is False
         )
@@ -319,26 +331,34 @@ class TestWeeklySchedule:
     def test_not_due_before_the_scheduled_hour(self, state) -> None:
         from datetime import datetime
 
+        self._seen()
         assert daemon_module.weekly_is_due("adam", now=datetime(2026, 9, 6, 9)) is False
 
     def test_due_at_the_scheduled_hour(self, state) -> None:
         from datetime import datetime
 
+        self._seen()
         assert daemon_module.weekly_is_due("adam", now=datetime(2026, 9, 6, 18)) is True
 
-    def test_still_due_the_next_morning(self, state) -> None:
-        # The point of asking about state: a machine asleep on Sunday evening
+    def test_still_due_after_sleeping_through_the_slot(self, state) -> None:
+        # The reason for keying on the slot: a machine asleep on Sunday evening
         # runs on waking rather than skipping the week.
         from datetime import datetime
 
+        self._seen()
         assert daemon_module.weekly_is_due("adam", now=datetime(2026, 9, 7, 9)) is True
 
-    def test_not_due_twice_in_one_week(self, state) -> None:
+    def test_does_not_run_twice_the_next_morning(self, state) -> None:
+        # ISO weeks start on Monday, so a Sunday run sits at the end of its
+        # week and the next morning is a new one. Keying on the ISO week fired
+        # a second run within a day.
         from datetime import datetime
 
         sunday = datetime(2026, 9, 6, 18)
+        self._seen()
         daemon_module._record_weekly("adam", now=sunday)
         assert daemon_module.weekly_is_due("adam", now=sunday) is False
+        assert daemon_module.weekly_is_due("adam", now=datetime(2026, 9, 7, 9)) is False
         assert (
             daemon_module.weekly_is_due("adam", now=datetime(2026, 9, 8, 10)) is False
         )
@@ -346,6 +366,7 @@ class TestWeeklySchedule:
     def test_due_again_the_following_week(self, state) -> None:
         from datetime import datetime
 
+        self._seen()
         daemon_module._record_weekly("adam", now=datetime(2026, 9, 6, 18))
         assert (
             daemon_module.weekly_is_due("adam", now=datetime(2026, 9, 13, 18)) is True
@@ -355,7 +376,10 @@ class TestWeeklySchedule:
         from datetime import datetime
 
         sunday = datetime(2026, 9, 6, 18)
+        self._seen("adam")
+        self._seen("kasia")
         daemon_module._record_weekly("adam", now=sunday)
+        assert daemon_module.weekly_is_due("adam", now=sunday) is False
         assert daemon_module.weekly_is_due("kasia", now=sunday) is True
 
     def test_recording_a_run_does_not_lose_the_update_offset(self, state) -> None:
@@ -364,6 +388,7 @@ class TestWeeklySchedule:
         from datetime import datetime
 
         daemon_module._save_offset(4242)
+        self._seen()
         daemon_module._record_weekly("adam", now=datetime(2026, 9, 6, 18))
         assert daemon_module._load_offset() == 4242
 
@@ -371,6 +396,7 @@ class TestWeeklySchedule:
         from datetime import datetime
 
         sunday = datetime(2026, 9, 6, 18)
+        self._seen()
         daemon_module._record_weekly("adam", now=sunday)
         daemon_module._save_offset(99)
         assert daemon_module.weekly_is_due("adam", now=sunday) is False
