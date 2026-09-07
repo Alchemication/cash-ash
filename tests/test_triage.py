@@ -348,17 +348,43 @@ class TestSellEligibility:
         assert entry.sell_permitted is None
         assert "selling:" not in entry.render()
 
+    @staticmethod
+    def _dilute(conn: sqlite3.Connection) -> None:
+        """Add cash so every holding sits under the weight cap.
+
+        The fixture is three holdings, so each is 25-42% of it and therefore
+        oversized — which permits a trim on size alone, independent of any
+        thesis. Diluting isolates the thesis rule from the weight rule.
+        """
+        from models import CashFlow
+        from store import insert_cash_flow
+
+        insert_cash_flow(
+            conn,
+            CashFlow(flow_date="2026-02-01", kind="CONTRIBUTION", amount_eur=3000.0),
+        )
+
     def test_unexamined_thesis_is_not_sellable(
         self, seeded: sqlite3.Connection
     ) -> None:
+        self._dilute(seeded)
         entry = triage_inputs(seeded, today=TODAY, include_sell_eligibility=True)[0]
         assert entry.sell_permitted is False
         assert "NOT permitted" in entry.render()
+
+    def test_an_oversized_position_is_sellable_whatever_the_thesis(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        # Trimming for size is a portfolio decision, not a view on the company.
+        entry = triage_inputs(seeded, today=TODAY, include_sell_eligibility=True)[0]
+        assert entry.weight_pct > 20
+        assert entry.sell_permitted is True
 
     def test_broken_thesis_is_sellable(self, seeded: sqlite3.Connection) -> None:
         from models import Thesis
         from store_research import save_thesis
 
+        self._dilute(seeded)
         save_thesis(
             seeded,
             Thesis(
@@ -382,6 +408,7 @@ class TestSellEligibility:
         # then referred to a sale that never happened.
         from research import run_decision
 
+        self._dilute(seeded)
         seen = fake_llm('{"recommendations": [], "summary": "quiet"}')
         run_decision(seeded, today=TODAY)
         assert "selling: NOT permitted" in seen[0]
