@@ -361,3 +361,43 @@ class TestRefusalMessages:
     def test_an_unrecognised_refusal_is_passed_through(self) -> None:
         message = notify_module._explain("sendMessage", "something novel")
         assert "something novel" in message
+
+
+class TestDecidingOnRetiredAdvice:
+    """A replaced recommendation must not accept an answer."""
+
+    def test_superseded_cannot_be_decided(self, seeded: sqlite3.Connection) -> None:
+        # Recording an answer to withdrawn advice would count as engagement
+        # with a recommendation that was never really live.
+        import argparse
+
+        from cmd_recommend import cmd_decide
+        from store_research import create_research_run
+
+        for _ in range(2):
+            create_research_run(seeded, run_date="2026-09-07", kind="deep")
+        seeded.execute(
+            """
+            INSERT INTO recommendation (run_date, research_run_id, security_id,
+                                        action, rationale, urgency, expires_on,
+                                        superseded_by_run_id, created_at)
+            VALUES ('2026-09-07', 1, 1, 'REVIEW', 'because', 'low',
+                    '2099-01-01', 2, 'x')
+            """
+        )
+        row = seeded.execute("SELECT id FROM recommendation").fetchone()
+
+        import cmd_recommend
+
+        cmd_recommend.resolve_cli_profile = lambda *a, **k: (None, "ignored")
+        cmd_recommend.open_existing_db = lambda _p: seeded
+        args = argparse.Namespace(
+            profile=None,
+            db=None,
+            recommendation_id=row["id"],
+            decision="approve",
+            note=None,
+            limit=10,
+        )
+        with pytest.raises(ValueError, match="replaced by a later run"):
+            cmd_decide(args)

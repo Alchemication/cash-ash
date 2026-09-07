@@ -127,7 +127,7 @@ def cmd_decide(args: argparse.Namespace) -> None:
         rows = conn.execute(
             """
             SELECT r.id, r.run_date, r.action, r.amount_eur, r.expires_on,
-                   r.rationale, s.ticker,
+                   r.rationale, r.superseded_by_run_id, s.ticker,
                    (SELECT decision FROM user_decision d
                      WHERE d.recommendation_id = r.id
                      ORDER BY d.id DESC LIMIT 1) AS decision
@@ -149,12 +149,16 @@ def cmd_decide(args: argparse.Namespace) -> None:
         table.add_column("Amount", justify="right")
         table.add_column("Status")
         for row in rows:
-            expired = row["expires_on"] < today and not row["decision"]
-            status = (
-                "[dim]expired[/dim]"
-                if expired
-                else (row["decision"] or "[yellow]pending[/yellow]")
-            )
+            # Ordered by what the reader most needs to know: a decision they
+            # made, then a replacement they did not, then plain lapsing.
+            if row["decision"]:
+                status = row["decision"]
+            elif row["superseded_by_run_id"] is not None:
+                status = "[dim]replaced by a later run[/dim]"
+            elif row["expires_on"] < today:
+                status = "[dim]expired[/dim]"
+            else:
+                status = "[yellow]pending[/yellow]"
             table.add_row(
                 str(row["id"]),
                 row["run_date"],
@@ -171,6 +175,12 @@ def cmd_decide(args: argparse.Namespace) -> None:
     ).fetchone()
     if row is None:
         raise ValueError(f"No recommendation with id {args.recommendation_id}.")
+    if row["superseded_by_run_id"] is not None:
+        raise ValueError(
+            f"Recommendation {row['id']} was replaced by a later run. Deciding "
+            f"on it would record an answer to advice that has been withdrawn; "
+            f"see 'main.py decide' for what is live."
+        )
     if row["expires_on"] < today:
         raise ValueError(
             f"Recommendation {row['id']} expired on {row['expires_on']}. A weekly "
