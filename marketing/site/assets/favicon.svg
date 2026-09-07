@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- A ledger sheet: paper, one red margin line, blue ruling, three entries. -->
-  <rect width="32" height="32" rx="5" fill="#e6e8df"/>
-  <path d="M9.5 3v26" stroke="#c9382c" stroke-width="2"/>
-  <path d="M4 11h24M4 17h24M4 23h24" stroke="#b9c3cf" stroke-width="1.5"/>
-  <path d="M13 9h9M13 15h12M13 21h6" stroke="#1b2028" stroke-width="2.2" stroke-linecap="round"/>
+  <!-- A ledger sheet in the dark: charcoal, one ember margin line, faint ruling, three entries. -->
+  <rect width="32" height="32" rx="5" fill="#1c1e1d"/>
+  <path d="M9.5 3v26" stroke="#ff6b35" stroke-width="2"/>
+  <path d="M4 11h24M4 17h24M4 23h24" stroke="#f1eee7" stroke-opacity=".14" stroke-width="1.5"/>
+  <path d="M13 9h9M13 15h12M13 21h6" stroke="#f1eee7" stroke-width="2.2" stroke-linecap="round"/>
 </svg>

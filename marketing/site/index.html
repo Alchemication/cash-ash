@@ -53,7 +53,7 @@ h1 {
 .btn {
   display: inline-block;
   padding: 11px 20px;
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--bone);
   border-radius: 4px;
   font-family: var(--display);
   font-size: 16px;
@@ -61,14 +61,14 @@ h1 {
   text-decoration: none;
 }
 
-.btn.primary { background: var(--ink); color: var(--ledger); }
-.btn:hover { background: var(--ink); color: var(--ledger); }
+.btn.primary { background: var(--ember); border-color: var(--ember); color: var(--ash-black); }
+.btn:hover { background: var(--ember-hot); border-color: var(--ember-hot); color: var(--ash-black); }
 
 .aside {
   margin: 20px 0 0;
   font-family: var(--display);
   font-size: 15px;
-  color: var(--ink-2);
+  color: var(--ash);
 }
 
 /* The sheet. Real ledger ruling: one text line per rule, a red margin, and
@@ -79,7 +79,7 @@ h1 {
   margin: 0;
   border: 1px solid var(--line-strong);
   border-radius: 3px;
-  background: rgba(255, 255, 255, .42);
+  background: var(--charcoal);
   font-family: var(--display);
   font-size: 14.5px;
   font-weight: 450;
@@ -100,8 +100,8 @@ h1 {
   padding: 0 14px 0 42px;
   background-image:
     linear-gradient(to right,
-      transparent var(--margin-x), var(--margin) var(--margin-x),
-      var(--margin) calc(var(--margin-x) + 1.5px), transparent calc(var(--margin-x) + 1.5px)),
+      transparent var(--margin-x), var(--ember) var(--margin-x),
+      var(--ember) calc(var(--margin-x) + 1.5px), transparent calc(var(--margin-x) + 1.5px)),
     repeating-linear-gradient(to bottom,
       transparent 0 calc(var(--pitch) - 1px), var(--rule) calc(var(--pitch) - 1px) var(--pitch));
 }
@@ -116,20 +116,20 @@ h1 {
 .row.title { margin-top: var(--pitch); }
 .row.title:first-child { margin-top: 0; }
 .row.title b { font-weight: 750; letter-spacing: .01em; }
-.row.title span { color: var(--ink-2); }
+.row.title span { color: var(--ash); }
 .row.title .right { justify-self: end; font-weight: 550; }
 
-.tag { font-size: 12.5px; font-weight: 650; color: var(--ink-2); }
-.tag.sourced { color: var(--sourced); }
-.tag.rules { color: var(--margin); }
-.row em { color: var(--ink-2); font-style: normal; }
+.tag { font-size: 12.5px; font-weight: 650; color: var(--ash); }
+.tag.sourced { color: var(--profit); }
+.tag.rules { color: var(--loss); }
+.row em { color: var(--ash); font-style: normal; }
 
 .stamp {
   align-self: center;
   padding: 0 7px;
-  border: 1.5px solid var(--margin);
+  border: 1.5px solid var(--loss);
   border-radius: 3px;
-  color: var(--margin);
+  color: var(--loss);
   font-size: 12px;
   font-weight: 750;
   line-height: 20px;
@@ -155,13 +155,13 @@ h1 {
   line-height: 22px;
 }
 
-.buttons span:first-child { border-color: var(--sourced); color: var(--sourced); }
+.buttons span:first-child { border-color: var(--profit); color: var(--profit); }
 
 .sheet figcaption {
   padding: 7px 14px;
   border-top: 1px solid var(--line-strong);
   font-size: 13px;
-  color: var(--ink-2);
+  color: var(--ash);
 }
 
 /* Entries: the heading sits in the ledger margin, the content to its right. */
@@ -176,7 +176,7 @@ h1 {
 .entry > h2 {
   margin: 0;
   padding-right: 24px;
-  border-right: 2px solid var(--margin);
+  border-right: 2px solid var(--ember);
   font-family: var(--display);
   font-size: 31px;
   font-weight: 700;
@@ -207,7 +207,7 @@ h1 {
   border-top: 1px solid var(--line-strong);
 }
 
-.stages li.you { border-top: 2px solid var(--sourced); }
+.stages li.you { border-top: 2px solid var(--profit); }
 
 .stages h3 {
   display: flex;
@@ -224,11 +224,11 @@ h1 {
 .stages h3 small {
   font-size: 14px;
   font-weight: 600;
-  color: var(--ink-2);
+  color: var(--ash);
   font-variant-numeric: tabular-nums;
 }
 
-.stages .you h3 { color: var(--sourced); }
+.stages .you h3 { color: var(--profit); }
 .stages p { margin: 0; font-size: 16.5px; line-height: 1.5; }
 
 /* Rules and labels: entries on ruled lines. */
@@ -271,7 +271,7 @@ h1 {
   margin-top: 20px;
   font-family: var(--display);
   font-size: 15px;
-  color: var(--ink-2);
+  color: var(--ash);
 }
 
 pre {
@@ -279,17 +279,28 @@ pre {
   padding: 18px 20px;
   overflow-x: auto;
   border-radius: 4px;
-  background: var(--ink);
-  color: var(--ledger);
+  border: 1px solid var(--line);
+  background: var(--charcoal);
+  color: var(--bone);
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 13.5px;
   line-height: 1.65;
 }
 
-pre .c { color: var(--ledger-3); }
+pre .c { color: var(--ash); }
+
+/* Ash. A fixed canvas behind the page: sparse grey flecks settling, the odd
+   ember rising. Off under prefers-reduced-motion, paused while hidden. */
+#ash {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .stamp { animation: none; }
+  #ash { display: none; }
 }
 
 @media (max-width: 900px) {
@@ -298,7 +309,7 @@ pre .c { color: var(--ledger-3); }
   .entry > h2 {
     padding: 0 0 0 16px;
     border-right: 0;
-    border-left: 2px solid var(--margin);
+    border-left: 2px solid var(--ember);
   }
   .stages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -317,11 +328,13 @@ pre .c { color: var(--ledger-3); }
 </head>
 <body>
 
+<canvas id="ash" aria-hidden="true"></canvas>
+
 <header class="shell topbar">
   <a class="wordmark" href="./">
     <svg viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="4" fill="var(--ledger-2)"/>
-      <path d="M9.5 3v26" stroke="var(--margin)" stroke-width="2"/>
+      <rect width="32" height="32" rx="4" fill="var(--charcoal-2)"/>
+      <path d="M9.5 3v26" stroke="var(--ember)" stroke-width="2"/>
       <path d="M4 11h24M4 17h24M4 23h24" stroke="var(--rule)" stroke-width="1.5"/>
       <path d="M13 9h9M13 15h12M13 21h6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
     </svg>
@@ -474,6 +487,97 @@ uv run python main.py weekly --telegram</code></pre>
   <span>CashAsh is not advice, not a broker and not a forecast.</span>
   <span><a href="https://github.com/Alchemication/cash-ash">Source on GitHub</a></span>
 </footer>
+
+<script>
+(function () {
+  var canvas = document.getElementById("ash");
+  if (!canvas || !canvas.getContext) return;
+  var motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  if (motion.matches) return;
+
+  var style = getComputedStyle(document.documentElement);
+  var BONE = style.getPropertyValue("--bone").trim();
+  var EMBER = style.getPropertyValue("--ember").trim();
+
+  var ctx = canvas.getContext("2d");
+  var flecks = [], w = 0, h = 0, raf = null, last = 0;
+
+  function make(anywhere) {
+    var ember = Math.random() < 0.07;
+    return {
+      ember: ember,
+      x: Math.random() * w,
+      y: anywhere ? Math.random() * h : (ember ? h + 6 : -6),
+      r: ember ? 0.8 + Math.random() * 0.6 : 0.7 + Math.random() * 1.5,
+      // Ash settles; an ember lifts. Pixels per second.
+      vy: ember ? -(10 + Math.random() * 18) : 4 + Math.random() * 10,
+      drift: (Math.random() - 0.5) * 6,
+      phase: Math.random() * Math.PI * 2,
+      wobble: 0.25 + Math.random() * 0.5,
+      a: ember ? 0.35 + Math.random() * 0.3 : 0.05 + Math.random() * 0.13
+    };
+  }
+
+  function size() {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    w = window.innerWidth;
+    h = window.innerHeight;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Roughly one fleck per 30k px², never more than a few dozen.
+    var want = Math.min(44, Math.round((w * h) / 30000));
+    while (flecks.length < want) flecks.push(make(true));
+    flecks.length = want;
+  }
+
+  function frame(t) {
+    var dt = Math.min((t - last) / 1000, 0.05);
+    last = t;
+    ctx.clearRect(0, 0, w, h);
+    for (var i = 0; i < flecks.length; i++) {
+      var f = flecks[i];
+      f.phase += dt * f.wobble;
+      f.y += f.vy * dt;
+      f.x += (f.drift + Math.sin(f.phase) * 5) * dt;
+      if (f.y < -8 || f.y > h + 8 || f.x < -8 || f.x > w + 8) {
+        flecks[i] = make(false);
+        continue;
+      }
+      ctx.globalAlpha = f.ember ? f.a * (0.65 + 0.35 * Math.sin(f.phase * 4)) : f.a;
+      ctx.fillStyle = f.ember ? EMBER : BONE;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    raf = requestAnimationFrame(frame);
+  }
+
+  function start() {
+    if (raf !== null) return;
+    last = performance.now();
+    raf = requestAnimationFrame(frame);
+  }
+
+  function stop() {
+    if (raf === null) return;
+    cancelAnimationFrame(raf);
+    raf = null;
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) stop(); else start();
+  });
+  motion.addEventListener("change", function (e) {
+    if (e.matches) { stop(); ctx.clearRect(0, 0, w, h); } else start();
+  });
+  window.addEventListener("resize", size);
+
+  size();
+  // Let the stamp land first; the ash begins once that moment is over.
+  setTimeout(start, 1400);
+})();
+</script>
 
 </body>
 </html>

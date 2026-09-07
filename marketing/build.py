@@ -227,8 +227,8 @@ def heading_index(body: str) -> list[tuple[str, str]]:
 
 
 WORDMARK_SVG = """<svg viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="4" fill="var(--ledger-2)"/>
-      <path d="M9.5 3v26" stroke="var(--margin)" stroke-width="2"/>
+      <rect width="32" height="32" rx="4" fill="var(--charcoal-2)"/>
+      <path d="M9.5 3v26" stroke="var(--ember)" stroke-width="2"/>
       <path d="M4 11h24M4 17h24M4 23h24" stroke="var(--rule)" stroke-width="1.5"/>
       <path d="M13 9h9M13 15h12M13 21h6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
     </svg>"""
@@ -282,12 +282,12 @@ main {{ padding: 40px 0 88px; }}
 }}
 .doc > aside {{
   align-self: start; position: sticky; top: 24px;
-  padding-right: 20px; border-right: 2px solid var(--margin);
+  padding-right: 20px; border-right: 2px solid var(--ember);
   font-family: var(--display); font-size: 14px;
 }}
-.doc > aside a {{ display: block; padding: 3px 0; color: var(--ink-2); text-decoration: none; line-height: 1.3; }}
-.doc > aside a:hover {{ color: var(--ink); }}
-.doc > aside .up {{ margin-bottom: 14px; color: var(--ink); font-weight: 600; }}
+.doc > aside a {{ display: block; padding: 3px 0; color: var(--ash); text-decoration: none; line-height: 1.3; }}
+.doc > aside a:hover {{ color: var(--bone); }}
+.doc > aside .up {{ margin-bottom: 14px; color: var(--bone); font-weight: 600; }}
 .doc > article {{ min-width: 0; max-width: 680px; }}
 h1 {{
   margin: 0 0 22px; font-family: var(--display);
@@ -299,30 +299,30 @@ h2 {{
 }}
 h3 {{ margin: 28px 0 8px; font-family: var(--display); font-size: 19px; font-weight: 700; font-stretch: 92%; }}
 p, li {{ max-width: 70ch; }}
-article a {{ color: var(--sourced); }}
+article a {{ color: var(--ember-hot); }}
 pre {{
   margin: 18px 0; overflow-x: auto; padding: 16px 18px; border-radius: 4px;
-  background: var(--ink); color: var(--ledger); line-height: 1.6; font-size: 13.5px;
+  border: 1px solid var(--line); background: var(--charcoal); color: var(--bone); line-height: 1.6; font-size: 13.5px;
 }}
 pre code {{ padding: 0; background: none; color: inherit; font-size: inherit; }}
 blockquote {{
   margin: 20px 0; padding: 2px 0 2px 18px;
-  border-left: 2px solid var(--margin); color: var(--ink-2); font-style: italic;
+  border-left: 2px solid var(--ember); color: var(--ash); font-style: italic;
 }}
 table {{ width: 100%; border-collapse: collapse; margin: 20px 0; font-family: var(--display); font-size: 14.5px; line-height: 1.4; }}
 th, td {{ padding: 8px 10px; border-top: 1px solid var(--rule); text-align: left; vertical-align: top; }}
 tr:last-child td {{ border-bottom: 1px solid var(--rule); }}
 th {{ border-top-color: var(--line-strong); font-weight: 650; }}
 .table-scroll {{ overflow-x: auto; }}
-.lede {{ margin: 0 0 30px; font-size: 20px; color: var(--ink-2); }}
+.lede {{ margin: 0 0 30px; font-size: 20px; color: var(--ash); }}
 .doc-list {{ list-style: none; margin: 0; padding: 0; border-bottom: 1px solid var(--rule); }}
 .doc-list li {{ padding: 16px 0; border-top: 1px solid var(--rule); }}
-.doc-list a {{ font-family: var(--display); font-size: 22px; font-weight: 700; font-stretch: 90%; color: var(--ink); text-decoration: none; }}
-.doc-list a:hover {{ color: var(--sourced); }}
-.doc-list span {{ display: block; color: var(--ink-2); }}
+.doc-list a {{ font-family: var(--display); font-size: 22px; font-weight: 700; font-stretch: 90%; color: var(--bone); text-decoration: none; }}
+.doc-list a:hover {{ color: var(--ember-hot); }}
+.doc-list span {{ display: block; color: var(--ash); }}
 @media (max-width: 800px) {{
   .doc {{ grid-template-columns: 1fr; gap: 24px 0; }}
-  .doc > aside {{ position: static; border-right: 0; border-left: 2px solid var(--margin); padding: 0 0 0 16px; }}
+  .doc > aside {{ position: static; border-right: 0; border-left: 2px solid var(--ember); padding: 0 0 0 16px; }}
 }}
 </style>
 </head>

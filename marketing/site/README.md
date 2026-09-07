@@ -17,11 +17,13 @@ site, the docs, the README, or `src/config.py`. Enable publishing once with
 
 ## The design
 
-A ledger sheet. Ledger paper's pale green-grey ground, blue ruling, and one red
-margin line. The red is spent on two things only — the margin rule and
-whatever the rules refused — so it keeps its meaning. The hero is one week's
-review rendered as the artifact the app produces, with a proposal the rules
-overruled. Section headings sit in the margin; the content sits to its right.
+A ledger sheet, kept in the dark. Ash-black ground, faint ruling, and one
+ember margin line. Ember is the brand and the calls to action; the two verdict
+colours are spent on meaning only — teal for a sourced finding or an
+approval, red for anything the rules refused — so neither ever decorates. The
+hero is one week's review rendered as the artifact the app produces, with a
+proposal the rules overruled. Section headings sit in the margin; the content
+sits to its right.
 
 Two typefaces, both self-hosted under `assets/fonts/` so no page makes an
 external request: Bricolage Grotesque (variable; headings, the sheet, all
@@ -38,9 +40,12 @@ chrome) and Newsreader (variable, with italic; body prose).
   in the build rewrites them for pages under `docs/`.
 - `index.html` — the landing page. Page-specific CSS only; the shared chrome
   arrives via the token. Opening it straight from disk looks unstyled, which is
-  expected — build the site to view it. The only motion is the stamp on the
-  hero sheet, which lands once on load and is off under
-  `prefers-reduced-motion`.
+  expected — build the site to view it. Two pieces of motion: the stamp on
+  the hero sheet, which lands once on load, and the ash — the inline script at
+  the foot of the page drawing a few dozen grey flecks settling and the odd
+  ember rising on a fixed canvas behind the content. Both are off under
+  `prefers-reduced-motion`; the canvas also pauses while the tab is hidden
+  and reads its two colours from the stylesheet's tokens.
 - `assets/fonts/` — the three `.woff2` files, downloaded once from Google
   Fonts (latin subset, variable).
 - `assets/favicon.svg` — the ledger mark. The same drawing is inlined beside

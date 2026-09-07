@@ -41,7 +41,7 @@ class TestSiteBuild:
     def test_pages_inline_the_shared_stylesheet(self, site: Path) -> None:
         for page in site.rglob("*.html"):
             text = page.read_text(encoding="utf-8")
-            assert "--margin:" in text, page.name
+            assert "--ember:" in text, page.name
             assert '<link rel="stylesheet"' not in text, page.name
 
     def test_landing_quotes_config_defaults(self, site: Path) -> None:

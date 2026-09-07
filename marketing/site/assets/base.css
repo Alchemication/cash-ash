@@ -19,20 +19,24 @@
  * more than one page needs it.
  */
 
-/* The design is a ledger sheet: the pale green-grey of ledger paper, blue
- * ruling, one red margin line. The red is spent on exactly two things — the
- * margin rule, and anything the rules refused — so it keeps its meaning. */
+/* The design is a ledger sheet kept in the dark: an ash-black ground, faint
+ * ruling, one ember margin line. Ember is the brand and the calls to action;
+ * the two verdict colours are spent on meaning only — teal for a sourced
+ * finding or an approval, red for anything the rules refused — so neither
+ * ever decorates. */
 :root {
-  --ledger: #e6e8df;
-  --ledger-2: #dadcd2;
-  --ledger-3: #c9ccbf;
-  --ink: #1b2028;
-  --ink-2: #565c66;
-  --rule: #b9c3cf;
-  --margin: #c9382c;
-  --sourced: #2a6f4e;
-  --line: rgba(27, 32, 40, .2);
-  --line-strong: rgba(27, 32, 40, .55);
+  --ash-black: #121313;
+  --charcoal: #1c1e1d;
+  --charcoal-2: #262928;
+  --ash: #a7a49d;
+  --bone: #f1eee7;
+  --ember: #ff6b35;
+  --ember-hot: #ff9a62;
+  --profit: #62bfa5;
+  --loss: #d85c5c;
+  --rule: rgba(241, 238, 231, .11);
+  --line: rgba(241, 238, 231, .14);
+  --line-strong: rgba(241, 238, 231, .34);
   --display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
   --text: "Newsreader", Georgia, "Times New Roman", serif;
 }
@@ -72,8 +76,8 @@ html { scroll-behavior: smooth; }
 
 body {
   margin: 0;
-  color: var(--ink);
-  background: var(--ledger);
+  color: var(--bone);
+  background: var(--ash-black);
   font-family: var(--text);
   font-size: 18px;
   line-height: 1.55;
@@ -84,18 +88,18 @@ body {
 a { color: inherit; }
 
 :focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--ember-hot);
   outline-offset: 3px;
 }
 
-::selection { background: var(--ink); color: var(--ledger); }
+::selection { background: var(--ember); color: var(--ash-black); }
 
 code, kbd {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: .82em;
   padding: 1px 5px;
   border-radius: 3px;
-  background: var(--ledger-2);
+  background: var(--charcoal-2);
 }
 
 .shell {
@@ -136,7 +140,7 @@ code, kbd {
   padding-bottom: 2px;
 }
 
-.topbar nav a:hover { border-bottom-color: var(--ink); }
+.topbar nav a:hover { border-bottom-color: var(--ember); }
 
 /* Footer: one hairline, a disclaimer, a link. */
 footer {
@@ -146,12 +150,12 @@ footer {
   gap: 8px 24px;
   padding: 26px 0 40px;
   border-top: 1px solid var(--line-strong);
-  color: var(--ink-2);
+  color: var(--ash);
   font-family: var(--display);
   font-size: 14px;
 }
 
-footer a { color: var(--ink); }
+footer a { color: var(--bone); }
 
 @media (max-width: 640px) {
   body { font-size: 17px; }
