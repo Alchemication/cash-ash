@@ -10,6 +10,7 @@ uv run python main.py sync             # prices, FX, earnings dates, consensus
 uv run python main.py events           # known upcoming dates for your holdings
 uv run python main.py thesis           # why each position is held
 uv run python main.py triage           # rank holdings by what changed
+uv run python main.py research         # deep pass on what triage selected
 uv run python main.py models           # which model each stage calls
 uv run python main.py llm-log          # recorded model calls and their cost
 uv run python main.py price TICKER --close AMOUNT   # record a price by hand
@@ -46,6 +47,7 @@ uv run python main.py thesis bootstrap NKE --overwrite
 uv run python main.py thesis show NKE
 uv run python main.py thesis list
 uv run python main.py triage --dry-run        # show the input, send nothing
+uv run python main.py research AMD            # deep pass on one holding
 ```
 
 ## Profiles
@@ -181,6 +183,29 @@ loudly instead of reporting a triage that considered nothing as though it had
 run.
 
 `--dry-run` prints exactly what would be sent and calls no model.
+
+## Deep research
+
+`research` runs a plan, gathers evidence, answers the planned questions and
+judges whether the thesis still holds. With no ticker it researches whatever
+the last triage selected.
+
+Planning is separate from answering on purpose. A generic question list would
+be identical for every company in every week and worth nothing; the planner
+works outward from *this* thesis — the conditions the owner said would change
+their mind, the questions left open when it was written, what it assumes
+without examining. It also states what it is deliberately leaving alone, since
+deciding something can be ignored is part of the job.
+
+**Research proposes; it never adopts.** When a pass concludes the thesis has
+weakened, improved or broken, it records a *proposed* revision beside the
+active one and stops. The thesis is a record of what you believe, so a pipeline
+able to rewrite it would be editing the baseline it is measured against. You
+review and accept.
+
+`broken` means a condition you wrote down has actually occurred — not that the
+news was bad or the price fell. The prompt is explicit that an absence of
+evidence is reported as `unchanged` rather than turned into a verdict.
 
 ## Evidence and provenance
 

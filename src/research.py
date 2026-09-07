@@ -578,3 +578,372 @@ def run_triage(
         )
 
     return run_id, rankings, str(payload.get("portfolio_note", "")).strip()
+
+
+# ---------------------------------------------------------------------------
+# Deep research
+# ---------------------------------------------------------------------------
+
+PLAN_PROMPT_VERSION = "research_plan/1"
+ANALYST_PROMPT_VERSION = "research_analyst/1"
+
+_VALID_THESIS_STATUS = {"improving", "unchanged", "deteriorating", "broken"}
+
+
+@dataclass(frozen=True)
+class ResearchResult:
+    """What one deep pass concluded about one holding."""
+
+    ticker: str
+    run_id: int
+    questions: tuple[str, ...]
+    not_this_week: tuple[str, ...]
+    answers: tuple[dict, ...]
+    thesis_status: str
+    status_reason: str
+    triggered: tuple[str, ...]
+    new_open_questions: tuple[str, ...]
+    proposed_version: int | None
+    evidence_count: int
+    sourced_count: int
+
+
+def _plan_research(conn, *, security, thesis, trigger, trace_id):  # type: ignore[no-untyped-def]
+    """Choose this week's questions for one holding."""
+    lines = [
+        f"Holding: {security.ticker} ({security.name}).",
+        "",
+        f"Triage selected it because: {trigger}",
+        "",
+        f"Their thesis: {thesis.summary}",
+    ]
+    if thesis.rationale:
+        lines.append(f"In full: {thesis.rationale}")
+    for label, items in (
+        ("What they said would break it", thesis.what_would_break_it),
+        ("Questions left open", thesis.open_questions),
+        ("What it assumes", thesis.key_assumptions),
+    ):
+        if items:
+            lines.append(f"{label}: " + "; ".join(items))
+
+    result = call_llm(
+        conn,
+        feature="plan",
+        messages=[
+            {"role": "system", "content": load_prompt("research_plan.md")},
+            {"role": "user", "content": "\n".join(lines)},
+        ],
+        prompt_version=PLAN_PROMPT_VERSION,
+        max_tokens=THESIS_MAX_TOKENS,
+        trace_id=trace_id,
+    )
+    payload = extract_json(result.text)
+    questions = [
+        str(item.get("question", "")).strip()
+        for item in payload.get("questions", [])
+        if isinstance(item, dict) and str(item.get("question", "")).strip()
+    ]
+    return questions[:_MAX_LIST_ENTRIES], _string_list(payload.get("not_this_week"))
+
+
+def research_security(
+    conn,  # type: ignore[no-untyped-def]
+    *,
+    ticker: str,
+    trigger: str = "requested directly",
+    account_id: int = 1,
+    today: date | None = None,
+    source=None,  # type: ignore[no-untyped-def]
+) -> ResearchResult:
+    """Run one deep research pass and propose — never apply — a thesis update.
+
+    A proposal sits beside the active thesis until the owner accepts it. The
+    thesis records what *they* believe, so a pipeline able to rewrite it would
+    be editing the baseline it is measured against.
+
+    Args:
+        conn: Open database connection.
+        ticker: Holding to research.
+        trigger: Why it is being researched, passed to the planner.
+        account_id: Account the holding belongs to.
+        today: Reference date, for tests.
+        source: Evidence source; defaults to the configured one.
+
+    Returns:
+        What the pass concluded.
+
+    Raises:
+        ValueError: If the holding or its thesis is missing, or output is
+            unusable.
+    """
+    from evidence import get_evidence_source
+    from store import load_securities
+    from store_research import active_thesis, create_research_run, create_llm_trace
+
+    securities = load_securities(conn)
+    security = securities.get(ticker.upper())
+    if security is None:
+        known = ", ".join(sorted(securities))
+        raise ValueError(f"Unknown ticker {ticker!r}. Known: {known}.")
+    assert security.id is not None
+
+    thesis = active_thesis(conn, security_id=security.id)
+    if thesis is None:
+        raise ValueError(
+            f"No thesis for {security.ticker}. Research compares evidence "
+            f"against a stated reason, so there is nothing to compare to until "
+            f"'main.py thesis bootstrap' has run."
+        )
+
+    run_date = (today or date.today()).isoformat()
+    trace_id = create_llm_trace(
+        conn, operation="deep_research", feature="analyst", reference=security.ticker
+    )
+    run_id = create_research_run(
+        conn,
+        run_date=run_date,
+        kind="deep",
+        trace_id=trace_id,
+        note=f"Deep pass on {security.ticker}: {trigger}",
+    )
+
+    questions, not_this_week = _plan_research(
+        conn, security=security, thesis=thesis, trigger=trigger, trace_id=trace_id
+    )
+    if not questions:
+        raise ValueError(f"The planner produced no questions for {security.ticker}.")
+
+    items = (source or get_evidence_source()).fetch(security.price_symbol, limit=8)
+
+    body = [
+        f"Holding: {security.ticker} ({security.name}).",
+        f"Their thesis: {thesis.summary}",
+    ]
+    if thesis.what_would_break_it:
+        body.append(
+            "They said it would break if: " + "; ".join(thesis.what_would_break_it)
+        )
+    body += ["", "Questions to answer:"]
+    body += [f"{index}. {question}" for index, question in enumerate(questions, 1)]
+    body += ["", f"Evidence ({len(items)} items):"]
+    body += (
+        [item.render() for item in items]
+        if items
+        else [
+            "None retrieved. That is an absence of evidence, not evidence that "
+            "nothing happened — say so rather than concluding calm."
+        ]
+    )
+
+    result = call_llm(
+        conn,
+        feature="analyst",
+        messages=[
+            {"role": "system", "content": load_prompt("research_analyst.md")},
+            {"role": "user", "content": "\n".join(body)},
+        ],
+        prompt_version=ANALYST_PROMPT_VERSION,
+        max_tokens=THESIS_MAX_TOKENS,
+        trace_id=trace_id,
+    )
+    payload = extract_json(result.text)
+
+    answers = [a for a in payload.get("answers", []) if isinstance(a, dict)]
+    stored, sourced = _store_evidence(
+        conn, run_id=run_id, security_id=security.id, answers=answers
+    )
+
+    status = str(payload.get("thesis_status", "")).strip().lower()
+    if status not in _VALID_THESIS_STATUS:
+        logger.warning(
+            "Analyst returned an unusable thesis status %r for %s; recording "
+            "as unchanged",
+            status,
+            security.ticker,
+        )
+        status = "unchanged"
+
+    triggered = _string_list(payload.get("breaking_conditions_triggered"))
+    new_questions = _string_list(payload.get("new_open_questions"))
+    proposed_summary = payload.get("proposed_summary")
+    proposed_version = None
+
+    if (
+        status != "unchanged"
+        or triggered
+        or (isinstance(proposed_summary, str) and proposed_summary.strip())
+    ):
+        proposed = _propose_thesis(
+            conn,
+            thesis=thesis,
+            status=status,
+            summary=(
+                proposed_summary.strip()
+                if isinstance(proposed_summary, str) and proposed_summary.strip()
+                else thesis.summary
+            ),
+            reason=str(payload.get("status_reason", "")).strip(),
+            new_questions=new_questions,
+            run_id=run_id,
+            llm_call_id=result.llm_call_id,
+        )
+        proposed_version = proposed.version
+
+    return ResearchResult(
+        ticker=security.ticker,
+        run_id=run_id,
+        questions=tuple(questions),
+        not_this_week=not_this_week,
+        answers=tuple(answers),
+        thesis_status=status,
+        status_reason=str(payload.get("status_reason", "")).strip(),
+        triggered=triggered,
+        new_open_questions=new_questions,
+        proposed_version=proposed_version,
+        evidence_count=stored,
+        sourced_count=sourced,
+    )
+
+
+def _store_evidence(
+    conn, *, run_id: int, security_id: int, answers: list[dict]
+) -> tuple[int, int]:  # type: ignore[no-untyped-def]
+    """Persist an analyst's claims, keeping provenance honest.
+
+    A claim marked sourced without a URL and a date is demoted to background
+    rather than rejected. The claim may still be true and worth keeping; what
+    it may not do is carry a provenance it does not have. The database would
+    refuse it either way, so demoting here makes the reason legible instead of
+    surfacing as a constraint error.
+
+    Args:
+        conn: Open database connection.
+        run_id: Research run the claims belong to.
+        security_id: Holding they concern.
+        answers: Raw answer objects from the model.
+
+    Returns:
+        ``(claims stored, of which sourced)``.
+    """
+    from datetime import datetime, UTC
+
+    rows: list[tuple] = []
+    sourced = 0
+    now = datetime.now(UTC).isoformat()
+
+    for answer in answers:
+        claim = str(answer.get("answer", "")).strip()
+        if not claim:
+            continue
+        kind = str(answer.get("kind", "background")).strip().lower()
+        url = answer.get("source_url")
+        published = answer.get("published_date")
+        url = url.strip() if isinstance(url, str) and url.strip() else None
+        published = (
+            published.strip()[:10]
+            if isinstance(published, str) and published.strip()
+            else None
+        )
+
+        if kind == "sourced" and not (url and published):
+            logger.warning(
+                "Claim marked sourced without a URL and date; storing as "
+                "background: %s",
+                claim[:80],
+            )
+            kind = "background"
+        if kind not in {"sourced", "background"}:
+            kind = "background"
+        if kind == "background":
+            url = published = None
+        else:
+            sourced += 1
+
+        rows.append(
+            (
+                run_id,
+                security_id,
+                claim,
+                url,
+                str(answer.get("question", "")).strip() or None,
+                published,
+                kind,
+                now,
+            )
+        )
+
+    if rows:
+        with conn:
+            conn.executemany(
+                """
+                INSERT INTO evidence (
+                    research_run_id, security_id, claim, source_url,
+                    source_title, published_date, kind, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+    return len(rows), sourced
+
+
+def _propose_thesis(  # type: ignore[no-untyped-def]
+    conn,
+    *,
+    thesis,
+    status: str,
+    summary: str,
+    reason: str,
+    new_questions: tuple[str, ...],
+    run_id: int,
+    llm_call_id: int | None,
+):
+    """Record a proposed revision without adopting it.
+
+    Deliberately does not go through ``save_thesis``: that supersedes the
+    active version, which is exactly what must not happen here. The proposal
+    takes the next version number and waits.
+    """
+    from datetime import datetime, UTC
+
+    from store_research import _thesis_from_row
+
+    with conn:
+        row = conn.execute(
+            "SELECT MAX(version) AS version FROM thesis WHERE security_id = ?",
+            (thesis.security_id,),
+        ).fetchone()
+        version = (row["version"] or 0) + 1
+        cursor = conn.execute(
+            """
+            INSERT INTO thesis (
+                security_id, version, status, summary, rationale, conviction,
+                thesis_status, key_assumptions, open_questions,
+                what_would_break_it, source, supersedes_id, llm_call_id,
+                research_run_id, note, created_at
+            )
+            VALUES (?, ?, 'proposed', ?, ?, ?, ?, ?, ?, ?, 'research', ?, ?, ?, ?, ?)
+            """,
+            (
+                thesis.security_id,
+                version,
+                summary,
+                reason or thesis.rationale,
+                thesis.conviction,
+                status,
+                json.dumps(list(thesis.key_assumptions)),
+                json.dumps(list(new_questions) or list(thesis.open_questions)),
+                json.dumps(list(thesis.what_would_break_it)),
+                thesis.id,
+                llm_call_id,
+                run_id,
+                f"Proposed by research run {run_id}. Not adopted.",
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+    return _thesis_from_row(
+        conn.execute(
+            "SELECT * FROM thesis WHERE id = ?", (cursor.lastrowid,)
+        ).fetchone()
+    )

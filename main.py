@@ -7,6 +7,7 @@ Subcommands:
     events         List known upcoming events for your holdings.
     thesis         Bootstrap, list and inspect why each position is held.
     triage         Rank every holding by what deserves attention this week.
+    research       Deep pass on a holding: plan, evidence, findings.
     models         Inspect or change which model each stage calls.
     llm-log        Inspect recorded model calls and what they cost.
     price          Record one price by hand when a feed cannot.
@@ -58,6 +59,12 @@ Examples:
     uv run python main.py triage --dry-run
         Show exactly what triage would be given, without calling a model.
 
+    uv run python main.py research AMD
+        Plan questions, gather evidence, and judge whether the thesis holds.
+
+    uv run python main.py research
+        The same, for everything the last triage selected.
+
     uv run python main.py models
         Which model each stage calls, and what tier it is.
 
@@ -93,6 +100,7 @@ from cmd_db import cmd_db  # noqa: E402
 from cmd_llm_log import cmd_llm_log  # noqa: E402
 from cmd_models import cmd_models  # noqa: E402
 from cmd_thesis import cmd_thesis  # noqa: E402
+from cmd_research import cmd_research  # noqa: E402
 from cmd_triage import cmd_triage  # noqa: E402
 from cmd_sync import cmd_events, cmd_price, cmd_sync  # noqa: E402
 from commands import (  # noqa: E402
@@ -295,6 +303,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_db(p_triage)
     p_triage.set_defaults(func=cmd_triage)
+
+    p_research = sub.add_parser("research", help="Deep research on a holding")
+    p_research.add_argument(
+        "ticker",
+        nargs="?",
+        default=None,
+        help="Holding to research (default: whatever the last triage selected)",
+    )
+    _add_db(p_research)
+    p_research.set_defaults(func=cmd_research)
 
     p_models = sub.add_parser("models", help="Inspect or change model routing")
     models_sub = p_models.add_subparsers(dest="models_cmd", required=False)
