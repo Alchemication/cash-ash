@@ -306,3 +306,34 @@ Enough to see what a week actually contained without burying the thesis in
 noise. The aggregator returns around ten, most of which are commentary rather
 than news, so raising this mostly buys more opinions about the same events.
 """
+
+
+# ---------------------------------------------------------------------------
+# Telegram
+# ---------------------------------------------------------------------------
+
+TELEGRAM_BOT_TOKEN: str = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+"""Shared bot token. One bot serves every profile.
+
+People are told apart by the numeric ``telegram_id`` in ``profiles.toml``, not
+by having their own bot. A bot each would mean a BotFather registration, a
+token and a polling loop per person, for nothing.
+"""
+
+TELEGRAM_MAX_MESSAGE_CHARS: int = 3800
+"""Chunk size for outgoing messages.
+
+Telegram's hard limit is 4096. The margin absorbs the HTML tags added after a
+chunk boundary is chosen, which would otherwise push an already-sized chunk
+over and fail the send.
+"""
+
+TELEGRAM_RETRY_DELAYS: tuple[int, ...] = (2, 8, 20)
+"""Backoff between retries of a failed send.
+
+Only transient faults are retried. A refusal — a bad chat id, malformed HTML —
+fails identically every time, so retrying it only delays the error.
+"""
+
+TELEGRAM_TIMEOUT_S: float = _env_float("SKARBIE_TELEGRAM_TIMEOUT_S", 20.0)
+"""Per-request timeout for the Telegram API."""

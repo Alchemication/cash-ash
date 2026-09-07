@@ -13,6 +13,8 @@ uv run python main.py triage           # rank holdings by what changed
 uv run python main.py research         # deep pass on what triage selected
 uv run python main.py recommend        # propose actions, rules applied
 uv run python main.py decide           # list and record your decisions
+uv run python main.py report           # the weekly review
+uv run python main.py telegram-setup   # register the bot command menu
 uv run python main.py models           # which model each stage calls
 uv run python main.py llm-log          # recorded model calls and their cost
 uv run python main.py price TICKER --close AMOUNT   # record a price by hand
@@ -52,6 +54,7 @@ uv run python main.py triage --dry-run        # show the input, send nothing
 uv run python main.py research AMD            # deep pass on one holding
 uv run python main.py decide 3 approve --note "agreed, buying Monday"
 uv run python main.py decide 3 reject
+uv run python main.py report --telegram       # send it to your phone
 ```
 
 ## Profiles
@@ -250,6 +253,31 @@ collapsing the two would erase the evidence of whether you acted at all.
 Recommendations expire. A weekly cadence supersedes itself, so acting on a
 stale one would execute research that has already been replaced, at a price
 that has moved. `decide` refuses an expired recommendation and says why.
+
+## The weekly report
+
+`report` renders the week: value, anything needing a decision, and what is
+standing rather than new. `--telegram` sends it, with Approve / Reject / Later
+buttons on anything actionable.
+
+It is written to be read on a phone by someone learning, which shapes it: short,
+jargon expanded, and plain about a quiet week. A report that manufactures
+content to look useful trains the reader to stop opening it, so when nothing
+needs doing it says exactly that and explains why that is the normal outcome.
+
+Holdings with no real reason behind them are reported separately, under
+"standing, not new". They are not this week's finding and never will be, and
+repeating them as though they were would be the generic-summary habit the whole
+design avoids.
+
+One bot serves every profile. The token is shared infrastructure in `.env` and
+the per-person part is the numeric `telegram_id` in the roster, so nobody needs
+their own BotFather registration.
+
+Sending is retried on a network fault but never on a refusal — a bad chat id or
+malformed markup fails identically every time, so retrying only delays the
+error. A message carrying buttons is never split, because the buttons would end
+up detached from what they act on.
 
 ## Evidence and provenance
 

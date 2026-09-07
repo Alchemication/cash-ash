@@ -10,6 +10,8 @@ Subcommands:
     research       Deep pass on a holding: plan, evidence, findings.
     recommend      Propose actions for the week, with the rules applied.
     decide         Record approve / reject / later on a recommendation.
+    report         The weekly review, on screen or sent to Telegram.
+    telegram-setup Register the bot's command menu.
     models         Inspect or change which model each stage calls.
     llm-log        Inspect recorded model calls and what they cost.
     price          Record one price by hand when a feed cannot.
@@ -76,6 +78,12 @@ Examples:
     uv run python main.py decide 3 approve --note "agreed, will buy Monday"
         Record a decision. Approving is not executing.
 
+    uv run python main.py report
+        The weekly review as it would read on a phone.
+
+    uv run python main.py report --telegram
+        Send it, with Approve / Reject / Later buttons on anything actionable.
+
     uv run python main.py models
         Which model each stage calls, and what tier it is.
 
@@ -112,6 +120,7 @@ from cmd_llm_log import cmd_llm_log  # noqa: E402
 from cmd_models import cmd_models  # noqa: E402
 from cmd_thesis import cmd_thesis  # noqa: E402
 from cmd_recommend import cmd_decide, cmd_recommend  # noqa: E402
+from cmd_report import cmd_report, cmd_telegram_setup  # noqa: E402
 from cmd_research import cmd_research  # noqa: E402
 from cmd_triage import cmd_triage  # noqa: E402
 from cmd_sync import cmd_events, cmd_price, cmd_sync  # noqa: E402
@@ -127,6 +136,7 @@ from config import DEFAULT_MONTHLY_CONTRIBUTION_EUR  # noqa: E402
 from log import setup_logging  # noqa: E402
 from llm import LLMError  # noqa: E402
 from market_data import ProviderError  # noqa: E402
+from notify import TelegramError  # noqa: E402
 from model_prefs import FEATURES  # noqa: E402
 from profiles import ProfileConfigError  # noqa: E402
 
@@ -348,6 +358,16 @@ def build_parser() -> argparse.ArgumentParser:
     _add_db(p_decide)
     p_decide.set_defaults(func=cmd_decide)
 
+    p_report = sub.add_parser("report", help="The weekly portfolio review")
+    p_report.add_argument(
+        "--telegram", action="store_true", help="Send it rather than printing it"
+    )
+    _add_db(p_report)
+    p_report.set_defaults(func=cmd_report)
+
+    p_tg = sub.add_parser("telegram-setup", help="Register the bot command menu")
+    p_tg.set_defaults(func=cmd_telegram_setup)
+
     p_models = sub.add_parser("models", help="Inspect or change model routing")
     models_sub = p_models.add_subparsers(dest="models_cmd", required=False)
     p_models_set = models_sub.add_parser("set", help="Route one feature")
@@ -422,6 +442,7 @@ def main() -> None:
         ProfileConfigError,
         ProviderError,
         LLMError,
+        TelegramError,
     ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc

@@ -60,8 +60,9 @@ day one — which is why it shipped in Phase 1.
 | 3 | LLM plumbing: retry, fallback, per-feature routing, call/trace logging, `models`, `llm-log` | done |
 | 4 | Versioned theses, research runs, evidence. Plan → evidence → single analyst → structured thesis update. `research TICKER` | |
 | 5 | Frozen hashed evidence package, N neutral analysts across providers, disagreement scoring, synthesis | |
-| 6 | Decision layer: deterministic guardrails, `recommendations` with expiry, `review` | |
-| 7 | Telegram: notifier, long-polling daemon, Approve/Reject/Later/Executed keyboards, `user_decisions`, `executions` | |
+| 6 | Decision layer: deterministic guardrails, recommendations with expiry, decisions | done |
+| 7a | Telegram: notifier, weekly report, Approve/Reject/Later keyboards | done |
+| 7b | Long-polling daemon for button callbacks, launchd scheduling | next |
 | 8 | Process evals, curated cases, passive-benchmark tracking | |
 
 ## Why profiles landed before market data
