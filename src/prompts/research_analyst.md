@@ -20,6 +20,12 @@ Every claim you make falls into one of two kinds, and you must mark which.
 A claim you cannot source and cannot honestly call background knowledge is not
 a claim. Leave it out.
 
+- **unanswered** — the evidence does not reach the question. Use this kind
+  whenever your finding is that nothing supplied answers it, even where you can
+  point at the items you looked through. Reporting an absence is useful and is
+  wanted; marking it `sourced` because you cited what you read would inflate
+  how much of the analysis actually rests on evidence.
+
 The supplied items are mostly commentary rather than primary material. An item
 establishes that somebody said something, not that it is true. Where an item is
 an opinion, say so rather than repeating it as fact.

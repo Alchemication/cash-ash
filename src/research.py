@@ -585,7 +585,7 @@ def run_triage(
 # ---------------------------------------------------------------------------
 
 PLAN_PROMPT_VERSION = "research_plan/1"
-ANALYST_PROMPT_VERSION = "research_analyst/1"
+ANALYST_PROMPT_VERSION = "research_analyst/2"
 
 _VALID_THESIS_STATUS = {"improving", "unchanged", "deteriorating", "broken"}
 
