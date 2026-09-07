@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -40,7 +41,7 @@ class TestSiteBuild:
     def test_pages_inline_the_shared_stylesheet(self, site: Path) -> None:
         for page in site.rglob("*.html"):
             text = page.read_text(encoding="utf-8")
-            assert "--ember:" in text, page.name
+            assert "--margin:" in text, page.name
             assert '<link rel="stylesheet"' not in text, page.name
 
     def test_landing_quotes_config_defaults(self, site: Path) -> None:
@@ -52,9 +53,15 @@ class TestSiteBuild:
 
     def test_referenced_assets_are_shipped(self, site: Path) -> None:
         page = (site / "index.html").read_text(encoding="utf-8")
-        for name in ("favicon.svg", "coins-ash.jpg", "og-image.jpg"):
+        for name in ("favicon.svg", "og-image.png"):
             assert f"assets/{name}" in page
             assert (site / "assets" / name).exists(), name
+
+    def test_fonts_resolve_from_every_page(self, site: Path) -> None:
+        for page in site.rglob("*.html"):
+            text = page.read_text(encoding="utf-8")
+            for url in re.findall(r'url\("([^"]+\.woff2)"\)', text):
+                assert (page.parent / url).exists(), f"{page.name}: {url}"
 
     def test_docs_md_links_are_rewritten(self, site: Path) -> None:
         for page in (site / "docs").glob("*.html"):

@@ -195,8 +195,53 @@ def first_paragraph(source: str) -> str:
     return ""
 
 
+def css_for_depth(base_css: str, depth: int) -> str:
+    """Point the stylesheet's font URLs at the site root from a nested page.
+
+    `base.css` names its font files relative to the site root. A page under
+    `docs/` inlines the same text, so the prefix is rewritten rather than
+    asking every page to know where the fonts live.
+
+    Args:
+        base_css: The shared stylesheet as written.
+        depth: Directory depth below the site root.
+
+    Returns:
+        The stylesheet with `url("assets/` rewritten for that depth.
+    """
+    up = "../" * depth
+    return base_css.replace('url("assets/', f'url("{up}assets/')
+
+
+def heading_index(body: str) -> list[tuple[str, str]]:
+    """List the `(id, text)` of every anchored H2, for a page's contents list.
+
+    Args:
+        body: HTML that has been through `add_heading_anchors`.
+
+    Returns:
+        Heading ids and their plain text, in document order.
+    """
+    found = re.findall(r'<h2 id="([^"]+)">(.*?)</h2>', body, flags=re.DOTALL)
+    return [(slug, re.sub(r"<[^>]+>", "", text)) for slug, text in found]
+
+
+WORDMARK_SVG = """<svg viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="4" fill="var(--ledger-2)"/>
+      <path d="M9.5 3v26" stroke="var(--margin)" stroke-width="2"/>
+      <path d="M4 11h24M4 17h24M4 23h24" stroke="var(--rule)" stroke-width="1.5"/>
+      <path d="M13 9h9M13 15h12M13 21h6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    </svg>"""
+
+
 def page_shell(
-    *, title: str, description: str, base_css: str, content: str, depth: int
+    *,
+    title: str,
+    description: str,
+    base_css: str,
+    content: str,
+    depth: int,
+    contents: list[tuple[str, str]] | None = None,
 ) -> str:
     """Wrap rendered content in the shared docs chrome.
 
@@ -206,11 +251,18 @@ def page_shell(
         base_css: The shared stylesheet, inlined into the page.
         content: HTML body content.
         depth: Directory depth below the site root, for relative asset paths.
+        contents: `(id, text)` pairs for the page's own H2s, listed in the
+            margin beside the article. Omit for pages with no sections.
 
     Returns:
         A complete HTML document.
     """
     up = "../" * depth
+    base_css = css_for_depth(base_css, depth)
+    links = "".join(
+        f'\n    <a href="#{slug}">{html.escape(text)}</a>'
+        for slug, text in contents or []
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -221,58 +273,82 @@ def page_shell(
 <link rel="icon" href="{up}assets/favicon.svg" type="image/svg+xml">
 <style>
 {base_css}
-/* Docs-specific: prose column and long-form typography. */
-body {{ line-height: 1.7; }}
-a {{ color: var(--amber); }}
-.shell {{ width: min(860px, calc(100% - 32px)); }}
-main {{ padding: 48px 0 80px; }}
+/* Docs-specific: a prose column with the ledger margin down its left edge. */
+body {{ line-height: 1.6; }}
+.shell {{ width: min(960px, calc(100% - 40px)); }}
+main {{ padding: 40px 0 88px; }}
+.doc {{
+  display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 0 48px;
+}}
+.doc > aside {{
+  align-self: start; position: sticky; top: 24px;
+  padding-right: 20px; border-right: 2px solid var(--margin);
+  font-family: var(--display); font-size: 14px;
+}}
+.doc > aside a {{ display: block; padding: 3px 0; color: var(--ink-2); text-decoration: none; line-height: 1.3; }}
+.doc > aside a:hover {{ color: var(--ink); }}
+.doc > aside .up {{ margin-bottom: 14px; color: var(--ink); font-weight: 600; }}
+.doc > article {{ min-width: 0; max-width: 680px; }}
 h1 {{
-  margin: 0 0 8px; font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(34px, 5vw, 52px); font-weight: 500; line-height: 1.02; letter-spacing: -.03em;
+  margin: 0 0 22px; font-family: var(--display);
+  font-size: clamp(36px, 5vw, 56px); font-weight: 800; font-stretch: 80%; line-height: .98; letter-spacing: -.02em;
 }}
 h2 {{
-  margin: 44px 0 14px; padding-top: 18px; border-top: 2px solid var(--line-strong);
-  font-family: Georgia, serif; font-size: 26px; font-weight: 500; letter-spacing: -.02em;
+  margin: 46px 0 12px; padding-top: 14px; border-top: 1px solid var(--line-strong);
+  font-family: var(--display); font-size: 27px; font-weight: 700; font-stretch: 88%; line-height: 1.1; letter-spacing: -.015em;
 }}
-h3 {{ margin: 30px 0 10px; color: var(--ember); font-size: 13px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }}
-p, li {{ color: var(--bone-2); }}
-strong {{ color: var(--bone); }}
+h3 {{ margin: 28px 0 8px; font-family: var(--display); font-size: 19px; font-weight: 700; font-stretch: 92%; }}
+p, li {{ max-width: 70ch; }}
+article a {{ color: var(--sourced); }}
 pre {{
-  overflow-x: auto; padding: 16px 18px; border: 2px solid var(--bone);
-  background: var(--soot); color: var(--bone); box-shadow: 4px 4px 0 var(--ember-deep); line-height: 1.55;
+  margin: 18px 0; overflow-x: auto; padding: 16px 18px; border-radius: 4px;
+  background: var(--ink); color: var(--ledger); line-height: 1.6; font-size: 13.5px;
 }}
-pre code {{ padding: 0; border: 0; background: none; color: inherit; }}
+pre code {{ padding: 0; background: none; color: inherit; font-size: inherit; }}
 blockquote {{
-  margin: 20px 0; padding: 4px 0 4px 18px;
-  border-left: 5px solid var(--ember); color: var(--smoke);
+  margin: 20px 0; padding: 2px 0 2px 18px;
+  border-left: 2px solid var(--margin); color: var(--ink-2); font-style: italic;
 }}
-table {{ width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px; }}
-th, td {{ padding: 9px 11px; border: 1px solid var(--line-strong); text-align: left; vertical-align: top; }}
-th {{ background: rgba(255,255,255,.05); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }}
+table {{ width: 100%; border-collapse: collapse; margin: 20px 0; font-family: var(--display); font-size: 14.5px; line-height: 1.4; }}
+th, td {{ padding: 8px 10px; border-top: 1px solid var(--rule); text-align: left; vertical-align: top; }}
+tr:last-child td {{ border-bottom: 1px solid var(--rule); }}
+th {{ border-top-color: var(--line-strong); font-weight: 650; }}
 .table-scroll {{ overflow-x: auto; }}
-.lede {{ margin: 0 0 34px; color: var(--smoke); }}
-.doc-list {{ list-style: none; margin: 0; padding: 0; }}
-.doc-list li {{ padding: 15px 0; border-bottom: 1px solid var(--line); }}
-.doc-list a {{ color: var(--bone); font-weight: 800; text-decoration: none; }}
-.doc-list a:hover {{ color: var(--ember); }}
-.doc-list span {{ display: block; color: var(--smoke); font-size: 12px; }}
+.lede {{ margin: 0 0 30px; font-size: 20px; color: var(--ink-2); }}
+.doc-list {{ list-style: none; margin: 0; padding: 0; border-bottom: 1px solid var(--rule); }}
+.doc-list li {{ padding: 16px 0; border-top: 1px solid var(--rule); }}
+.doc-list a {{ font-family: var(--display); font-size: 22px; font-weight: 700; font-stretch: 90%; color: var(--ink); text-decoration: none; }}
+.doc-list a:hover {{ color: var(--sourced); }}
+.doc-list span {{ display: block; color: var(--ink-2); }}
+@media (max-width: 800px) {{
+  .doc {{ grid-template-columns: 1fr; gap: 24px 0; }}
+  .doc > aside {{ position: static; border-right: 0; border-left: 2px solid var(--margin); padding: 0 0 0 16px; }}
+}}
 </style>
 </head>
 <body>
 <header class="shell topbar">
-  <a class="wordmark" href="{up}">CASH<span>//</span>ASH</a>
+  <a class="wordmark" href="{up}">
+    {WORDMARK_SVG}
+    CashAsh
+  </a>
   <nav>
     <a href="{up}docs/">Docs</a>
     <a href="{up}docs/roadmap.html">Roadmap</a>
     <a href="{GITHUB_REPO}">GitHub</a>
   </nav>
 </header>
-<main class="shell">
+<main class="shell doc">
+  <aside>
+    <a class="up" href="{up}docs/">All docs</a>{links}
+  </aside>
+  <article>
 <h1>{html.escape(title)}</h1>
 {content}
+  </article>
 </main>
 <footer class="shell">
-  <span>CASHASH — not advice, not a broker, not a forecast</span>
+  <span>CashAsh is not advice, not a broker and not a forecast.</span>
   <span><a href="{GITHUB_BLOB}/docs">Edit these docs on GitHub</a></span>
 </footer>
 </body>
@@ -330,6 +406,7 @@ def build_docs(out: Path, base_css: str) -> list[Doc]:
                 base_css=base_css,
                 content=doc.body,
                 depth=1,
+                contents=heading_index(doc.body),
             ),
             encoding="utf-8",
         )

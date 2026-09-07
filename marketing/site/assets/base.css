@@ -1,11 +1,15 @@
 /* Shared foundation for every page of the public site: the landing page and
  * the generated docs pages.
  *
- * This file is the single source of truth for the palette and the site chrome.
- * It is never linked with <link>; each page inlines it at build time so every
- * page stays a self-contained file with no external requests. Consumers:
+ * This file is the single source of truth for the palette, the typefaces and
+ * the site chrome. It is never linked with <link>; each page inlines it at
+ * build time so every page stays a self-contained file. Consumers:
  *
  *   - marketing/build.py   landing page and docs template
+ *
+ * Font files are referenced relative to the site root ("assets/fonts/...").
+ * The build rewrites that prefix for pages that live in a subdirectory, so
+ * keep the url() form exactly as written here.
  *
  * Note for editors: never write the landing page's CSS placeholder token
  * literally in this file. It is inlined into that page, so the token would
@@ -15,131 +19,142 @@
  * more than one page needs it.
  */
 
+/* The design is a ledger sheet: the pale green-grey of ledger paper, blue
+ * ruling, one red margin line. The red is spent on exactly two things — the
+ * margin rule, and anything the rules refused — so it keeps its meaning. */
 :root {
-  /* Ash: the ground. Three steps of grey-black, warm rather than blue. */
-  --soot: #0b0b0d;
-  --ash: #141416;
-  --cinder: #1f1f23;
-  --cinder-2: #2a2a30;
-  /* Ember: the accent. One hot orange, one deeper for hover and rules, one
-     amber for the sparks. */
-  --ember: #ff6a1f;
-  --ember-deep: #c8461a;
-  --amber: #ffb054;
-  /* Bone: the type. Warm off-white on dark, never pure white. */
-  --bone: #ece6da;
-  --bone-2: #cfc8ba;
-  --smoke: #8f8a80;
-  --line: rgba(236, 230, 218, .18);
-  --line-strong: rgba(236, 230, 218, .42);
-  --shadow: 6px 6px 0 var(--ember-deep);
+  --ledger: #e6e8df;
+  --ledger-2: #dadcd2;
+  --ledger-3: #c9ccbf;
+  --ink: #1b2028;
+  --ink-2: #565c66;
+  --rule: #b9c3cf;
+  --margin: #c9382c;
+  --sourced: #2a6f4e;
+  --line: rgba(27, 32, 40, .2);
+  --line-strong: rgba(27, 32, 40, .55);
+  --display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
+  --text: "Newsreader", Georgia, "Times New Roman", serif;
+}
+
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-style: normal;
+  font-weight: 200 800;
+  font-stretch: 75% 100%;
+  font-display: swap;
+  src: url("assets/fonts/bricolage-grotesque.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Newsreader";
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("assets/fonts/newsreader.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Newsreader";
+  font-style: italic;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("assets/fonts/newsreader-italic.woff2") format("woff2");
 }
 
 * { box-sizing: border-box; }
 
 html { scroll-behavior: smooth; }
 
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+
 body {
   margin: 0;
-  color: var(--bone);
-  background:
-    repeating-linear-gradient(0deg, rgba(236, 230, 218, .018) 0 1px, transparent 1px 4px),
-    var(--ash);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 14px;
+  color: var(--ink);
+  background: var(--ledger);
+  font-family: var(--text);
+  font-size: 18px;
+  line-height: 1.55;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
 }
 
 a { color: inherit; }
 
-::selection { background: var(--ember); color: var(--soot); }
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
 
-code {
+::selection { background: var(--ink); color: var(--ledger); }
+
+code, kbd {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: .82em;
   padding: 1px 5px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, .05);
-  font-family: inherit;
-  font-size: .92em;
+  border-radius: 3px;
+  background: var(--ledger-2);
 }
 
 .shell {
-  width: min(1180px, calc(100% - 32px));
+  width: min(1120px, calc(100% - 40px));
   margin: 0 auto;
 }
 
+/* Top bar: wordmark left, three links right. */
 .topbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  padding: 21px 0 17px;
-  border-bottom: 2px solid var(--line-strong);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: .1em;
-  text-transform: uppercase;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 0;
+  font-family: var(--display);
 }
 
-.topbar a { text-decoration: none; }
-.topbar nav { display: flex; gap: 18px; }
-.topbar nav a:hover { color: var(--ember); }
-
-.wordmark { font-size: 17px; letter-spacing: -.05em; text-decoration: none; }
-.wordmark span { color: var(--ember); }
-
-.eyebrow {
-  display: inline-block;
-  padding: 7px 10px;
-  border: 2px solid var(--ember);
-  background: var(--soot);
-  color: var(--ember);
-  box-shadow: 3px 3px 0 var(--ember-deep);
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-}
-
-.btn {
-  padding: 13px 18px;
-  border: 2px solid var(--bone);
-  background: var(--ash);
-  color: var(--bone);
-  box-shadow: 4px 4px 0 var(--ember-deep);
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: .1em;
-  text-transform: uppercase;
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 22px;
+  font-weight: 700;
+  font-stretch: 85%;
+  letter-spacing: -.01em;
   text-decoration: none;
-  transition: transform .15s ease, box-shadow .15s ease;
 }
 
-.btn:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ember-deep); }
-.btn-primary { background: var(--ember); border-color: var(--ember); color: var(--soot); }
+.wordmark svg { width: 22px; height: 22px; }
 
+.topbar nav { display: flex; gap: 26px; }
+
+.topbar nav a {
+  font-size: 16px;
+  font-weight: 500;
+  text-decoration: none;
+  border-bottom: 1.5px solid transparent;
+  padding-bottom: 2px;
+}
+
+.topbar nav a:hover { border-bottom-color: var(--ink); }
+
+/* Footer: one hairline, a disclaimer, a link. */
 footer {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
   justify-content: space-between;
-  padding: 22px 0 40px;
-  border-top: 2px solid var(--line-strong);
-  color: var(--smoke);
-  font-size: 11px;
+  gap: 8px 24px;
+  padding: 26px 0 40px;
+  border-top: 1px solid var(--line-strong);
+  color: var(--ink-2);
+  font-family: var(--display);
+  font-size: 14px;
 }
 
-footer nav { display: flex; flex-wrap: wrap; gap: 18px; }
-footer a { color: var(--smoke); }
-footer a:hover { color: var(--ember); }
+footer a { color: var(--ink); }
 
-@media (max-width: 520px) {
-  .shell { width: min(100% - 22px, 1180px); }
-  .topbar { flex-direction: column; align-items: flex-start; gap: 12px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: .01ms !important;
-    animation-iteration-count: 1 !important;
-    scroll-behavior: auto !important;
-  }
+@media (max-width: 640px) {
+  body { font-size: 17px; }
+  .topbar { padding: 16px 0; }
+  .topbar nav { gap: 16px; }
 }

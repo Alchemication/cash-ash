@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CashAsh link preview source</title>
+<!--
+  Source for site/assets/og-image.png, the 1200x630 link-preview image. It is
+  not part of the built site; render it with headless Chrome from the repo root:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+      --headless=new --disable-gpu --hide-scrollbars --window-size=1200,630 \
+      --screenshot=marketing/site/assets/og-image.png marketing/og-image.html
+
+  The palette comes from base.css so the preview cannot drift from the site.
+  base.css declares its fonts relative to the site root, which does not resolve
+  from here, so the two faces are declared again below under their own names.
+-->
+<link rel="stylesheet" href="site/assets/base.css">
+<style>
+@font-face {
+  font-family: "OG Display";
+  font-weight: 200 800;
+  font-stretch: 75% 100%;
+  src: url("site/assets/fonts/bricolage-grotesque.woff2") format("woff2");
+}
+@font-face {
+  font-family: "OG Text";
+  font-weight: 200 800;
+  src: url("site/assets/fonts/newsreader.woff2") format("woff2");
+}
+html, body { width: 1200px; height: 630px; overflow: hidden; }
+body {
+  position: relative;
+  background:
+    linear-gradient(to right, transparent 118px, var(--margin) 118px, var(--margin) 121px, transparent 121px),
+    repeating-linear-gradient(to bottom, transparent 0 51px, var(--rule) 51px 52px),
+    var(--ledger);
+  font-family: "OG Text", Georgia, serif;
+}
+.mark {
+  position: absolute; top: 44px; left: 150px;
+  display: flex; align-items: center; gap: 14px;
+  font-family: "OG Display", sans-serif; font-size: 30px; font-weight: 700; font-stretch: 85%;
+}
+.mark svg { width: 34px; height: 34px; }
+h1 {
+  position: absolute; left: 150px; top: 148px; margin: 0; width: 980px;
+  font-family: "OG Display", sans-serif; font-size: 108px; font-weight: 800; font-stretch: 78%;
+  line-height: .96; letter-spacing: -.02em; color: var(--ink);
+}
+p {
+  position: absolute; left: 150px; bottom: 60px; margin: 0; width: 900px;
+  font-size: 30px; line-height: 1.35; color: var(--ink-2);
+}
+</style>
+</head>
+<body>
+<div class="mark">
+  <svg viewBox="0 0 32 32" aria-hidden="true">
+    <rect width="32" height="32" rx="4" fill="var(--ledger-2)"/>
+    <path d="M9.5 3v26" stroke="var(--margin)" stroke-width="2"/>
+    <path d="M4 11h24M4 17h24M4 23h24" stroke="var(--rule)" stroke-width="1.5"/>
+    <path d="M13 9h9M13 15h12M13 21h6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+  </svg>
+  CashAsh
+</div>
+<h1>A model proposes.<br>Code checks the rules.<br>You decide.</h1>
+<p>Weekly research for a small personal stock portfolio, with the trade left in your hands.</p>
+</body>
+</html>

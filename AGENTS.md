@@ -111,10 +111,13 @@ a doc for the web. Guardrail figures the landing page cites are `{{PLACEHOLDER}}
 tokens resolved at build time from `src/config.py`; the build fails on an
 unresolved token rather than publishing it.
 
-`marketing/site/assets/base.css` is the only place the site's palette and chrome
-are defined. Every page inlines it at build time, so each page stays
+`marketing/site/assets/base.css` is the only place the site's palette, typefaces
+and chrome are defined. Every page inlines it at build time, so each page stays
 self-contained without forking the design. Never redeclare a colour token in a
-page's own stylesheet.
+page's own stylesheet. The two typefaces are self-hosted under
+`marketing/site/assets/fonts/`, so no page makes an external request. The
+link-preview image is rendered from `marketing/og-image.html`; regenerate it
+when the headline or palette changes (the command is in that file).
 
 The landing page must obey the same rules as the code: invented tickers only,
 no figure that reads as a return, a hit rate or a confidence, and the
