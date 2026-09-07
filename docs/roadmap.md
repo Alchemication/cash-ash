@@ -63,7 +63,8 @@ day one — which is why it shipped in Phase 1.
 | 6 | Decision layer: deterministic guardrails, recommendations with expiry, decisions | done |
 | 7a | Telegram: notifier, weekly report, Approve/Reject/Later keyboards | done |
 | 7b | Long-polling daemon for button callbacks, launchd scheduling | done |
-| 8 | Process evals, curated cases, passive-benchmark tracking | |
+| 8a | Passive benchmark, money-weighted | done |
+| 8b | Process evals: schema validity, sourced claims, guardrails, rerun stability | next |
 
 ## Why profiles landed before market data
 

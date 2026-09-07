@@ -15,6 +15,7 @@ uv run python main.py recommend        # propose actions, rules applied
 uv run python main.py decide           # list and record your decisions
 uv run python main.py weekly           # the whole cycle, in one command
 uv run python main.py report           # the weekly review
+uv run python main.py benchmark        # against the same money in a tracker
 uv run python main.py telegram-setup   # register the bot command menu
 uv run python main.py daemon           # listen for button presses
 uv run python main.py daemon install   # run the listener under launchd
@@ -60,6 +61,7 @@ uv run python main.py decide 3 reject
 uv run python main.py report --telegram       # send it to your phone
 uv run python main.py weekly --telegram       # run everything and send it
 uv run python main.py weekly --skip-research  # everything but the deep passes
+uv run python main.py benchmark sync          # fetch the tracker's history
 uv run python main.py daemon install          # one job: listens and schedules
 uv run python main.py daemon stop
 uv run python main.py daemon restart
@@ -309,6 +311,31 @@ token there is nothing to listen for, so the listener does not start — but the
 scheduler still does, because a weekly review is worth having even when there
 is nowhere to send it, and everything it produces is readable from the CLI.
 Logs go to `~/Library/Logs`, where Console.app looks.
+
+## The benchmark
+
+`benchmark` compares the portfolio against the same money left in a global
+tracker. This is the only measure of the system likely ever to mean much: at
+fourteen holdings a week nothing else has the sample size to separate skill
+from noise.
+
+The comparison is **money-weighted**, not a return against a return. Money
+arrives over time, so "the portfolio is up 3% and the index is up 5%" answers a
+question nobody asked — it assumes every euro was present from the start.
+Instead each euro that entered the account buys tracker units at that day's
+close, building a shadow portfolio moved on exactly the same dates. Money that
+arrived in February cannot capture January's rise, in either column.
+
+Cash flows internal to the account — dividends, fees — do not move the shadow,
+because no new money arrived. A contribution on a day the market was shut uses
+the previous close, which is what an investor could actually have done;
+requiring an exact match would silently drop those contributions instead.
+
+The comparison says when it does not yet mean anything, and stops saying it on
+its own once enough time has passed. Recording begins in week one because the
+series cannot be reconstructed later; reading it as a verdict should not, and a
+number shown without that caveat invites exactly the mistake the system exists
+to avoid.
 
 ## The weekly report
 

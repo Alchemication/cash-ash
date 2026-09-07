@@ -117,6 +117,10 @@ class MarketDataProvider(Protocol):
         """Return known dates and consensus, omitting symbols with neither."""
         ...
 
+    def fetch_history(self, symbol: str, *, start: str) -> dict[str, float]:
+        """Return closes by ISO date from *start* onwards."""
+        ...
+
 
 class ProviderError(RuntimeError):
     """Raised when a provider fails in a way the caller cannot work around."""
@@ -353,6 +357,56 @@ class YFinanceProvider:
             if entry.earnings_dates or entry.ex_dividend_date or entry.has_estimates:
                 entries[symbol] = entry
         return entries
+
+    def fetch_history(self, symbol: str, *, start: str) -> dict[str, float]:
+        """Return closes by ISO date, from *start* to today.
+
+        Needed by the benchmark, which has to know what a unit cost on the day
+        each contribution was made. The latest close cannot answer that, and
+        the answer is not recoverable later — a price is only knowable as of a
+        moment.
+
+        Args:
+            symbol: Provider symbol.
+            start: Earliest ISO date wanted.
+
+        Returns:
+            Closes keyed by ISO date. Empty when the request failed, which the
+            caller must treat as absent data rather than a flat market.
+        """
+        import warnings
+
+        import yfinance
+
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                frame = yfinance.download(
+                    symbol,
+                    start=start,
+                    progress=False,
+                    auto_adjust=True,
+                    ignore_tz=True,
+                )
+        except Exception as exc:  # noqa: BLE001 - provider faults are opaque
+            logger.warning("History lookup failed for %s: %s", symbol, exc)
+            return {}
+
+        if frame is None or frame.empty or "Close" not in frame:
+            return {}
+        closes = frame["Close"]
+        if closes.ndim > 1:
+            closes = closes.iloc[:, 0]
+
+        history: dict[str, float] = {}
+        for timestamp, value in closes.dropna().items():
+            try:
+                price = float(value)
+            except (TypeError, ValueError):
+                continue
+            if price > 0:
+                history[timestamp.date().isoformat()] = price
+        return history
 
 
 _PROVIDERS: dict[str, type] = {"yfinance": YFinanceProvider}

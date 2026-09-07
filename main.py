@@ -12,6 +12,7 @@ Subcommands:
     decide         Record approve / reject / later on a recommendation.
     weekly         Run the whole cycle now (the daemon schedules it weekly).
     report         The weekly review, on screen or sent to Telegram.
+    benchmark      The portfolio against the same money in a tracker.
     telegram-setup Register the bot's command menu.
     daemon         Listen for button presses; install it under launchd.
     models         Inspect or change which model each stage calls.
@@ -99,6 +100,9 @@ Examples:
     uv run python main.py daemon install
         Run it under launchd, so it survives logout and sleep.
 
+    uv run python main.py benchmark
+        What the same money would be worth in a global tracker instead.
+
     uv run python main.py models
         Which model each stage calls, and what tier it is.
 
@@ -130,6 +134,7 @@ from dotenv import load_dotenv
 # Ensure src/ is on the path when running from the project root
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+from cmd_benchmark import cmd_benchmark  # noqa: E402
 from cmd_daemon import cmd_daemon  # noqa: E402
 from cmd_db import cmd_db  # noqa: E402
 from cmd_llm_log import cmd_llm_log  # noqa: E402
@@ -410,6 +415,12 @@ def build_parser() -> argparse.ArgumentParser:
     daemon_sub.add_parser("stop", help="Stop the launchd job")
     daemon_sub.add_parser("restart", help="Restart the launchd job")
     p_daemon.set_defaults(func=cmd_daemon, daemon_cmd=None)
+
+    p_bench = sub.add_parser("benchmark", help="Compare against a passive tracker")
+    bench_sub = p_bench.add_subparsers(dest="benchmark_cmd", required=False)
+    bench_sub.add_parser("sync", help="Fetch the benchmark's price history")
+    _add_db(p_bench)
+    p_bench.set_defaults(func=cmd_benchmark, benchmark_cmd=None)
 
     p_models = sub.add_parser("models", help="Inspect or change model routing")
     models_sub = p_models.add_subparsers(dest="models_cmd", required=False)

@@ -415,3 +415,38 @@ been recorded for this ISO week? — not a clock comparison, so a coarse interva
 costs only lateness and never a missed week: a machine asleep at the scheduled
 hour runs within half an hour of waking.
 """
+
+
+BENCHMARK_TICKER: str = os.environ.get("SKARBIE_BENCHMARK_TICKER", "VWCE.DE")
+"""The passive alternative the portfolio is measured against.
+
+A global all-world tracker quoted in EUR, so the comparison needs no currency
+conversion and no view on which region should have been held. Choosing a US
+index instead would flatter or punish the portfolio for a bet it did not
+deliberately make.
+
+The comparison is the only measure of this system that will ever mean much: at
+fourteen holdings a week, nothing else has the sample size to distinguish skill
+from noise.
+"""
+
+BENCHMARK_NAME: str = os.environ.get(
+    "SKARBIE_BENCHMARK_NAME", "FTSE All-World (accumulating)"
+)
+"""Human-readable name for the benchmark, shown in reports."""
+
+
+BENCHMARK_MEANINGFUL_AFTER_DAYS: int = _env_int(
+    "SKARBIE_BENCHMARK_MEANINGFUL_AFTER_DAYS", 3 * 365
+)
+"""How long the benchmark comparison must run before it is worth reading.
+
+Three years. Not a statistical threshold — on one portfolio there is no sample
+to compute one from — but the point at which a difference stops being
+attributable to which week the money happened to arrive.
+
+It exists so the comparison can say when it does not yet mean anything.
+Recording begins in week one because the series cannot be reconstructed later;
+reading it as a verdict should not, and a number displayed without that caveat
+invites exactly the mistake the system is built to avoid.
+"""
