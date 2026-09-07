@@ -96,6 +96,6 @@ def cmd_telegram_setup(args: argparse.Namespace) -> None:
         + ", ".join(f"/{name}" for name, _ in _BOT_COMMANDS)
     )
     console.print(
-        "[dim]Buttons and chat replies need the daemon, which is not built "
-        "yet. Sending reports works now.[/dim]"
+        "[dim]Buttons and chat replies are handled by the daemon: "
+        "'main.py daemon install'.[/dim]"
     )

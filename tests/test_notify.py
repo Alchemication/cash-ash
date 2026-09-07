@@ -180,7 +180,7 @@ class TestRetryPolicy:
                 BytesIO(b'{"ok": false, "description": "chat not found"}'),
             )
         )
-        with pytest.raises(TelegramError, match="chat not found"):
+        with pytest.raises(TelegramError, match="never messaged it"):
             send_message(chat_id=42, text="hi")
         assert len(attempts) == 1
 
@@ -253,6 +253,49 @@ class TestWeeklyReport:
         assert len(parts.actionable) == 1
         assert "Add to" in parts.body
 
+    def test_a_rerun_retires_the_previous_set(self, seeded: sqlite3.Connection) -> None:
+        # Re-running is the normal repair when a stage fails, and without this
+        # the owner receives the same recommendation once per attempt.
+        from store_research import create_research_run
+
+        for _ in range(2):
+            create_research_run(seeded, run_date="2026-09-07", kind="deep")
+        for run in (1, 2):
+            seeded.execute(
+                """
+                INSERT INTO recommendation (run_date, research_run_id, security_id,
+                                            action, amount_eur, rationale, urgency,
+                                            expires_on, created_at)
+                VALUES ('2026-09-07', ?, 1, 'ADD', 50.0, 'because', 'low',
+                        '2026-09-14', 'x')
+                """,
+                (run,),
+            )
+        seeded.execute(
+            "UPDATE recommendation SET superseded_by_run_id = 2 "
+            "WHERE research_run_id = 1"
+        )
+        parts = weekly_report(seeded, today=self.TODAY)
+        assert len(parts.actionable) == 1
+
+    def test_superseded_recommendations_are_hidden_even_when_newest(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        from store_research import create_research_run
+
+        for _ in range(2):
+            create_research_run(seeded, run_date="2026-09-07", kind="deep")
+        seeded.execute(
+            """
+            INSERT INTO recommendation (run_date, research_run_id, security_id,
+                                        action, rationale, urgency, expires_on,
+                                        superseded_by_run_id, created_at)
+            VALUES ('2026-09-07', 1, 1, 'REVIEW', 'because', 'low',
+                    '2026-09-14', 2, 'x')
+            """
+        )
+        assert weekly_report(seeded, today=self.TODAY).actionable == []
+
     def test_expired_recommendations_are_not_shown(
         self, seeded: sqlite3.Connection
     ) -> None:
@@ -289,3 +332,32 @@ class TestWeeklyReport:
         parts = weekly_report(conn, today=self.TODAY)
         # The fixture prices everything from its snapshot, so nothing is missing.
         assert "could not be priced" not in parts.body
+
+
+class TestRefusalMessages:
+    """Telegram describes its own state; the user needs to know what to do."""
+
+    def test_chat_not_found_explains_the_rule(self) -> None:
+        # A bot may not open a conversation. Until the person messages it,
+        # their chat does not exist as far as the API is concerned, and the id
+        # being correct makes no difference — which nobody knows until they
+        # hit it.
+        message = notify_module._explain("sendMessage", "Bad Request: chat not found")
+        assert "never messaged it" in message
+        assert "not the problem" in message
+
+    def test_blocked_bot_is_named(self) -> None:
+        message = notify_module._explain(
+            "sendMessage", "Forbidden: bot was blocked by the user"
+        )
+        assert "blocked the bot" in message
+
+    def test_bad_markup_is_named(self) -> None:
+        message = notify_module._explain(
+            "sendMessage", "Bad Request: can't parse entities"
+        )
+        assert "escaped for HTML" in message
+
+    def test_an_unrecognised_refusal_is_passed_through(self) -> None:
+        message = notify_module._explain("sendMessage", "something novel")
+        assert "something novel" in message

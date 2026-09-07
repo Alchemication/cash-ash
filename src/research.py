@@ -1113,6 +1113,24 @@ def run_decision(
         (today or date.today()) + timedelta(days=RECOMMENDATION_EXPIRY_DAYS)
     ).isoformat()
 
+    # Retire anything an earlier run left unanswered. Re-running is the normal
+    # repair when a stage fails, and without this the owner receives the same
+    # recommendation once per attempt.
+    with conn:
+        conn.execute(
+            """
+            UPDATE recommendation
+            SET superseded_by_run_id = ?
+            WHERE superseded_by_run_id IS NULL
+              AND research_run_id IS NOT ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_decision d
+                  WHERE d.recommendation_id = recommendation.id
+              )
+            """,
+            (run_id, run_id),
+        )
+
     stored: list[dict] = []
     allocated = 0.0
 

@@ -102,14 +102,12 @@ def _call(method: str, payload: dict) -> dict:
                 # A refusal is about the message, not the connection: a bad
                 # chat id or malformed HTML will be refused identically every
                 # time, so retrying only delays the error.
-                raise TelegramError(
-                    f"Telegram refused {method}: {parsed.get('description')}"
-                )
+                raise TelegramError(_explain(method, str(parsed.get("description"))))
             return parsed.get("result", {})
         except urllib.error.HTTPError as exc:
             detail = _error_detail(exc)
             if exc.code < 500:
-                raise TelegramError(f"Telegram refused {method}: {detail}") from exc
+                raise TelegramError(_explain(method, detail)) from exc
             last = exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             last = exc
@@ -126,6 +124,35 @@ def _call(method: str, payload: dict) -> dict:
         time.sleep(delay)
 
     raise TelegramError(f"Telegram {method} failed after every attempt: {last}")
+
+
+def _explain(method: str, detail: str) -> str:
+    """Turn Telegram's terse refusal into something actionable.
+
+    Telegram's own wording describes its internal state rather than what the
+    caller should do about it, and one refusal in particular is a rule nobody
+    knows until they hit it: a bot may not open a conversation. Until the
+    person sends it a message, their chat does not exist as far as the API is
+    concerned, and the id being correct makes no difference.
+    """
+    lowered = detail.lower()
+    if "chat not found" in lowered:
+        return (
+            "Telegram will not let a bot message someone who has never "
+            "messaged it. Open the bot in Telegram and send it anything — "
+            "/start will do — then try again. The chat id is not the problem."
+        )
+    if "bot was blocked" in lowered:
+        return (
+            "That person has blocked the bot, so nothing can be delivered to "
+            "them until they unblock it."
+        )
+    if "can't parse entities" in lowered or "unsupported start tag" in lowered:
+        return (
+            f"Telegram rejected the message formatting: {detail}. Something in "
+            f"the text was not escaped for HTML mode."
+        )
+    return f"Telegram refused {method}: {detail}"
 
 
 def _error_detail(exc: urllib.error.HTTPError) -> str:

@@ -150,12 +150,16 @@ def weekly_report(
 def _pending_recommendations(conn, *, today: date) -> list[dict]:  # type: ignore[no-untyped-def]
     """Return live recommendations from the most recent run.
 
-    Only the latest run, and only ones neither decided nor expired: a weekly
-    cadence supersedes itself, so showing last week's alongside this week's
-    would invite acting on research that has been replaced.
+    Only live ones: not decided, not expired, and not retired by a later run.
+    A weekly cadence supersedes itself, so showing last week's beside this
+    week's would invite acting on research already replaced — and re-running
+    after a failed stage would otherwise send the same recommendation twice.
     """
     row = conn.execute(
-        "SELECT MAX(run_date) AS run_date FROM recommendation"
+        """
+        SELECT MAX(run_date) AS run_date FROM recommendation
+        WHERE superseded_by_run_id IS NULL
+        """
     ).fetchone()
     if row is None or row["run_date"] is None:
         return []
@@ -174,6 +178,7 @@ def _pending_recommendations(conn, *, today: date) -> list[dict]:  # type: ignor
             FROM recommendation r
             LEFT JOIN securities s ON s.id = r.security_id
             WHERE r.run_date = ?
+              AND r.superseded_by_run_id IS NULL
               AND r.expires_on >= ?
               AND NOT EXISTS (
                   SELECT 1 FROM user_decision d WHERE d.recommendation_id = r.id
