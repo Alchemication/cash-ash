@@ -297,3 +297,80 @@ class TestLaunchdJob:
         args = _render_plist(_Path("/tmp/project"))["ProgramArguments"]
         assert args[0].endswith("uv")
         assert args[1:3] == ["run", "python"]
+
+
+class TestWeeklySchedule:
+    """One process schedules the week; the question is about state, not clocks."""
+
+    @pytest.fixture
+    def state(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        path = tmp_path / "state.json"
+        monkeypatch.setattr(daemon_module, "STATE_PATH", path)
+        return path
+
+    def test_not_due_before_the_scheduled_day(self, state) -> None:
+        from datetime import datetime
+
+        # Saturday, with Sunday configured.
+        assert (
+            daemon_module.weekly_is_due("adam", now=datetime(2026, 9, 5, 20)) is False
+        )
+
+    def test_not_due_before_the_scheduled_hour(self, state) -> None:
+        from datetime import datetime
+
+        assert daemon_module.weekly_is_due("adam", now=datetime(2026, 9, 6, 9)) is False
+
+    def test_due_at_the_scheduled_hour(self, state) -> None:
+        from datetime import datetime
+
+        assert daemon_module.weekly_is_due("adam", now=datetime(2026, 9, 6, 18)) is True
+
+    def test_still_due_the_next_morning(self, state) -> None:
+        # The point of asking about state: a machine asleep on Sunday evening
+        # runs on waking rather than skipping the week.
+        from datetime import datetime
+
+        assert daemon_module.weekly_is_due("adam", now=datetime(2026, 9, 7, 9)) is True
+
+    def test_not_due_twice_in_one_week(self, state) -> None:
+        from datetime import datetime
+
+        sunday = datetime(2026, 9, 6, 18)
+        daemon_module._record_weekly("adam", now=sunday)
+        assert daemon_module.weekly_is_due("adam", now=sunday) is False
+        assert (
+            daemon_module.weekly_is_due("adam", now=datetime(2026, 9, 8, 10)) is False
+        )
+
+    def test_due_again_the_following_week(self, state) -> None:
+        from datetime import datetime
+
+        daemon_module._record_weekly("adam", now=datetime(2026, 9, 6, 18))
+        assert (
+            daemon_module.weekly_is_due("adam", now=datetime(2026, 9, 13, 18)) is True
+        )
+
+    def test_profiles_are_tracked_separately(self, state) -> None:
+        from datetime import datetime
+
+        sunday = datetime(2026, 9, 6, 18)
+        daemon_module._record_weekly("adam", now=sunday)
+        assert daemon_module.weekly_is_due("kasia", now=sunday) is True
+
+    def test_recording_a_run_does_not_lose_the_update_offset(self, state) -> None:
+        # Both live in one state file; overwriting it here would replay the
+        # Telegram backlog on the next poll.
+        from datetime import datetime
+
+        daemon_module._save_offset(4242)
+        daemon_module._record_weekly("adam", now=datetime(2026, 9, 6, 18))
+        assert daemon_module._load_offset() == 4242
+
+    def test_saving_an_offset_does_not_reschedule_the_week(self, state) -> None:
+        from datetime import datetime
+
+        sunday = datetime(2026, 9, 6, 18)
+        daemon_module._record_weekly("adam", now=sunday)
+        daemon_module._save_offset(99)
+        assert daemon_module.weekly_is_due("adam", now=sunday) is False

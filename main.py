@@ -10,7 +10,7 @@ Subcommands:
     research       Deep pass on a holding: plan, evidence, findings.
     recommend      Propose actions for the week, with the rules applied.
     decide         Record approve / reject / later on a recommendation.
-    weekly         The whole cycle: sync, triage, research, decide, report.
+    weekly         Run the whole cycle now (the daemon schedules it weekly).
     report         The weekly review, on screen or sent to Telegram.
     telegram-setup Register the bot's command menu.
     daemon         Listen for button presses; install it under launchd.
@@ -83,8 +83,9 @@ Examples:
     uv run python main.py weekly
         Sync, triage, research, decide and report, in one go.
 
-    uv run python main.py weekly install
-        Schedule it. Sunday evening, so there is a day to think before Monday.
+    uv run python main.py daemon install
+        Install the one background job: it listens for replies and runs the
+        week when due.
 
     uv run python main.py report
         The weekly review as it would read on a phone.
@@ -375,9 +376,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_decide.set_defaults(func=cmd_decide)
 
     p_weekly = sub.add_parser("weekly", help="Run the whole weekly cycle")
-    weekly_sub = p_weekly.add_subparsers(dest="weekly_cmd", required=False)
-    weekly_sub.add_parser("install", help="Schedule it under launchd")
-    weekly_sub.add_parser("stop", help="Unschedule it")
     p_weekly.add_argument(
         "--telegram", action="store_true", help="Send the report when done"
     )
@@ -394,7 +392,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Everything except the deep passes",
     )
     _add_db(p_weekly)
-    p_weekly.set_defaults(func=cmd_weekly, weekly_cmd=None)
+    p_weekly.set_defaults(func=cmd_weekly)
 
     p_report = sub.add_parser("report", help="The weekly portfolio review")
     p_report.add_argument(

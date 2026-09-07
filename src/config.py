@@ -375,15 +375,8 @@ enough that a button press is not left unanswered for minutes once it clears.
 """
 
 
-LAUNCHD_WEEKLY_LABEL: str = "com.skarbie.weekly"
-"""launchd label for the scheduled weekly run, distinct from the listener's.
-
-Two jobs with different lifetimes: the listener runs continuously, the weekly
-run fires once and exits. Sharing a label would mean stopping one stops both.
-"""
-
 WEEKLY_RUN_WEEKDAY: int = _env_int("SKARBIE_WEEKLY_RUN_WEEKDAY", 0)
-"""Day the weekly run fires, launchd-style with Sunday as 0.
+"""Day the weekly run fires, with Sunday as 0.
 
 Sunday by default: the week's news has landed, markets are shut so no price
 moves mid-run, and there is a day before Monday's open to think about anything
@@ -411,5 +404,14 @@ zdrowskit uses: it is where Console.app looks, and it keeps machine output out
 of a directory otherwise holding only the user's own files.
 """
 
-WEEKLY_LOG_FILE: Path = DAEMON_LOG_FILE.with_name("skarbie.weekly.log")
-"""Where the scheduled weekly run writes its output, beside the daemon's."""
+
+SCHEDULED_CHECK_INTERVAL_S: int = _env_int(
+    "SKARBIE_SCHEDULED_CHECK_INTERVAL_S", 30 * 60
+)
+"""How often the daemon asks whether the week's run has happened.
+
+Half an hour, matching zdrowskit. The check is a state question — has a run
+been recorded for this ISO week? — not a clock comparison, so a coarse interval
+costs only lateness and never a missed week: a machine asleep at the scheduled
+hour runs within half an hour of waking.
+"""

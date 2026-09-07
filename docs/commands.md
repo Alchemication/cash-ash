@@ -60,8 +60,7 @@ uv run python main.py decide 3 reject
 uv run python main.py report --telegram       # send it to your phone
 uv run python main.py weekly --telegram       # run everything and send it
 uv run python main.py weekly --skip-research  # everything but the deep passes
-uv run python main.py weekly install          # schedule it for Sundays
-uv run python main.py weekly stop             # unschedule it
+uv run python main.py daemon install          # one job: listens and schedules
 uv run python main.py daemon stop
 uv run python main.py daemon restart
 ```
@@ -267,10 +266,21 @@ that has moved. `decide` refuses an expired recommendation and says why.
 
 ```bash
 uv run python main.py weekly            # sync, triage, research, decide, report
-uv run python main.py weekly install    # schedule it
+uv run python main.py daemon install    # and have it run itself, weekly
 ```
 
 One command, because five driven by hand is how a weekly habit fails to form.
+
+Scheduling lives inside the daemon rather than in a second launchd job. There
+is one background process with two threads — a scheduler and the Telegram
+listener — following zdrowskit: one thing to install, one log, one thing that
+can be broken. Two jobs meant two ways to be half-working, with the listener
+running while the schedule was silently absent.
+
+The scheduler asks a question about state — has a run been recorded for this
+ISO week? — rather than watching for a moment to pass. A machine asleep at the
+scheduled hour therefore runs on waking instead of skipping the week, and a
+daemon restarted twice in an hour does not run twice.
 
 **Stages degrade rather than abort.** A failed price sync leaves yesterday's
 prices and the run continues on them, marked stale. A research pass that fails
@@ -287,22 +297,18 @@ nothing moves mid-run, and there is a day before Monday's open to think about
 anything proposed. The strategy asks for a cooling-off period, and a Sunday
 report gives one for free.
 
-The scheduled job and the listener are separate launchd jobs with separate
-labels. They have different lifetimes — the listener runs continuously, the
-weekly run fires once and exits — and sharing a label would mean stopping one
-stops both.
-
-Both are invoked through `uv run` rather than a fixed interpreter path, so a
+The single job is invoked through `uv run` rather than a fixed interpreter path, so a
 rebuilt virtual environment or an added dependency does not leave a job
 pointing at a stale interpreter that fails only at the next restart. launchd
 starts jobs with almost nothing in the environment, so both set `HOME` — every
 user-owned path here derives from it — and a `PATH` including the Homebrew
 locations, which the default omits entirely on Apple Silicon.
 
-The listener's `KeepAlive` restarts it on a crash but not on a clean exit. With
-no bot token there is nothing to listen to, so it logs once and exits; an
-unconditional `KeepAlive` would relaunch it into the same misconfiguration
-every thirty seconds. Logs go to `~/Library/Logs`, where Console.app looks.
+`KeepAlive` restarts the job on a crash but not on a clean exit. With no bot
+token there is nothing to listen for, so the listener does not start — but the
+scheduler still does, because a weekly review is worth having even when there
+is nowhere to send it, and everything it produces is readable from the CLI.
+Logs go to `~/Library/Logs`, where Console.app looks.
 
 ## The weekly report
 
