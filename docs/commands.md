@@ -284,6 +284,14 @@ ISO week? — rather than watching for a moment to pass. A machine asleep at the
 scheduled hour therefore runs on waking instead of skipping the week, and a
 daemon restarted twice in an hour does not run twice.
 
+It also records what the portfolio was worth, right after refreshing prices.
+That value is derivable from dated trades and dated prices, so the snapshot is
+not the only record — but a derived figure silently changes when a price is
+later corrected, while a snapshot pins what was actually reported at the time,
+and it turns "when did this diverge from the index" into a query rather than a
+reconstruction. Unpriced holdings are omitted from it rather than recorded as
+zero, with the count kept in the snapshot's note.
+
 **Stages degrade rather than abort.** A failed price sync leaves yesterday's
 prices and the run continues on them, marked stale. A research pass that fails
 on one holding does not stop the others. A failed decision still leaves a

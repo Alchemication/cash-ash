@@ -90,6 +90,7 @@ def run_weekly(
     cycle_id = start_cycle(conn, now.isoformat())
     outcome = WeeklyOutcome()
     outcome.stages.append(_sync(conn, account_id=account_id))
+    outcome.stages.append(_snapshot(conn, account_id=account_id, today=today))
 
     selected = _triage(conn, outcome, account_id=account_id, today=today)
 
@@ -142,6 +143,69 @@ def _sync(conn: sqlite3.Connection, *, account_id: int) -> StageResult:
             f"{calendar['events']} new event(s)"
         ),
     )
+
+
+def _snapshot(conn, *, account_id: int, today) -> StageResult:  # type: ignore[no-untyped-def]
+    """Record what the portfolio was worth, right after prices were refreshed.
+
+    Value over time is derivable from dated trades and dated prices, so this is
+    not the only record — but a derived figure silently changes when a price is
+    later corrected, while a snapshot pins what was actually reported at the
+    time. It is also what turns "when did this diverge from the index" into a
+    query rather than a reconstruction.
+
+    Unpriced holdings are omitted rather than recorded as zero, and the count
+    goes in the note: a snapshot that quietly valued a suspended holding at
+    nothing would understate the portfolio for as long as the outage lasted,
+    and would do it in the historical record where nobody would look again.
+
+    Args:
+        conn: Open database connection.
+        account_id: Account to snapshot.
+        today: Reference date, for tests.
+
+    Returns:
+        What the stage did.
+    """
+    from datetime import date as _date
+
+    from portfolio import cash_eur, holdings
+    from store import save_snapshot
+
+    when = (today or _date.today()).isoformat()
+    try:
+        rows = holdings(conn, account_id=account_id)
+        priced = [row for row in rows if row.value_eur is not None]
+        unpriced = len(rows) - len(priced)
+        save_snapshot(
+            conn,
+            account_id=account_id,
+            snapshot_date=when,
+            cash_eur=cash_eur(conn, account_id=account_id),
+            positions=[
+                (
+                    row.position.security.id,
+                    row.position.quantity,
+                    row.value_eur,
+                    row.unrealised_return_pct,
+                )
+                for row in priced
+                if row.position.security.id is not None
+            ],
+            source="weekly",
+            note=(
+                f"Weekly snapshot. {unpriced} holding(s) omitted for want of a price."
+                if unpriced
+                else "Weekly snapshot."
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - the run continues without a record
+        return StageResult("snapshot", ok=False, detail=f"{exc}")
+
+    detail = f"{len(priced)} holding(s) valued"
+    if unpriced:
+        detail += f", {unpriced} unpriced and omitted"
+    return StageResult("snapshot", ok=True, detail=detail)
 
 
 def _triage(

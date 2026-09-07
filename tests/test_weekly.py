@@ -92,6 +92,7 @@ class TestOrder:
         assert called[:3] == ["sync", "triage", "research"]
         assert [stage.name for stage in outcome.stages] == [
             "sync",
+            "snapshot",
             "triage",
             "research",
             "decide",
@@ -196,3 +197,105 @@ class TestResearchCap:
         stage = next(s for s in outcome.stages if s.name == "research")
         assert stage.skipped
         assert outcome.researched == []
+
+
+class TestSnapshot:
+    """Value over time, pinned rather than re-derived."""
+
+    def test_a_snapshot_is_written(self, seeded: sqlite3.Connection, stages) -> None:
+        stages()
+        run_weekly(seeded, today=TODAY)
+        rows = seeded.execute(
+            "SELECT snapshot_date, source FROM portfolio_snapshots "
+            "WHERE source = 'weekly'"
+        ).fetchall()
+        assert [row["snapshot_date"] for row in rows] == ["2026-09-07"]
+
+    def test_it_does_not_replace_the_seed(
+        self, seeded: sqlite3.Connection, stages
+    ) -> None:
+        # Different sources, so the broker's own figures survive alongside.
+        stages()
+        run_weekly(seeded, today=TODAY)
+        sources = {
+            row["source"]
+            for row in seeded.execute("SELECT source FROM portfolio_snapshots")
+        }
+        assert sources == {"testbroker", "weekly"}
+
+    def test_rerunning_the_same_day_does_not_duplicate(
+        self, seeded: sqlite3.Connection, stages
+    ) -> None:
+        stages()
+        run_weekly(seeded, today=TODAY)
+        run_weekly(seeded, today=TODAY)
+        row = seeded.execute(
+            "SELECT COUNT(*) AS n FROM portfolio_snapshots WHERE source = 'weekly'"
+        ).fetchone()
+        assert row["n"] == 1
+
+    def test_successive_weeks_accumulate(
+        self, seeded: sqlite3.Connection, stages
+    ) -> None:
+        from datetime import date
+
+        stages()
+        run_weekly(seeded, today=TODAY)
+        run_weekly(seeded, today=date(2026, 9, 14))
+        row = seeded.execute(
+            "SELECT COUNT(*) AS n FROM portfolio_snapshots WHERE source = 'weekly'"
+        ).fetchone()
+        assert row["n"] == 2
+
+    def test_unpriced_holdings_are_omitted_not_zeroed(
+        self, seeded: sqlite3.Connection, stages, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A snapshot that valued a suspended holding at nothing would
+        # understate the portfolio in the historical record, where nobody
+        # would look again.
+        import weekly as weekly_mod
+        from models import Holding
+
+        real = weekly_mod.__dict__.get("_snapshot")
+        assert real is not None
+
+        import portfolio
+
+        original = portfolio.holdings
+
+        def one_unpriced(conn, *, account_id=1):
+            rows = original(conn, account_id=account_id)
+            return [
+                Holding(position=rows[0].position, value_eur=None),
+                *rows[1:],
+            ]
+
+        monkeypatch.setattr(portfolio, "holdings", one_unpriced)
+        result = real(seeded, account_id=1, today=TODAY)
+        assert "1 unpriced and omitted" in result.detail
+        row = seeded.execute(
+            """
+            SELECT COUNT(*) AS n FROM snapshot_positions sp
+            JOIN portfolio_snapshots ps ON ps.id = sp.snapshot_id
+            WHERE ps.source = 'weekly'
+            """
+        ).fetchone()
+        assert row["n"] == 2
+
+    def test_a_failed_snapshot_does_not_stop_the_run(
+        self, seeded: sqlite3.Connection, stages, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Patch the write, not the read: holdings is also what the report
+        # needs, and breaking it would prove nothing about the snapshot.
+        import store
+
+        monkeypatch.setattr(
+            store,
+            "save_snapshot",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk full")),
+        )
+        stages()
+        outcome = run_weekly(seeded, today=TODAY)
+        assert outcome.report is not None
+        stage = next(s for s in outcome.stages if s.name == "snapshot")
+        assert stage.ok is False
