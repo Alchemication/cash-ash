@@ -11,6 +11,8 @@ uv run python main.py events           # known upcoming dates for your holdings
 uv run python main.py thesis           # why each position is held
 uv run python main.py triage           # rank holdings by what changed
 uv run python main.py research         # deep pass on what triage selected
+uv run python main.py recommend        # propose actions, rules applied
+uv run python main.py decide           # list and record your decisions
 uv run python main.py models           # which model each stage calls
 uv run python main.py llm-log          # recorded model calls and their cost
 uv run python main.py price TICKER --close AMOUNT   # record a price by hand
@@ -48,6 +50,8 @@ uv run python main.py thesis show NKE
 uv run python main.py thesis list
 uv run python main.py triage --dry-run        # show the input, send nothing
 uv run python main.py research AMD            # deep pass on one holding
+uv run python main.py decide 3 approve --note "agreed, buying Monday"
+uv run python main.py decide 3 reject
 ```
 
 ## Profiles
@@ -206,6 +210,46 @@ review and accept.
 `broken` means a condition you wrote down has actually occurred — not that the
 news was bad or the price fell. The prompt is explicit that an absence of
 evidence is reported as `unchanged` rather than turned into a verdict.
+
+## Recommendations
+
+`recommend` proposes actions for the week. The model proposes; deterministic
+rules in `src/guardrails.py` decide, in code, afterwards. That is the reason a
+model is allowed near this decision at all — a prompt asking it to respect a
+position limit is a request, and this is not.
+
+Three kinds of rule are enforced:
+
+- **Position caps.** An ADD that would push a holding past the weight limit is
+  reduced to the largest amount that stays under it, solved properly rather
+  than approximated — buying raises both the holding and the portfolio total.
+- **Capital.** Single-trade limit, weekly allocation, and cash plus the
+  planned contribution. The allocation is consumed across proposals within one
+  run, so three recommendations cannot each spend the same money.
+- **Sell discipline, taken from your own strategy file.** EXIT and TRIM require
+  a thesis that has actually deteriorated or broken, or a position that has
+  grown too large. A proposal to sell because a price fell is refused, not
+  argued with. An EXIT on an oversized position whose thesis is intact is
+  reduced to a TRIM, because being too large justifies trimming and never
+  closing.
+
+Refusals are shown rather than hidden. "The model wanted to sell and the rules
+would not let it" is a different event from "the model recommended nothing",
+and the two must not look alike.
+
+Every recommendation records the price and FX rate that stood behind it. That
+is the forward-tracking every later evaluation depends on, and it cannot be
+reconstructed after the fact.
+
+## Decisions and execution
+
+`decide` records approve, reject or later. **Approving is not executing** —
+the gap is deliberate, because your strategy asks for a cooling-off period, and
+collapsing the two would erase the evidence of whether you acted at all.
+
+Recommendations expire. A weekly cadence supersedes itself, so acting on a
+stale one would execute research that has already been replaced, at a price
+that has moved. `decide` refuses an expired recommendation and says why.
 
 ## Evidence and provenance
 

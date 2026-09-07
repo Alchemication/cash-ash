@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
 from config import PROMPTS_DIR, THESIS_MAX_TOKENS
@@ -947,3 +947,297 @@ def _propose_thesis(  # type: ignore[no-untyped-def]
             "SELECT * FROM thesis WHERE id = ?", (cursor.lastrowid,)
         ).fetchone()
     )
+
+
+# ---------------------------------------------------------------------------
+# Portfolio decision
+# ---------------------------------------------------------------------------
+
+DECIDE_PROMPT_VERSION = "decide/1"
+
+_VALID_ACTIONS = {"BUY", "ADD", "HOLD", "TRIM", "EXIT", "REVIEW", "KEEP_CASH"}
+_VALID_URGENCY = {"low", "medium", "high"}
+
+
+def build_guardrail_context(conn, *, profile=None, account_id: int = 1):  # type: ignore[no-untyped-def]
+    """Assemble the portfolio state the deterministic checks run against."""
+    from config import DEFAULT_MONTHLY_CONTRIBUTION_EUR
+    from guardrails import GuardrailContext
+    from portfolio import cash_eur, holdings, total_value
+    from store_research import active_theses
+
+    rows = holdings(conn, account_id=account_id)
+    cash = cash_eur(conn, account_id=account_id)
+    total = total_value(rows, cash=cash)
+    theses = active_theses(conn)
+
+    weights: dict[str, float] = {}
+    values: dict[str, float] = {}
+    statuses: dict[str, str] = {}
+    for row in rows:
+        security = row.position.security
+        assert security.id is not None
+        if row.value_eur is not None and total:
+            weights[security.ticker] = row.value_eur / total * 100
+            values[security.ticker] = row.value_eur
+        thesis = theses.get(security.id)
+        statuses[security.ticker] = thesis.thesis_status if thesis else "unexamined"
+
+    return GuardrailContext(
+        total_value_eur=total,
+        cash_eur=cash,
+        monthly_contribution_eur=(
+            profile.monthly_contribution_eur
+            if profile is not None
+            else DEFAULT_MONTHLY_CONTRIBUTION_EUR
+        ),
+        weights_by_ticker=weights,
+        values_by_ticker=values,
+        thesis_status_by_ticker=statuses,
+    )
+
+
+def run_decision(
+    conn,  # type: ignore[no-untyped-def]
+    *,
+    profile=None,  # type: ignore[no-untyped-def]
+    account_id: int = 1,
+    today: date | None = None,
+) -> tuple[int, list[dict], str]:
+    """Propose recommendations, then enforce the deterministic rules on them.
+
+    The model proposes; :mod:`guardrails` decides. A proposal that breaches a
+    position cap, a trade limit or the owner's own sell discipline is refused
+    or reduced here rather than argued with in a prompt, which is the reason a
+    model is allowed near this decision at all.
+
+    Every surviving recommendation records the price and FX rate at the time.
+    That is the forward-tracking the evaluation rests on and it cannot be
+    reconstructed later.
+
+    Args:
+        conn: Open database connection.
+        profile: Profile supplying the contribution figure.
+        account_id: Account to decide for.
+        today: Reference date, for tests.
+
+    Returns:
+        ``(research run id, stored recommendations, summary)``.
+
+    Raises:
+        ValueError: If there is nothing to decide on, or output is unusable.
+    """
+    from config import RECOMMENDATION_EXPIRY_DAYS
+    from guardrails import check_proposal
+    from store import latest_prices, load_securities
+    from store_research import create_research_run
+
+    inputs = triage_inputs(conn, account_id=account_id, today=today)
+    if not inputs:
+        raise ValueError("No holdings to decide on.")
+
+    context = build_guardrail_context(conn, profile=profile, account_id=account_id)
+    run_date = (today or date.today()).isoformat()
+    run_id = create_research_run(
+        conn, run_date=run_date, kind="deep", note="Portfolio decision"
+    )
+
+    message = "\n\n".join(
+        [
+            f"Portfolio decision for {run_date}.",
+            f"Total EUR {context.total_value_eur:,.2f} · cash EUR "
+            f"{context.cash_eur:,.2f} · new money this month EUR "
+            f"{context.monthly_contribution_eur:,.2f}.",
+            "\n\n".join(entry.render() for entry in inputs),
+        ]
+    )
+
+    result = call_llm(
+        conn,
+        feature="decision",
+        messages=[
+            {"role": "system", "content": load_prompt("decide.md")},
+            {"role": "user", "content": message},
+        ],
+        prompt_version=DECIDE_PROMPT_VERSION,
+        max_tokens=THESIS_MAX_TOKENS,
+    )
+    payload = extract_json(result.text)
+
+    securities = load_securities(conn)
+    prices = latest_prices(conn)
+    expires = (
+        (today or date.today()) + timedelta(days=RECOMMENDATION_EXPIRY_DAYS)
+    ).isoformat()
+
+    stored: list[dict] = []
+    allocated = 0.0
+
+    for raw in payload.get("recommendations", []):
+        if not isinstance(raw, dict):
+            continue
+        action = str(raw.get("action", "")).strip().upper()
+        if action not in _VALID_ACTIONS:
+            logger.warning("Discarding proposal with unknown action %r", action)
+            continue
+        # HOLD carries no instruction and no consequence; storing one per
+        # untouched holding would bury the few rows that mean something.
+        if action == "HOLD":
+            continue
+
+        ticker = raw.get("ticker")
+        ticker = str(ticker).strip().upper() if ticker else None
+        if ticker and ticker not in securities:
+            logger.warning("Discarding proposal for unknown ticker %r", ticker)
+            continue
+
+        amount = raw.get("amount_eur")
+        try:
+            amount = float(amount) if amount is not None else None
+        except (TypeError, ValueError):
+            amount = None
+
+        verdict = check_proposal(
+            action=action,
+            ticker=ticker,
+            amount_eur=amount,
+            context=replace(context, allocated_this_run_eur=allocated),
+        )
+        if verdict.refused:
+            logger.info("Guardrail refused %s %s: %s", action, ticker, verdict.refusal)
+            stored.append(
+                {
+                    "id": None,
+                    "ticker": ticker,
+                    "action": action,
+                    "amount_eur": None,
+                    "refused": True,
+                    "refusal": verdict.refusal,
+                    "rationale": str(raw.get("rationale", "")).strip(),
+                    "urgency": "low",
+                    "adjustments": (),
+                }
+            )
+            continue
+
+        if verdict.amount_eur and verdict.action in {"BUY", "ADD"}:
+            allocated += verdict.amount_eur
+
+        urgency = str(raw.get("urgency", "low")).strip().lower()
+        security = securities.get(ticker) if ticker else None
+        price_row = prices.get(security.id) if security and security.id else None
+
+        recommendation_id = _store_recommendation(
+            conn,
+            run_date=run_date,
+            run_id=run_id,
+            security=security,
+            action=verdict.action,
+            amount_eur=verdict.amount_eur,
+            rationale=str(raw.get("rationale", "")).strip() or "no rationale given",
+            urgency=urgency if urgency in _VALID_URGENCY else "low",
+            price_row=price_row,
+            weight_pct=context.weights_by_ticker.get(ticker) if ticker else None,
+            expires_on=expires,
+            verdict=verdict,
+            llm_call_id=result.llm_call_id,
+        )
+        stored.append(
+            {
+                "id": recommendation_id,
+                "ticker": ticker,
+                "action": verdict.action,
+                "amount_eur": verdict.amount_eur,
+                "refused": False,
+                "refusal": None,
+                "rationale": str(raw.get("rationale", "")).strip(),
+                "urgency": urgency if urgency in _VALID_URGENCY else "low",
+                "adjustments": verdict.adjustments,
+            }
+        )
+
+    return run_id, stored, str(payload.get("summary", "")).strip()
+
+
+def _store_recommendation(  # type: ignore[no-untyped-def]
+    conn,
+    *,
+    run_date: str,
+    run_id: int,
+    security,
+    action: str,
+    amount_eur: float | None,
+    rationale: str,
+    urgency: str,
+    price_row,
+    weight_pct: float | None,
+    expires_on: str,
+    verdict,
+    llm_call_id: int | None,
+) -> int:
+    """Persist one recommendation with the price that stood behind it."""
+    from datetime import UTC, datetime
+
+    from store_research import active_thesis
+
+    fx = None
+    value_eur = None
+    price_native = price_row["close_native"] if price_row is not None else None
+    if price_row is not None:
+        row = conn.execute(
+            """
+            SELECT rate FROM fx_rates WHERE base = ? AND quote = 'EUR'
+            ORDER BY rate_date DESC LIMIT 1
+            """,
+            (price_row["currency"],),
+        ).fetchone()
+        fx = (
+            float(row["rate"])
+            if row
+            else (1.0 if price_row["currency"] == "EUR" else None)
+        )
+        if fx is not None and price_native is not None:
+            value_eur = price_native * fx
+
+    thesis = (
+        active_thesis(conn, security_id=security.id)
+        if security is not None and security.id is not None
+        else None
+    )
+
+    with conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO recommendation (
+                run_date, research_run_id, security_id, action, amount_eur,
+                rationale, urgency, thesis_id, price_native, fx_rate, value_eur,
+                weight_pct, expires_on, guardrails, adjusted, llm_call_id, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_date,
+                run_id,
+                security.id if security is not None else None,
+                action,
+                amount_eur,
+                rationale,
+                urgency,
+                thesis.id if thesis else None,
+                price_native,
+                fx,
+                value_eur,
+                weight_pct,
+                expires_on,
+                json.dumps(
+                    {
+                        "checks": list(verdict.checks),
+                        "adjustments": list(verdict.adjustments),
+                    }
+                ),
+                int(verdict.adjusted),
+                llm_call_id,
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+    return int(cursor.lastrowid)

@@ -8,6 +8,8 @@ Subcommands:
     thesis         Bootstrap, list and inspect why each position is held.
     triage         Rank every holding by what deserves attention this week.
     research       Deep pass on a holding: plan, evidence, findings.
+    recommend      Propose actions for the week, with the rules applied.
+    decide         Record approve / reject / later on a recommendation.
     models         Inspect or change which model each stage calls.
     llm-log        Inspect recorded model calls and what they cost.
     price          Record one price by hand when a feed cannot.
@@ -65,6 +67,15 @@ Examples:
     uv run python main.py research
         The same, for everything the last triage selected.
 
+    uv run python main.py recommend
+        Propose this week's actions, with the position and sell rules applied.
+
+    uv run python main.py decide
+        List recommendations and what you decided about each.
+
+    uv run python main.py decide 3 approve --note "agreed, will buy Monday"
+        Record a decision. Approving is not executing.
+
     uv run python main.py models
         Which model each stage calls, and what tier it is.
 
@@ -100,6 +111,7 @@ from cmd_db import cmd_db  # noqa: E402
 from cmd_llm_log import cmd_llm_log  # noqa: E402
 from cmd_models import cmd_models  # noqa: E402
 from cmd_thesis import cmd_thesis  # noqa: E402
+from cmd_recommend import cmd_decide, cmd_recommend  # noqa: E402
 from cmd_research import cmd_research  # noqa: E402
 from cmd_triage import cmd_triage  # noqa: E402
 from cmd_sync import cmd_events, cmd_price, cmd_sync  # noqa: E402
@@ -313,6 +325,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_db(p_research)
     p_research.set_defaults(func=cmd_research)
+
+    p_recommend = sub.add_parser("recommend", help="Propose actions for the week")
+    _add_db(p_recommend)
+    p_recommend.set_defaults(func=cmd_recommend)
+
+    p_decide = sub.add_parser("decide", help="Record a decision on a recommendation")
+    p_decide.add_argument(
+        "recommendation_id",
+        nargs="?",
+        type=int,
+        default=None,
+        help="Recommendation to decide on (omit to list them)",
+    )
+    p_decide.add_argument(
+        "decision", nargs="?", choices=("approve", "reject", "later"), default=None
+    )
+    p_decide.add_argument("--note", default=None, help="Why, in your own words")
+    p_decide.add_argument(
+        "--limit", type=int, default=15, metavar="N", help="Rows when listing"
+    )
+    _add_db(p_decide)
+    p_decide.set_defaults(func=cmd_decide)
 
     p_models = sub.add_parser("models", help="Inspect or change model routing")
     models_sub = p_models.add_subparsers(dest="models_cmd", required=False)
