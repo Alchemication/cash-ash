@@ -30,6 +30,12 @@ Two typefaces, both self-hosted under `assets/fonts/` so no page makes an
 external request: Bricolage Grotesque (variable; headings, the sheet, all
 chrome) and Newsreader (variable, with italic; body prose).
 
+The wordmark is live text, never an image, so it matches the rest of the page
+exactly and stays selectable. "Ash" is set in `--ash`, the token whose name it
+prints, which is the whole of the treatment: no second weight, no third
+colour. `.wordmark` carries no flex `gap`, because the name is one word and a
+gap would space "Cash" and "Ash" apart as separate flex items.
+
 ## What lives here
 
 - `assets/base.css` — **the single source of truth for the palette, the
@@ -53,8 +59,13 @@ chrome) and Newsreader (variable, with italic; body prose).
   crumbling into ash. Resampled from the 1254px source with `sips` at quality
   76 and 1000px wide; the source is not kept in the repository. The same file
   is composited into the link preview.
-- `assets/favicon.svg` — the ledger mark. The same drawing is inlined beside
-  the wordmark on every page.
+- `assets/mark.png` — the brand mark: a stone dollar breaking into ash and
+  embers, square-cropped from the generated source at 96px. Shown at 26px
+  beside the wordmark on every page and offered as the Apple touch icon. It
+  runs larger than the 22px type because a dollar glyph is mostly negative
+  space. Its baked background is `#101010`, a shade under the page ground, so
+  it is composited with `mix-blend-mode: lighten` and leaves no visible tile.
+- `assets/favicon.png` — the same art at 64px, for the browser tab.
 - `assets/og-image.png` — the link preview, rendered from `../og-image.html`
   with headless Chrome. The command is in that file's header comment.
   Regenerate it if the headline or palette changes.
@@ -95,6 +106,11 @@ unresolved-token check.
   authority, evals measure process. Do not soften it, and never add a figure
   that reads as a return, a hit rate, or a confidence — not even as an example
   of what the app refuses to show.
+- The mark is raster on purpose. Tracing the art to vector would lose the
+  texture that makes it work, and a hand-drawn copy becomes a second version
+  of the logo that drifts the first time the art is regenerated. One asset,
+  two sizes. The uncropped original lives outside the repository and is what
+  the Telegram avatar is cut from.
 - The page describes the software and its shipped defaults, never one
   person's instance. Guardrails and the run schedule come from `src/config.py`
   through placeholders; nothing about any real portfolio — size, count,

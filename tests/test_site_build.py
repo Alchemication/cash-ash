@@ -54,7 +54,7 @@ class TestSiteBuild:
 
     def test_referenced_assets_are_shipped(self, site: Path) -> None:
         page = (site / "index.html").read_text(encoding="utf-8")
-        for name in ("favicon.svg", "og-image.png", "cash-ash-hero.jpg"):
+        for name in ("favicon.png", "mark.png", "og-image.png", "cash-ash-hero.jpg"):
             assert f"assets/{name}" in page
             assert (site / "assets" / name).exists(), name
 

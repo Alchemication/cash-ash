@@ -226,12 +226,11 @@ def heading_index(body: str) -> list[tuple[str, str]]:
     return [(slug, re.sub(r"<[^>]+>", "", text)) for slug, text in found]
 
 
-WORDMARK_SVG = """<svg viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="4" fill="var(--charcoal-2)"/>
-      <path d="M9.5 3v26" stroke="var(--ember)" stroke-width="2"/>
-      <path d="M4 11h24M4 17h24M4 23h24" stroke="var(--rule)" stroke-width="1.5"/>
-      <path d="M13 9h9M13 15h12M13 21h6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-    </svg>"""
+# The wordmark, shared by every generated page. "Ash" is set in the colour
+# named ash, so the name prints its own rhyme; base.css owns both rules.
+WORDMARK = (
+    '<img src="{up}assets/mark.png" width="96" height="96" alt="">\n    Cash<i>Ash</i>'
+)
 
 
 def page_shell(
@@ -259,6 +258,7 @@ def page_shell(
     """
     up = "../" * depth
     base_css = css_for_depth(base_css, depth)
+    wordmark = WORDMARK.format(up=up)
     links = "".join(
         f'\n    <a href="#{slug}">{html.escape(text)}</a>'
         for slug, text in contents or []
@@ -270,7 +270,8 @@ def page_shell(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(title)} — CashAsh</title>
 <meta name="description" content="{html.escape(description)}">
-<link rel="icon" href="{up}assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="{up}assets/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="{up}assets/mark.png">
 <style>
 {base_css}
 /* Docs-specific: a prose column with the ledger margin down its left edge. */
@@ -329,8 +330,7 @@ th {{ border-top-color: var(--line-strong); font-weight: 650; }}
 <body>
 <header class="shell topbar">
   <a class="wordmark" href="{up}">
-    {WORDMARK_SVG}
-    CashAsh
+    {wordmark}
   </a>
   <nav>
     <a href="{up}docs/">Docs</a>

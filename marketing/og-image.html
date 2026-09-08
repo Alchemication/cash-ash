@@ -39,10 +39,11 @@ body {
 }
 .mark {
   position: absolute; top: 44px; left: 150px;
-  display: flex; align-items: center; gap: 14px;
+  display: flex; align-items: center;
   font-family: "OG Display", sans-serif; font-size: 30px; font-weight: 700; font-stretch: 85%;
 }
-.mark svg { width: 34px; height: 34px; }
+.mark .logo { width: 40px; height: 40px; margin-right: 14px; mix-blend-mode: lighten; mask-image: none; -webkit-mask-image: none; position: static; }
+.mark i { font-style: normal; color: var(--ash); }
 h1 {
   position: absolute; left: 150px; top: 200px; margin: 0; z-index: 1;
   font-family: "OG Display", sans-serif; font-size: 118px; font-weight: 800; font-stretch: 78%;
@@ -63,13 +64,8 @@ img {
 </head>
 <body>
 <div class="mark">
-  <svg viewBox="0 0 32 32" aria-hidden="true">
-    <rect width="32" height="32" rx="4" fill="var(--charcoal-2)"/>
-    <path d="M9.5 3v26" stroke="var(--ember)" stroke-width="2"/>
-    <path d="M4 11h24M4 17h24M4 23h24" stroke="var(--rule)" stroke-width="1.5"/>
-    <path d="M13 9h9M13 15h12M13 21h6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-  </svg>
-  CashAsh
+  <img class="logo" src="site/assets/mark.png" alt="">
+  Cash<i>Ash</i>
 </div>
 <h1>Cash to ash?</h1>
 <p>Slow down, research, decide, learn.</p>

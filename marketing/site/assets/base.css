@@ -120,7 +120,10 @@ code, kbd {
 .wordmark {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  /* No gap: the name is one word, and inline-flex would treat "Cash" and the
+     "Ash" element as two items and space them apart. The mark carries the
+     separation with its own margin instead. */
+  gap: 0;
   font-size: 22px;
   font-weight: 700;
   font-stretch: 85%;
@@ -128,7 +131,19 @@ code, kbd {
   text-decoration: none;
 }
 
-.wordmark svg { width: 22px; height: 22px; }
+/* The mark is a photograph of a stone dollar going to ash on a ground a
+   shade darker than the page. Lighten drops that ground out, so the mark sits
+   on the page with no visible tile. A dollar glyph is mostly negative space,
+   so it needs to run larger than the type beside it to look the same size. */
+.wordmark img {
+  width: 26px;
+  height: 26px;
+  margin-right: 10px;
+  mix-blend-mode: lighten;
+}
+
+/* "Ash" printed in the colour named ash. */
+.wordmark i { font-style: normal; color: var(--ash); }
 
 .topbar nav { display: flex; gap: 26px; }
 
