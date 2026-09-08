@@ -226,13 +226,6 @@ def heading_index(body: str) -> list[tuple[str, str]]:
     return [(slug, re.sub(r"<[^>]+>", "", text)) for slug, text in found]
 
 
-# The wordmark, shared by every generated page. "Ash" is set in the colour
-# named ash, so the name prints its own rhyme; base.css owns both rules.
-WORDMARK = (
-    '<img src="{up}assets/mark.png" width="96" height="96" alt="">\n    Cash<i>Ash</i>'
-)
-
-
 def page_shell(
     *,
     title: str,
@@ -258,7 +251,6 @@ def page_shell(
     """
     up = "../" * depth
     base_css = css_for_depth(base_css, depth)
-    wordmark = WORDMARK.format(up=up)
     links = "".join(
         f'\n    <a href="#{slug}">{html.escape(text)}</a>'
         for slug, text in contents or []
@@ -271,7 +263,6 @@ def page_shell(
 <title>{html.escape(title)} — CashAsh</title>
 <meta name="description" content="{html.escape(description)}">
 <link rel="icon" href="{up}assets/favicon.png" type="image/png">
-<link rel="apple-touch-icon" href="{up}assets/mark.png">
 <style>
 {base_css}
 /* Docs-specific: a prose column with the ledger margin down its left edge. */
@@ -329,9 +320,7 @@ th {{ border-top-color: var(--line-strong); font-weight: 650; }}
 </head>
 <body>
 <header class="shell topbar">
-  <a class="wordmark" href="{up}">
-    {wordmark}
-  </a>
+  <a class="wordmark" href="{up}">Cash<i>Ash</i></a>
   <nav>
     <a href="{up}docs/">Docs</a>
     <a href="{up}docs/roadmap.html">Roadmap</a>

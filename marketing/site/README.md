@@ -33,8 +33,9 @@ chrome) and Newsreader (variable, with italic; body prose).
 The wordmark is live text, never an image, so it matches the rest of the page
 exactly and stays selectable. "Ash" is set in `--ash`, the token whose name it
 prints, which is the whole of the treatment: no second weight, no third
-colour. `.wordmark` carries no flex `gap`, because the name is one word and a
-gap would space "Cash" and "Ash" apart as separate flex items.
+colour. It is `inline-block` rather than flex, because the name is one word
+and flex would treat "Cash" and the "Ash" element as two items to space
+apart.
 
 ## What lives here
 
@@ -59,13 +60,10 @@ gap would space "Cash" and "Ash" apart as separate flex items.
   crumbling into ash. Resampled from the 1254px source with `sips` at quality
   76 and 1000px wide; the source is not kept in the repository. The same file
   is composited into the link preview.
-- `assets/mark.png` — the brand mark: a stone dollar breaking into ash and
-  embers, square-cropped from the generated source at 96px. Shown at 26px
-  beside the wordmark on every page and offered as the Apple touch icon. It
-  runs larger than the 22px type because a dollar glyph is mostly negative
-  space. Its baked background is `#101010`, a shade under the page ground, so
-  it is composited with `mix-blend-mode: lighten` and leaves no visible tile.
-- `assets/favicon.png` — the same art at 64px, for the browser tab.
+- `assets/favicon.png` — the browser-tab icon: the stone dollar going to ash,
+  square-cropped from the generated source at 64px. It appears nowhere else on
+  the site, which is deliberate. A tab icon sits alone at 16px among other
+  people's icons, a header mark sits beside type; they are different problems.
 - `assets/og-image.png` — the link preview, rendered from `../og-image.html`
   with headless Chrome. The command is in that file's header comment.
   Regenerate it if the headline or palette changes.
@@ -106,11 +104,14 @@ unresolved-token check.
   authority, evals measure process. Do not soften it, and never add a figure
   that reads as a return, a hit rate, or a confidence — not even as an example
   of what the app refuses to show.
-- The mark is raster on purpose. Tracing the art to vector would lose the
-  texture that makes it work, and a hand-drawn copy becomes a second version
-  of the logo that drifts the first time the art is regenerated. One asset,
-  two sizes. The uncropped original lives outside the repository and is what
-  the Telegram avatar is cut from.
+- There is no icon beside the wordmark, and adding one back needs a good
+  reason. Three were tried — a ledger sheet, the photographic dollar, a drawn
+  hourglass — and each read weaker than the heavy condensed type it stood
+  next to, which says the slot is the problem rather than any one drawing.
+  The page already opens on a large hero image; a second image in the corner
+  competes with it.
+- The uncropped dollar art lives outside the repository and is what the
+  Telegram avatar is cut from.
 - The page describes the software and its shipped defaults, never one
   person's instance. Guardrails and the run schedule come from `src/config.py`
   through placeholders; nothing about any real portfolio — size, count,
