@@ -21,7 +21,8 @@ A ledger sheet, kept in the dark. Ash-black ground, faint ruling, and one
 ember margin line. Ember is the brand and the calls to action; the two verdict
 colours are spent on meaning only — teal for a sourced finding or an
 approval, red for anything the rules refused — so neither ever decorates. The
-hero is one week's review rendered as the artifact the app produces, with a
+hero is a question beside a stone dollar going to ash; the first entry below
+it is one week's review rendered as the artifact the app produces, with a
 proposal the rules overruled. Section headings sit in the margin; the content
 sits to its right.
 
@@ -48,6 +49,10 @@ chrome) and Newsreader (variable, with italic; body prose).
   and reads its two colours from the stylesheet's tokens.
 - `assets/fonts/` — the three `.woff2` files, downloaded once from Google
   Fonts (latin subset, variable).
+- `assets/cash-ash-hero.jpg` — the hero image, a generated stone dollar
+  crumbling into ash. Resampled from the 1254px source with `sips` at quality
+  76 and 1000px wide; the source is not kept in the repository. The same file
+  is composited into the link preview.
 - `assets/favicon.svg` — the ledger mark. The same drawing is inlined beside
   the wordmark on every page.
 - `assets/og-image.png` — the link preview, rendered from `../og-image.html`
@@ -69,6 +74,8 @@ publishing an unresolved token. Currently:
 | `{{RECOMMENDATION_EXPIRY_DAYS}}` | `src/config.py` |
 | `{{PRICE_STALE_AFTER_DAYS}}` | `src/config.py` |
 | `{{BENCHMARK_NAME}}` | `src/config.py` |
+| `{{WEEKLY_RUN_DAY}}` | `src/config.py`, weekday name with Sunday as 0 |
+| `{{WEEKLY_RUN_TIME}}` | `src/config.py`, `HH:00` |
 
 The config module honours `CASH_ASH_*` environment overrides and a local
 `.env`, so a build on a machine with overrides set prints those. CI has none,
@@ -88,3 +95,7 @@ unresolved-token check.
   authority, evals measure process. Do not soften it, and never add a figure
   that reads as a return, a hit rate, or a confidence — not even as an example
   of what the app refuses to show.
+- The page describes the software and its shipped defaults, never one
+  person's instance. Guardrails and the run schedule come from `src/config.py`
+  through placeholders; nothing about any real portfolio — size, count,
+  holdings — belongs on it. Per-user values are the app's job to print.

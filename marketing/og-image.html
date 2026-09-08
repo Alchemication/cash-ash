@@ -44,13 +44,20 @@ body {
 }
 .mark svg { width: 34px; height: 34px; }
 h1 {
-  position: absolute; left: 150px; top: 148px; margin: 0; width: 980px;
-  font-family: "OG Display", sans-serif; font-size: 108px; font-weight: 800; font-stretch: 78%;
-  line-height: .96; letter-spacing: -.02em; color: var(--bone);
+  position: absolute; left: 150px; top: 200px; margin: 0; z-index: 1;
+  font-family: "OG Display", sans-serif; font-size: 118px; font-weight: 800; font-stretch: 78%;
+  line-height: .92; letter-spacing: -.025em; color: var(--bone);
 }
 p {
-  position: absolute; left: 150px; bottom: 60px; margin: 0; width: 900px;
-  font-size: 30px; line-height: 1.35; color: var(--ash);
+  position: absolute; left: 150px; top: 335px; margin: 0; width: 560px; z-index: 1;
+  font-family: "OG Display", sans-serif; font-size: 34px; font-weight: 500; font-stretch: 92%;
+  line-height: 1.2; color: var(--bone);
+}
+img {
+  position: absolute; right: 0; top: 15px; width: 600px; height: 600px;
+  mix-blend-mode: lighten;
+  mask-image: radial-gradient(ellipse 62% 62% at 50% 52%, #000 60%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 62% 62% at 50% 52%, #000 60%, transparent 100%);
 }
 </style>
 </head>
@@ -64,7 +71,8 @@ p {
   </svg>
   CashAsh
 </div>
-<h1>A model proposes.<br>Code checks the rules.<br>You decide.</h1>
-<p>Weekly research for a small personal stock portfolio, with the trade left in your hands.</p>
+<h1>Cash to ash?</h1>
+<p>Slow down, research, decide, learn.</p>
+<img src="site/assets/cash-ash-hero.jpg" alt="">
 </body>
 </html>

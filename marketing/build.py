@@ -434,6 +434,18 @@ def build_docs(out: Path, base_css: str) -> list[Doc]:
     return docs
 
 
+# `WEEKLY_RUN_WEEKDAY` counts from Sunday, so the page names days the same way.
+WEEKDAY_NAMES = (
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+)
+
+
 def _figure(value: float) -> str:
     """Format a config number the way a person would write it on a page."""
     return str(int(value)) if float(value).is_integer() else f"{value:g}"
@@ -457,6 +469,8 @@ def landing_placeholders() -> dict[str, str]:
         "RECOMMENDATION_EXPIRY_DAYS": str(config.RECOMMENDATION_EXPIRY_DAYS),
         "PRICE_STALE_AFTER_DAYS": str(config.PRICE_STALE_AFTER_DAYS),
         "BENCHMARK_NAME": html.escape(config.BENCHMARK_NAME),
+        "WEEKLY_RUN_DAY": WEEKDAY_NAMES[config.WEEKLY_RUN_WEEKDAY % 7],
+        "WEEKLY_RUN_TIME": f"{config.WEEKLY_RUN_HOUR:02d}:00",
     }
 
 

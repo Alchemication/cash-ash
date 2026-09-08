@@ -50,10 +50,11 @@ class TestSiteBuild:
         page = (site / "index.html").read_text(encoding="utf-8")
         assert f"{int(config.MAX_POSITION_WEIGHT_PCT)}%" in page
         assert f"{config.RECOMMENDATION_EXPIRY_DAYS} days" in page
+        assert f"at {config.WEEKLY_RUN_HOUR:02d}:00" in page
 
     def test_referenced_assets_are_shipped(self, site: Path) -> None:
         page = (site / "index.html").read_text(encoding="utf-8")
-        for name in ("favicon.svg", "og-image.png"):
+        for name in ("favicon.svg", "og-image.png", "cash-ash-hero.jpg"):
             assert f"assets/{name}" in page
             assert (site / "assets" / name).exists(), name
 

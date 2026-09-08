@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CashAsh — weekly research for a small stock portfolio, with the decision kept in your hands</title>
+<title>CashAsh — weekly research for a small stock portfolio, with the trade left in your hands</title>
 <meta name="description" content="Weekly AI-assisted research for a small personal stock portfolio. Constrained proposals, rules enforced in code, and a decision that stays with you.">
 <meta property="og:title" content="CashAsh">
-<meta property="og:description" content="A model proposes. Code checks the rules. You decide. Weekly research for a small personal stock portfolio.">
+<meta property="og:description" content="Slow down, research, decide, learn. Weekly research for a small stock portfolio, with the trade left in your hands.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://alchemication.github.io/cash-ash/assets/og-image.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -16,38 +16,56 @@
 
 /* ---- Landing page only. Palette and chrome come from the shared sheet. ---- */
 
-/* Hero: the claim on the left, one week's review sheet on the right. */
+/* Hero: the question on the left, cash going to ash on the right. */
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
-  gap: 56px;
-  align-items: start;
-  padding: 36px 0 84px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 40px;
+  align-items: center;
+  padding: 12px 0 56px;
 }
 
 h1 {
-  margin: 0 0 22px;
+  margin: 0 0 14px;
   font-family: var(--display);
-  font-size: clamp(44px, 6.2vw, 78px);
+  font-size: clamp(64px, 9.5vw, 128px);
   font-weight: 800;
   font-stretch: 78%;
-  line-height: .96;
-  letter-spacing: -.02em;
-  text-wrap: balance;
+  line-height: .92;
+  letter-spacing: -.025em;
 }
 
 .lede {
   margin: 0;
-  max-width: 30em;
-  font-size: 21px;
-  line-height: 1.5;
+  max-width: 16em;
+  font-family: var(--display);
+  font-size: clamp(22px, 2.4vw, 30px);
+  font-weight: 500;
+  font-stretch: 92%;
+  line-height: 1.25;
+  letter-spacing: -.01em;
+  text-wrap: balance;
+}
+
+.hero-art { margin: 0; }
+/* The image's own black is not quite the page's, so it is blended in with
+   lighten (its blacks fall below the ground and vanish) and its edges faded. */
+.hero-art img {
+  display: block;
+  width: 100%;
+  max-width: 560px;
+  height: auto;
+  margin-left: auto;
+  mix-blend-mode: lighten;
+  mask-image: radial-gradient(ellipse 62% 62% at 50% 52%, #000 60%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 62% 62% at 50% 52%, #000 60%, transparent 100%);
 }
 
 .cta {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-top: 30px;
+  margin-top: 34px;
 }
 
 .btn {
@@ -65,11 +83,17 @@ h1 {
 .btn:hover { background: var(--ember-hot); border-color: var(--ember-hot); color: var(--ash-black); }
 
 .aside {
-  margin: 20px 0 0;
-  font-family: var(--display);
-  font-size: 15px;
+  margin: 22px 0 0;
+  /* Narrower than the column so the last line never carries a single word,
+     with balance evening out the two lines that remain. */
+  max-width: 26em;
+  font-size: 18px;
   color: var(--ash);
+  text-wrap: balance;
 }
+
+/* The sheet sits in its own entry, full content width. */
+.entry .sheet { margin-top: 26px; }
 
 /* The sheet. Real ledger ruling: one text line per rule, a red margin, and
    the tags sitting in the column the margin makes. */
@@ -304,7 +328,8 @@ pre .c { color: var(--ash); }
 }
 
 @media (max-width: 900px) {
-  .hero { grid-template-columns: 1fr; gap: 40px; padding-bottom: 60px; }
+  .hero { grid-template-columns: 1fr; gap: 28px; padding-bottom: 44px; }
+  .hero-art img { max-width: 420px; margin: 0 auto; }
   .entry { grid-template-columns: 1fr; gap: 22px 0; padding: 44px 0; }
   .entry > h2 {
     padding: 0 0 0 16px;
@@ -351,69 +376,79 @@ pre .c { color: var(--ash); }
 
 <section class="shell hero">
   <div>
-    <h1>A model proposes. Code checks the rules. You decide.</h1>
-    <p class="lede">CashAsh researches a small personal stock portfolio every Sunday evening, proposes a handful of constrained actions, and sends them to your phone. Nothing is bought or sold until you do it yourself, in your broker's app.</p>
+    <h1>Cash to ash?</h1>
+    <p class="lede">Slow down, research, decide, learn.</p>
     <div class="cta">
       <a class="btn primary" href="docs/">Read the docs</a>
       <a class="btn" href="https://github.com/Alchemication/cash-ash">Source on GitHub</a>
     </div>
-    <p class="aside">Open source. Runs on your own machine. Your holdings never leave it.</p>
+    <p class="aside">Weekly research for a small stock portfolio, with the trade left in your hands.</p>
   </div>
-
-  <figure class="sheet" aria-label="An illustrative weekly review">
-    <div class="sheet-head">
-      <span>Weekly review</span>
-      <span>Sunday 6 September, 18:00</span>
-    </div>
-    <div class="sheet-body">
-      <div class="row title"><b>GLOBEX</b><span>Globex Corporation</span><span class="right">triage 1 of 4</span></div>
-      <div class="row"><span class="tag sourced">sourced</span><span>“Operating margin was 12% for the quarter.” <em>Issuer release, 1 Sep.</em></span></div>
-      <div class="row"><span class="tag">unanswered</span><span>Has customer churn changed since the spring? No evidence supplied.</span></div>
-      <div class="row"><span class="tag">proposed</span><span>EXIT. The thesis has weakened.</span></div>
-      <div class="row"><span class="tag rules">rules</span><span>Weakened is not broken. Reduced to TRIM, capped at one trade of €{{MAX_NEW_TRADE_EUR}}.</span><span class="stamp">Overruled</span></div>
-      <div class="row"><span></span><div class="buttons"><span>Approve</span><span>Reject</span><span>Later</span></div></div>
-
-      <div class="row title"><b>ACME</b><span>Acme Corporation</span><span class="right">triage 2 of 4</span></div>
-      <div class="row"><span class="tag">background</span><span>Earnings due 14 October. Nothing in the thesis has moved.</span></div>
-      <div class="row"><span class="tag">proposed</span><span>HOLD.</span></div>
-
-      <div class="row title"><b>INITECH</b><span>Initech</span><span class="right">not selected</span></div>
-      <div class="row"><span class="tag">triage</span><span>Nothing needed looking at this week. Recorded anyway.</span></div>
-
-      <div class="row title"><b>UMBRELLA.B</b><span>Umbrella Corporation</span><span class="right">unpriced</span></div>
-      <div class="row"><span class="tag">valuation</span><span>The feed returned nothing. Left out of the total, not counted as zero.</span></div>
-    </div>
-    <figcaption>Illustrative. Invented companies, no real holdings.</figcaption>
+  <figure class="hero-art">
+    <img src="assets/cash-ash-hero.jpg" width="1000" height="1000" alt="A stone dollar sign crumbling into ash and sparks on one side." fetchpriority="high">
   </figure>
 </section>
 
+<section class="shell entry" id="what">
+  <h2>One week, on one sheet.</h2>
+  <div class="wide">
+    <p>CashAsh runs on your own machine. Once a week it researches each holding against the thesis you wrote, proposes a few constrained actions, and sends them to your phone. You approve or reject there. The trade itself is still yours to place in your broker's app, and then to record.</p>
+
+    <figure class="sheet" aria-label="An illustrative weekly review">
+      <div class="sheet-head">
+        <span>Weekly review</span>
+        <span>{{WEEKLY_RUN_DAY}}, {{WEEKLY_RUN_TIME}}</span>
+      </div>
+      <div class="sheet-body">
+        <div class="row title"><b>GLOBEX</b><span>Globex Corporation</span><span class="right">triage 1 of 4</span></div>
+        <div class="row"><span class="tag sourced">sourced</span><span>“Operating margin was 12% for the quarter.” <em>Issuer release, 1 Sep.</em></span></div>
+        <div class="row"><span class="tag">unanswered</span><span>Has customer churn changed since the spring? No evidence supplied.</span></div>
+        <div class="row"><span class="tag">proposed</span><span>EXIT. The thesis has weakened.</span></div>
+        <div class="row"><span class="tag rules">rules</span><span>Weakened is not broken. Reduced to TRIM, capped at one trade of €{{MAX_NEW_TRADE_EUR}}.</span><span class="stamp">Overruled</span></div>
+        <div class="row"><span></span><div class="buttons"><span>Approve</span><span>Reject</span><span>Later</span></div></div>
+
+        <div class="row title"><b>ACME</b><span>Acme Corporation</span><span class="right">triage 2 of 4</span></div>
+        <div class="row"><span class="tag">background</span><span>Earnings due 14 October. Nothing in the thesis has moved.</span></div>
+        <div class="row"><span class="tag">proposed</span><span>HOLD.</span></div>
+
+        <div class="row title"><b>INITECH</b><span>Initech</span><span class="right">not selected</span></div>
+        <div class="row"><span class="tag">triage</span><span>Nothing needed looking at this week. Recorded anyway.</span></div>
+
+        <div class="row title"><b>UMBRELLA.B</b><span>Umbrella Corporation</span><span class="right">unpriced</span></div>
+        <div class="row"><span class="tag">valuation</span><span>The feed returned nothing. Left out of the total, not counted as zero.</span></div>
+      </div>
+      <figcaption>Illustrative. Invented companies, no real holdings.</figcaption>
+    </figure>
+  </div>
+</section>
+
 <section class="shell entry" id="week">
-  <h2>One Sunday evening, in order.</h2>
+  <h2>The run, in order.</h2>
   <div class="wide">
     <ol class="stages">
       <li>
         <h3><small>1</small>Sync</h3>
-        <p>Prices, FX, earnings dates and consensus. A failed fetch keeps last week's prices, marks them stale, and the run carries on without proposing trades.</p>
+        <p>Prices, FX, earnings dates, consensus. A failed fetch keeps last week's prices, marked stale. By default the run fires on {{WEEKLY_RUN_DAY}} at {{WEEKLY_RUN_TIME}}.</p>
       </li>
       <li>
         <h3><small>2</small>Triage</h3>
-        <p>One call over the whole portfolio, ranking holdings by what changed in each thesis rather than by what moved. The ones passed over are recorded too.</p>
+        <p>One call over the whole portfolio, ranking holdings by what changed in each thesis. The ones passed over are recorded too.</p>
       </li>
       <li>
         <h3><small>3</small>Research</h3>
-        <p>Questions are planned from your own thesis, answered from evidence, and judged. A weakened thesis gets a proposed revision beside it. Yours is never rewritten.</p>
+        <p>Questions planned from your thesis, answered from evidence. A weakened thesis gets a proposed revision beside it, never a rewrite.</p>
       </li>
       <li>
         <h3><small>4</small>Recommend</h3>
-        <p>BUY, ADD, HOLD, TRIM, EXIT or REVIEW. Then the rules run, in code, and say no where they must. Every refusal is kept.</p>
+        <p>BUY, ADD, HOLD, TRIM, EXIT or REVIEW. Then the rules run, in code. Every refusal is kept.</p>
       </li>
       <li>
         <h3><small>5</small>Report</h3>
-        <p>To Telegram, with each finding, citation and refusal attached. A stage that failed or was skipped is shown as exactly that.</p>
+        <p>To Telegram, with each finding, citation and refusal. A stage that failed is shown as failed.</p>
       </li>
       <li class="you">
         <h3><small>6</small>You</h3>
-        <p>Monday, after a night's sleep. Approve, reject or later. Approval reserves the cash. The trade is still yours to place, and then to record.</p>
+        <p>The next morning. Approve, reject or later. Approval reserves the cash. The trade is yours to place, then to record.</p>
       </li>
     </ol>
   </div>
@@ -422,14 +457,14 @@ pre .c { color: var(--ash); }
 <section class="shell entry" id="rules">
   <h2>The rules are code, not a request.</h2>
   <div>
-    <p>A prompt asking a model to respect a position limit is a polite suggestion. So the limits are applied afterwards, deterministically, to whatever the model proposed. That is the only reason a model is allowed near the decision at all.</p>
+    <p>A prompt asking a model to respect a limit is a suggestion. The limits are applied afterwards, in code, to whatever it proposed. These are the shipped defaults. Each one is a setting.</p>
     <ul class="rules">
-      <li><b>No position above {{MAX_POSITION_WEIGHT_PCT}}% of the portfolio.</b><span>The whole batch is checked together, so five small buys cannot do what one large one may not.</span></li>
-      <li><b>A single trade is capped at €{{MAX_NEW_TRADE_EUR}}. New money in a week is capped at €{{MAX_WEEKLY_ALLOCATION_EUR}}.</b><span>An approved buy reserves its cash until it is executed or rejected, so a rerun cannot spend the same euro twice.</span></li>
-      <li><b>Only cash that is actually there can fund a buy.</b><span>Planned monthly contributions are noted, never spent.</span></li>
-      <li><b>EXIT needs a condition you wrote down to have happened.</b><span>A falling price or a bad week is not one. Anything less becomes TRIM.</span></li>
-      <li><b>A price older than {{PRICE_STALE_AFTER_DAYS}} days, or a missing FX rate, blocks any trade.</b><span>A review can still go through. Money cannot.</span></li>
-      <li><b>Advice expires after {{RECOMMENDATION_EXPIRY_DAYS}} days.</b><span>A decision cannot be recorded against advice a later run has withdrawn.</span></li>
+      <li><b>No position above {{MAX_POSITION_WEIGHT_PCT}}% of the portfolio.</b><span>The batch is checked as a whole, so five small buys cannot do what one large one may not.</span></li>
+      <li><b>One trade up to €{{MAX_NEW_TRADE_EUR}}. One week up to €{{MAX_WEEKLY_ALLOCATION_EUR}}.</b><span>An approved buy reserves its cash until it is executed or rejected.</span></li>
+      <li><b>Only cash that is actually there funds a buy.</b><span>Planned contributions are noted, never spent.</span></li>
+      <li><b>EXIT needs a condition you wrote down to have happened.</b><span>A bad week is not one. Anything less becomes TRIM.</span></li>
+      <li><b>A price older than {{PRICE_STALE_AFTER_DAYS}} days, or a missing FX rate, blocks any trade.</b><span>A review still goes through. Money does not.</span></li>
+      <li><b>Advice expires after {{RECOMMENDATION_EXPIRY_DAYS}} days.</b><span>No decision can be recorded against advice a later run withdrew.</span></li>
     </ul>
     <p class="note">Every default lives in <code>src/config.py</code> beside a note on how it was chosen. <code>main.py process</code> prints the ones in force.</p>
   </div>
@@ -439,20 +474,20 @@ pre .c { color: var(--ash); }
   <h2>Every finding carries a label.</h2>
   <div>
     <ul class="labels">
-      <li><span class="tag sourced">sourced</span><span>Cites a supplied evidence item by ID and copies an exact excerpt. The URL and date come from the item, not from the model. An unknown ID or an invented quote demotes the finding to unanswered.</span></li>
-      <li><span class="tag">background</span><span>Context the model brought with it. Held to nothing, and never enough on its own to move money.</span></li>
+      <li><span class="tag sourced">sourced</span><span>Cites a supplied evidence item by ID and quotes it exactly. URL and date come from the item, not the model. An unknown ID or an invented quote demotes it to unanswered.</span></li>
+      <li><span class="tag">background</span><span>What the model brought with it. Never enough on its own to move money.</span></li>
       <li><span class="tag">unanswered</span><span>Stays unanswered, in storage and on your phone. An open question is a finding.</span></li>
     </ul>
-    <p class="note">A quote check proves the excerpt exists. It does not prove the conclusion follows. That part is still reading.</p>
-    <p>Your thesis is yours. Research that concludes it has weakened, improved or broken writes a proposed version beside the active one and stops. You accept it, or you don't, and the baseline the system is judged against stays the one you wrote.</p>
+    <p class="note">A quote check proves the excerpt exists, not that the conclusion follows. That part is still reading.</p>
+    <p>Your thesis is yours. Research that finds it weakened writes a proposed version beside it and stops. The baseline the system is judged against stays the one you wrote.</p>
   </div>
 </section>
 
 <section class="shell entry" id="honest">
   <h2>It will probably cost more than it earns.</h2>
   <div>
-    <p>The portfolio behind this is about EUR 1,400 across 14 positions. A weekly research pipeline over several models can cost more in a year than any excess return that capital could produce. That is the accepted trade: the point is a better research habit and an interesting system, not a return.</p>
-    <p>So models route cheap by default, and the expensive ones are opt-in and metered per stage. And nothing a model says carries investment authority. A model's stated confidence is not a probability, and CashAsh will not store or display it as one.</p>
+    <p>The portfolio this was built for is small enough that a weekly pipeline over several models can cost more in a year than any excess return it could earn. That is the accepted trade: a better research habit and an interesting system, not a return.</p>
+    <p>So models route cheap by default, and the expensive ones are opt-in and metered. Nothing a model says carries investment authority. Its stated confidence is not a probability and is never stored as one.</p>
     <p>The evals measure the process, because that is what can be measured here:</p>
     <ul class="plain">
       <li>the output has the shape it was asked for;</li>
@@ -461,14 +496,14 @@ pre .c { color: var(--ash); }
       <li>no figure was invented;</li>
       <li>a rerun gives the same answer.</li>
     </ul>
-    <p>What they cannot measure is whether the advice was good. Fourteen holdings a week will never be a sample, and replaying history through a model that has already read the ending measures leakage, not judgement. Outcomes are still recorded, beside the same money left in a {{BENCHMARK_NAME}} tracker. Recorded, never claimed.</p>
+    <p>Whether the advice was good is not measurable at this scale. Outcomes are recorded beside the same money left in a {{BENCHMARK_NAME}} tracker. Recorded, never claimed.</p>
   </div>
 </section>
 
 <section class="shell entry" id="start">
   <h2>Start from a screenshot of your broker.</h2>
   <div>
-    <p>The seed is a snapshot you type in by hand: ticker, quantity, value and the broker's blended return. Cost basis is derived from those, and the total is reconciled against the figure your broker showed, so a typo cannot quietly become your cost basis. The file lives in your home directory and is never committed.</p>
+    <p>Type in what your broker shows: ticker, quantity, value, blended return. Cost basis is derived from those and the total is reconciled against the broker's figure, so a typo cannot become your cost basis. The file stays in your home directory, never in the repository.</p>
 <pre><code><span class="c"># one profile, one snapshot, one database</span>
 uv run python main.py profile add adam --telegram-id 123456789 --operator
 cp seed_snapshot.example.toml ~/Documents/cash-ash/profiles/adam/seed_snapshot.toml
