@@ -8,6 +8,7 @@ from datetime import date
 import pytest
 
 import research as research_module
+from config import TRIAGE_MAX_TOKENS
 from llm import LLMResult
 from models import Event, Thesis
 from research import run_triage, triage_inputs
@@ -451,3 +452,27 @@ class TestSellEligibility:
         seen = fake_llm('{"recommendations": [], "summary": "quiet"}')
         run_decision(seeded, today=TODAY)
         assert "selling: NOT permitted" in seen[0]
+
+
+class TestTriageBudget:
+    """Triage ranks the whole book in one call and is budgeted for it."""
+
+    def test_triage_does_not_inherit_the_thesis_budget(
+        self, seeded: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # At the thesis budget this call was truncated mid-reasoning on a real
+        # fourteen-holding book and had to be paid for twice.
+        budgets: list[int] = []
+
+        def fake(conn, *, messages, **kwargs):  # type: ignore[no-untyped-def]
+            budgets.append(kwargs["max_tokens"])
+            return LLMResult(
+                text=_payload("AAA", "BBB", "CCC"),
+                model="fake",
+                requested_model="fake",
+                llm_call_id=1,
+            )
+
+        monkeypatch.setattr(research_module, "call_llm", fake)
+        run_triage(seeded, today=TODAY)
+        assert budgets == [TRIAGE_MAX_TOKENS]

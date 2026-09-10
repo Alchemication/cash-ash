@@ -27,11 +27,13 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from config import (
+    ANALYST_MAX_TOKENS,
     PROMPTS_DIR,
+    RESEARCH_ASSET_CLASSES,
     THESIS_MAX_TOKENS,
     TRIAGE_HORIZON_DAYS,
     TRIAGE_LOOKBACK_DAYS,
-    RESEARCH_ASSET_CLASSES,
+    TRIAGE_MAX_TOKENS,
 )
 from pathlib import Path
 from llm import call_llm
@@ -551,7 +553,7 @@ def run_triage(
             {"role": "user", "content": message},
         ],
         prompt_version=TRIAGE_PROMPT_VERSION,
-        max_tokens=THESIS_MAX_TOKENS,
+        max_tokens=TRIAGE_MAX_TOKENS,
     )
     payload = extract_json(result.text)
 
@@ -824,7 +826,7 @@ def research_security(
             {"role": "user", "content": "\n".join(body)},
         ],
         prompt_version=ANALYST_PROMPT_VERSION,
-        max_tokens=THESIS_MAX_TOKENS,
+        max_tokens=ANALYST_MAX_TOKENS,
         trace_id=trace_id,
     )
     payload = extract_json(result.text)

@@ -9,6 +9,7 @@ import pytest
 
 import research as research_module
 from evidence import EvidenceItem
+from config import ANALYST_MAX_TOKENS, THESIS_MAX_TOKENS
 from llm import LLMResult
 from models import Thesis
 from research import research_security
@@ -448,3 +449,29 @@ class TestProposalOnly:
         )
         row = seeded.execute("SELECT summary FROM thesis WHERE version = 2").fetchone()
         assert row["summary"] == "I like the product"
+
+
+class TestBudgets:
+    """Each stage is given a budget of its own."""
+
+    def test_the_analyst_does_not_inherit_the_thesis_budget(
+        self, seeded: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The analyst reasons over a security's evidence, which grows with the
+        # profile's primary excerpts; a thesis restatement does not. Sharing one
+        # budget hid that until a pass finished eleven tokens under the cap.
+        budgets: list[int] = []
+        queue = [_plan(), _analysis()]
+
+        def fake(conn, *, messages, **kwargs):  # type: ignore[no-untyped-def]
+            budgets.append(kwargs["max_tokens"])
+            return LLMResult(
+                text=queue.pop(0),
+                model="fake",
+                requested_model="fake",
+                llm_call_id=1,
+            )
+
+        monkeypatch.setattr(research_module, "call_llm", fake)
+        research_security(seeded, ticker="AAA", source=_Source())
+        assert budgets == [THESIS_MAX_TOKENS, ANALYST_MAX_TOKENS]

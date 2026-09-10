@@ -250,6 +250,11 @@ the budget has to cover the thinking rather than the output.
 
 Generous on purpose: an unused budget costs nothing, since billing is on tokens
 produced, while too small a budget costs the entire call and then the retry.
+
+Covers both `plan` calls — the bootstrap restatement and the research plan
+derived from a thesis. Triage and the analyst pass have their own budgets,
+because they reason over the whole book and over a security's evidence
+respectively, and neither is bounded by the size of a thesis.
 """
 
 MIN_MAX_TOKENS: int = _env_int("CASH_ASH_MIN_MAX_TOKENS", 1024)
@@ -273,6 +278,32 @@ to cover the thinking, the answer, and the margin between them.
 An unused budget costs nothing, since billing is on tokens produced. Too small
 a budget costs the whole call and then the retry, which on this stage is eight
 minutes each time.
+"""
+
+TRIAGE_MAX_TOKENS: int = _env_int("CASH_ASH_TRIAGE_MAX_TOKENS", 20000)
+"""Output budget for the weekly triage ranking.
+
+Sized like `DECISION_MAX_TOKENS` because it is the same shape of call: triage
+ranks the whole book at once, so it reasons over fourteen holdings before
+writing anything. Measured — at 9,000 tokens it ran out mid-reasoning and the
+truncation retry finished it at 22,500, having produced 8,580. A budget the
+task can consume entirely leaves no margin for a fifteenth holding.
+
+Ranking one holding per call would bound the reasoning instead of paying for
+it, but that is a prompt change rather than a budget one.
+"""
+
+ANALYST_MAX_TOKENS: int = _env_int("CASH_ASH_ANALYST_MAX_TOKENS", 20000)
+"""Output budget for one analyst pass over a security's evidence.
+
+Measured, and the measurement is the warning: the only pass to complete at
+9,000 tokens produced 8,989 of them. Eleven tokens of headroom means the budget
+was binding rather than the task finishing, and the evidence set grows whenever
+a profile adds primary excerpts to `context/evidence.json`.
+
+An unused budget costs nothing, since billing is on tokens produced, while a
+truncated pass costs the call, then the retry at
+`TRUNCATION_RETRY_MULTIPLIER`, then the fallback model.
 """
 
 TRUNCATION_RETRY_MULTIPLIER: float = _env_float(
