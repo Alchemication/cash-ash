@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 from config import DECISION_MAX_TOKENS
 from llm import call_llm
 from models import Security
-from profiles import Profile
+from profiles import Profile, read_context
 from guardrails import GuardrailContext, Verdict
 from research import extract_json, load_prompt, triage_inputs
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # Portfolio decision
 # ---------------------------------------------------------------------------
 
-DECIDE_PROMPT_VERSION = "decide/3"
+DECIDE_PROMPT_VERSION = "decide/4"
 
 _VALID_ACTIONS = {"BUY", "ADD", "HOLD", "TRIM", "EXIT", "REVIEW", "KEEP_CASH"}
 _VALID_URGENCY = {"low", "medium", "high"}
@@ -97,7 +97,7 @@ def build_guardrail_context(
 def run_decision(
     conn: sqlite3.Connection,
     *,
-    profile: Profile | None = None,  # type: ignore[no-untyped-def]
+    profile: Profile | None = None,
     account_id: int = 1,
     today: date | None = None,
     blocked_reason: str | None = None,
@@ -146,16 +146,31 @@ def run_decision(
         conn, run_date=run_date, kind="deep", note="Portfolio decision"
     )
 
+    securities = load_securities(conn)
+    prices = latest_prices(conn)
+    owner_context = (
+        read_context(profile, names=("strategy.md", "investor.md")) if profile else {}
+    )
     message = "\n\n".join(
         [
             f"Portfolio decision for {run_date}.",
             f"Total EUR {context.total_value_eur:,.2f} · cash EUR "
-            f"{context.cash_eur:,.2f} · new money this month EUR "
+            f"{context.cash_eur:,.2f} · planned monthly contribution EUR "
             f"{context.monthly_contribution_eur:,.2f}.",
+            f"Reserved cash EUR {context.reserved_cash_eur:,.2f} · available funded cash EUR "
+            f"{context.available_capital_eur:,.2f} · committed this week EUR "
+            f"{context.weekly_committed_eur:,.2f}.",
+            "Pending execution: " + ", ".join(sorted(context.pending_tickers)),
+            "Owner context (null means unwritten or no profile):\n"
+            + json.dumps(
+                {
+                    name: owner_context.get(name)
+                    for name in ("strategy.md", "investor.md")
+                }
+            ),
             "\n\n".join(entry.render() for entry in inputs),
+            _market_context(conn, securities, prices),
             _research_context(conn),
-            "Investment attractiveness: distinguish business health from the case for adding at this price. "
-            "Name valuation assumptions, an alternative, and missing evidence. Planned money is NOT funded cash.",
             f"Trade availability: {context.blocked_reason or 'subject to funded cash and portfolio constraints'}.",
         ]
     )
@@ -172,8 +187,6 @@ def run_decision(
     )
     payload = extract_json(result.text)
 
-    securities = load_securities(conn)
-    prices = latest_prices(conn)
     expires = (
         (today or date.today()) + timedelta(days=RECOMMENDATION_EXPIRY_DAYS)
     ).isoformat()
@@ -428,6 +441,42 @@ def _store_recommendation(
     )
 
     return int(cursor.lastrowid)
+
+
+def _market_context(
+    conn: sqlite3.Connection,
+    securities: dict[str, Security],
+    prices: dict[int, sqlite3.Row],
+) -> str:
+    """Render stored native closes and dated FX without inventing valuations."""
+    quotes: dict[str, dict] = {}
+    for ticker, security in securities.items():
+        price = prices.get(security.id)
+        currency = price["currency"] if price is not None else security.currency
+        fx = conn.execute(
+            "SELECT rate, rate_date, source FROM fx_rates WHERE base=? AND quote='EUR' "
+            "ORDER BY rate_date DESC LIMIT 1",
+            (currency,),
+        ).fetchone()
+        quotes[ticker] = {
+            "pricing_mode": security.pricing_mode,
+            "latest_stored_close": {
+                "price_native": price["close_native"],
+                "currency": price["currency"],
+                "date": price["price_date"],
+                "source": price["source"],
+            }
+            if price is not None
+            else None,
+            "fx_base": currency,
+            "fx_quote": "EUR",
+            "fx_to_eur": {"rate": 1.0, "rate_date": None, "source": "EUR identity"}
+            if currency == "EUR"
+            else dict(fx)
+            if fx is not None
+            else None,
+        }
+    return "Stored market data (null means unavailable):\n" + json.dumps(quotes)
 
 
 def _research_context(conn: sqlite3.Connection) -> str:

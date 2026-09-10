@@ -447,6 +447,26 @@ def is_stub(path: Path) -> bool:
         return False
 
 
+def read_context(profile: Profile, *, names: tuple[str, ...]) -> dict[str, str]:
+    """Read the requested owner context files, excluding templates and blanks.
+
+    Args:
+        profile: Owner of the context directory.
+        names: Context filenames needed by the caller.
+
+    Returns:
+        Written content keyed by filename; missing files are omitted.
+    """
+    context: dict[str, str] = {}
+    for name in names:
+        path = profile.context_path(name)
+        if path.exists() and not is_stub(path):
+            content = path.read_text(encoding="utf-8").strip()
+            if content:
+                context[name] = content
+    return context
+
+
 def context_status(profile: Profile) -> list[tuple[ContextFile, str]]:
     """Return each context file with its status.
 

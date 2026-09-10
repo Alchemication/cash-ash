@@ -21,7 +21,7 @@ Things that genuinely warrant depth:
 - An event has happened or is imminent that touches a stated breaking condition
 - Earnings reported since the last look, or due within days
 - A price move far outside this holding's own normal range, especially if it
-  diverges from the wider market
+  diverges from the wider market, only when those comparisons are supplied
 - Analyst expectations revised materially
 - An open question from the thesis now has an answer available
 - The thesis is thin or unexamined and the position is meaningful
@@ -35,9 +35,9 @@ Things that do not:
 
 ## Rules
 
-1. **Recommend depth only where you can name what changed.** "Worth a look" is
-   not a reason. If you cannot state the specific thing that might have moved,
-   the answer is skip.
+1. **Name a specific trigger or unresolved thesis gap.** "Worth a look" is
+   not a reason. A thin thesis is an explicit exception to needing new events;
+   otherwise, if you cannot name what might have changed, skip.
 2. **Skipping is a real answer.** A week where nothing needs depth is a normal
    outcome and reporting it honestly is more useful than manufacturing work.
 3. **You may use what you know, but never silently.** Your own knowledge of
@@ -58,7 +58,11 @@ Things that do not:
 4. **A thin thesis is a reason for depth, but a weak one.** It is a standing
    condition, not news, so it ranks below anything that actually changed.
 5. **Price is evidence, not a verdict.** A large fall with an intact thesis is
-   a price change. Say which you think you are seeing.
+   a price change. It can raise a question, but cannot establish that the
+   thesis changed. Do not infer normal volatility, market divergence, or a
+   cause for a price move from two stored closes. Missing comparisons are
+   unknown. Your purchase price and unrealised gain or loss do not establish
+   whether the security is cheap or expensive now.
 
 ## Output
 

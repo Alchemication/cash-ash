@@ -94,8 +94,12 @@ Each profile owns personal markdown files under
 `$CASH_ASH_HOME/profiles/<name>/context/`. `profile add` writes templates;
 `context` reports which are still templates and which you have written.
 
-Thesis bootstrap reads written context files to restate the owner’s reasons. An unedited template counts as unwritten, because placeholder
-prose read as intent is worse than no file at all.
+Thesis bootstrap reads written `log.md`, `strategy.md` and `investor.md` to
+restate the owner's reasons. `recommend` rereads `strategy.md` and `investor.md`
+on each run for the owner's horizon, cash needs and restrictions. It does not
+read the full log or watchlist. Missing, blank and template files supply no
+intent; decision inputs mark absent context explicitly. Personal context sent
+to a model is included in that call's stored log.
 
 ## Market data
 
@@ -164,6 +168,10 @@ use only what you wrote, not to strengthen a weak reason, and not to soften a
 bad one. That matters because your real reasons are the baseline every later
 comparison is made against — a thesis you never held cannot break, and cannot
 teach you anything.
+The prompt permits empty assumption and breaking-condition lists. It restates
+explicit conditions or the direct negation of an explicit reason, without
+inventing thresholds or deadlines. Missing conditions become open questions;
+inspect the bootstrap with `main.py thesis show` before relying on it.
 
 Theses are versioned and never edited. A revision is a new version and the old
 one is kept, so a year later it is still possible to ask what was believed at
@@ -191,6 +199,9 @@ The model is told explicitly what it is *not* being given. Absent data and
 unchanged data look identical in the rendering, so without that a model reports
 calm it never observed — in the first weeks there is no price history and only
 one consensus observation, and neither means nothing moved.
+The prompt does not infer normal volatility, market divergence or the cause of
+a move from two stored closes. A thin thesis can warrant research without news;
+routine overdue coverage is also handled by the research rotation.
 
 Two failure modes are handled rather than hidden. A holding the model omits is
 recorded as unranked, because a silently dropped holding looks exactly like one
@@ -212,6 +223,11 @@ works outward from *this* thesis — the conditions the owner said would change
 their mind, the questions left open when it was written, what it assumes
 without examining. It also states what it is deliberately leaving alone, since
 deciding something can be ignored is part of the job.
+Planner and analyst receive the research date. The analyst also receives the
+owner's full rationale and assumptions, and is asked to identify contradictions
+in supplied evidence without manufacturing an opposing case. Planner source
+suggestions do not drive automated retrieval; the default feed remains ticker
+news, with question-linked local excerpts available for targeted evidence.
 
 **Research proposes; it never adopts.** When a pass concludes the thesis has
 weakened, improved or broken, it records a *proposed* revision beside the
@@ -229,6 +245,21 @@ evidence is reported as `unchanged` rather than turned into a verdict.
 rules in `src/guardrails.py` decide, in code, afterwards. That is the reason a
 model is allowed near this decision at all — a prompt asking it to respect a
 position limit is a request, and this is not.
+
+Decision inputs include the latest stored native close with currency, date and
+source, FX into EUR with its date and source, available funded cash, reservations
+and pending executions. A close is not an executable broker quote. Financial
+statements, valuation metrics and transaction-cost estimates are not fetched for
+this stage; the model must identify material missing inputs rather than invent
+them. Known owner constraints supplement the deterministic rules and cannot
+relax them.
+
+The prompt requires a reason to act now rather than a target level of activity.
+New funded cash can justify reconsidering an unchanged thesis, but cannot by
+itself justify a purchase. BUY/ADD must explain current valuation assumptions,
+relevant contrary evidence, material gaps and the comparison with keeping cash.
+REVIEW identifies whether resolution needs owner input, thesis adoption or more
+evidence. Purchase price and a desire to recover a loss do not justify a trade.
 
 The deterministic checks enforce:
 
@@ -441,6 +472,15 @@ stays unanswered in storage. A sourced answer must reference a supplied evidence
 ID and copy an exact supporting excerpt. URL and date come from that item, not
 from model output. Unknown IDs and invented excerpts become unanswered findings.
 Membership and quote checks do not prove semantic support; inspect the source.
+
+Coverage is sufficient only when every planned question has an answer and all
+answers are sourced without citation-validation errors. Background explanations
+remain stored, but cannot substitute for evidence about current company facts.
+On database migration, historical sufficient labels that fail this rule are
+downgraded; findings, evidence packages and owner theses are preserved. Even
+sufficient coverage does not establish that the questions addressed valuation
+or that an investment is attractive. `main.py process` reports coverage;
+`main.py review` displays the latest findings and remaining gaps.
 
 Evidence packages are stored with a content hash alongside completed assessments,
 including unchanged assessments and open questions. These dated assessments feed

@@ -233,6 +233,15 @@ class TestBootstrap:
             t.thesis_status == "unexamined" for t in active_theses(seeded).values()
         )
 
+    def test_missing_breaking_conditions_remain_empty(
+        self, seeded: sqlite3.Connection, profile, fake_llm
+    ) -> None:
+        fake_llm(_payload(what_would_break_it=[], key_assumptions=[]))
+        bootstrap_theses(seeded, profile=profile, only="AAA")
+        thesis = active_thesis(seeded, security_id=1)
+        assert thesis.what_would_break_it == ()
+        assert thesis.key_assumptions == ()
+
     def test_records_source_as_user(
         self, seeded: sqlite3.Connection, profile, fake_llm
     ) -> None:

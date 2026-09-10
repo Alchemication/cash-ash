@@ -168,6 +168,26 @@ def store_evidence(
     return len(answers), sum(a["kind"] == "sourced" for a in answers)
 
 
+def sufficient_coverage(questions: list[str], answers: list[dict]) -> bool:
+    """Require sourced answers covering every planned question.
+
+    Background remains useful explanation, but is not evidence that a current
+    company question was checked. This checks coverage, not semantic support
+    or whether the questions establish an attractive investment.
+    """
+    required = {q.strip().casefold() for q in questions if q.strip()}
+    answered = {a.get("question", "").strip().casefold() for a in answers}
+    return (
+        bool(required)
+        and required <= answered
+        and bool(answers)
+        and all(
+            a.get("kind") == "sourced" and not a.get("validation_error")
+            for a in answers
+        )
+    )
+
+
 def save_assessment(
     conn: sqlite3.Connection,
     *,
@@ -184,9 +204,7 @@ def save_assessment(
 ) -> None:
     """Freeze evidence and outcomes even when the owner's thesis is unchanged."""
     package = json.dumps([asdict(item) for item in items], sort_keys=True)
-    sufficient = any(a["kind"] == "sourced" for a in answers) and not any(
-        a["kind"] == "unanswered" for a in answers
-    )
+    sufficient = sufficient_coverage(questions, answers)
     with conn:
         conn.execute(
             """INSERT INTO research_assessment

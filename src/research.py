@@ -38,14 +38,14 @@ from config import (
 from pathlib import Path
 from llm import call_llm
 from models import Security, Thesis
-from profiles import Profile
+from profiles import Profile, read_context
 from evidence import EvidenceSource
 from portfolio import positions
 from store_research import active_thesis, create_research_run, save_thesis
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "thesis_bootstrap/1"
+PROMPT_VERSION = "thesis_bootstrap/2"
 
 _VALID_CONVICTION = {"none", "weak", "moderate", "strong"}
 _MAX_LIST_ENTRIES = 6
@@ -114,18 +114,6 @@ def _string_list(value: object) -> tuple[str, ...]:
     return tuple(cleaned[:_MAX_LIST_ENTRIES])
 
 
-def _read_context(profile: Profile) -> dict[str, str]:
-    """Read the owner's context files, skipping untouched templates."""
-    from profiles import is_stub
-
-    context: dict[str, str] = {}
-    for name in ("log.md", "strategy.md", "investor.md"):
-        path = profile.context_path(name)
-        if path.exists() and not is_stub(path):
-            context[name] = path.read_text(encoding="utf-8")
-    return context
-
-
 def bootstrap_theses(
     conn: sqlite3.Connection,
     *,
@@ -149,7 +137,7 @@ def bootstrap_theses(
     Raises:
         ValueError: If no usable context file exists, or *only* is unknown.
     """
-    context = _read_context(profile)
+    context = read_context(profile, names=("log.md", "strategy.md", "investor.md"))
     if "log.md" not in context:
         raise ValueError(
             f"No written log at {profile.context_path('log.md')}. A thesis is "
@@ -263,7 +251,7 @@ def _bootstrap_message(security: Security, context: dict[str, str]) -> str:
 # Triage
 # ---------------------------------------------------------------------------
 
-TRIAGE_PROMPT_VERSION = "triage/2"
+TRIAGE_PROMPT_VERSION = "triage/3"
 
 
 @dataclass(frozen=True)
@@ -641,8 +629,8 @@ def run_triage(
 # Deep research
 # ---------------------------------------------------------------------------
 
-PLAN_PROMPT_VERSION = "research_plan/1"
-ANALYST_PROMPT_VERSION = "research_analyst/3"
+PLAN_PROMPT_VERSION = "research_plan/2"
+ANALYST_PROMPT_VERSION = "research_analyst/4"
 
 _VALID_THESIS_STATUS = {"improving", "unchanged", "deteriorating", "broken"}
 
@@ -672,9 +660,11 @@ def _plan_research(
     thesis: Thesis,
     trigger: str,
     trace_id: int,
+    run_date: str,
 ) -> tuple[list[str], tuple[str, ...]]:
     """Choose this week's questions for one holding."""
     lines = [
+        f"Research date: {run_date}.",
         f"Holding: {security.ticker} ({security.name}).",
         "",
         f"Triage selected it because: {trigger}",
@@ -778,7 +768,12 @@ def research_security(
     )
 
     questions, not_this_week = _plan_research(
-        conn, security=security, thesis=thesis, trigger=trigger, trace_id=trace_id
+        conn,
+        security=security,
+        thesis=thesis,
+        trigger=trigger,
+        trace_id=trace_id,
+        run_date=run_date,
     )
     if not questions:
         raise ValueError(f"The planner produced no questions for {security.ticker}.")
@@ -799,9 +794,14 @@ def research_security(
     )
 
     body = [
+        f"Research date: {run_date}.",
         f"Holding: {security.ticker} ({security.name}).",
         f"Their thesis: {thesis.summary}",
     ]
+    if thesis.rationale:
+        body.append(f"Their rationale: {thesis.rationale}")
+    if thesis.key_assumptions:
+        body.append("Their assumptions: " + "; ".join(thesis.key_assumptions))
     if thesis.what_would_break_it:
         body.append(
             "They said it would break if: " + "; ".join(thesis.what_would_break_it)

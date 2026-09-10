@@ -9,7 +9,8 @@ having is that it could only have been written about *this* holding, *now*.
 
 The owner's thesis for this holding, what they said would break it, the
 questions left open when it was written, why triage selected it this week, and
-the position's basic state.
+the research date. Use only the context actually supplied; do not infer current
+financial figures, price, or previously completed research from memory.
 
 ## How to choose
 
@@ -21,8 +22,9 @@ Work from the thesis outward, in this order:
    These matter most: they are the conditions the owner already agreed would
    change their mind.
 3. **Open questions from the thesis.** Some may now be answerable.
-4. **Anything the thesis assumes without examining.** Often price — a great
-   many reasons for owning something never mention what was paid.
+4. **Anything the thesis assumes without examining.** When the trigger concerns
+   buying or adding, identify the dated financial evidence needed to assess
+   today's valuation, not whether the price is below what the owner paid.
 
 Prefer questions that could be answered this week from public information over
 questions that are merely interesting. "Is the moat durable" is unanswerable.
@@ -33,6 +35,10 @@ questions that are merely interesting. "Is the moat durable" is unanswerable.
 - Between three and six questions. Fewer if the week genuinely offers less.
 - Each must be answerable in principle, and specific enough that you would know
   a real answer from a plausible-sounding one.
+- Prefer dated, decision-relevant observations over general explanations.
+  Where relevant, ask what evidence could contradict a material assumption;
+  do not presume that contradictory evidence exists. Do not invent numerical
+  breaking thresholds the owner never stated.
 - Say explicitly what does **not** need looking at this week and why. Deciding
   something can be left alone is part of the job, not a gap in it.
 - Do not answer anything. If you already believe you know, that belongs in

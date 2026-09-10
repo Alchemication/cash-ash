@@ -16,11 +16,18 @@ from guardrails import GuardrailContext, check_proposal
 from llm import LLMResult
 from models import CashFlow, Security, Thesis, Trade
 from portfolio import cash_eur, positions
+from profiles import Profile
 from report import _pending_recommendations, weekly_report
 from research import _propose_thesis
 from research_coverage import select_research
 from research_evidence import gather_evidence, save_assessment, validate_answers
-from store import insert_cash_flow, insert_trade, save_prices, upsert_security
+from store import (
+    insert_cash_flow,
+    insert_trade,
+    save_fx_rate,
+    save_prices,
+    upsert_security,
+)
 from store_research import active_thesis, create_research_run, save_thesis
 from store_workflow import finish_cycle, review_thesis, start_cycle
 from workflow import capital_committed, record_execution, record_response
@@ -248,6 +255,86 @@ class TestFundedWorkflow:
 
 
 class TestAtomicDecisions:
+    def test_reads_current_owner_context_and_excludes_unrequested_files(
+        self, book: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        profile = Profile(name="test", telegram_id=1, root=tmp_path)
+        profile.context.mkdir()
+        profile.context_path("strategy.md").write_text(
+            "Keep funds available for tuition."
+        )
+        profile.context_path("investor.md").write_text("My horizon is five years.")
+        profile.context_path("log.md").write_text("Unrelated old notes.")
+        seen = model(monkeypatch, {"recommendations": []})
+        run_decision(book, profile=profile, today=TODAY)
+        assert "Keep funds available for tuition." in seen[-1]
+        assert "My horizon is five years." in seen[-1]
+        assert "Unrelated old notes." not in seen[-1]
+        profile.context_path("strategy.md").write_text(
+            "Keep funds available for housing."
+        )
+        run_decision(book, profile=profile, today=TODAY)
+        assert "Keep funds available for housing." in seen[-1]
+        assert "Keep funds available for tuition." not in seen[-1]
+
+    @pytest.mark.parametrize(
+        "content", [None, "  ", "<!-- cash-ash:template -->\nExample restriction"]
+    )
+    def test_unwritten_context_is_explicitly_missing(
+        self,
+        book: sqlite3.Connection,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        content: str | None,
+    ) -> None:
+        profile = Profile(name="test", telegram_id=1, root=tmp_path)
+        profile.context.mkdir()
+        if content is not None:
+            profile.context_path("investor.md").write_text(content)
+        seen = model(monkeypatch, {"recommendations": []})
+        run_decision(book, profile=profile, today=TODAY)
+        assert '"investor.md": null' in seen[-1]
+        assert '"strategy.md": null' in seen[-1]
+        assert "Example restriction" not in seen[-1]
+
+    def test_decision_sees_dated_native_quotes_fx_and_reserved_cash(
+        self, book: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        save_prices(book, [(1, TODAY.isoformat(), 12.3456, "USD", "synthetic close")])
+        save_fx_rate(
+            book,
+            rate_date=TODAY.isoformat(),
+            base="USD",
+            quote="EUR",
+            rate=0.9,
+            source="synthetic FX",
+        )
+        rec = recommendation(book)
+        record_response(book, rec, "approve", today=TODAY)
+        seen = model(monkeypatch, {"recommendations": []})
+        run_decision(book, today=TODAY)
+        text = seen[-1]
+        assert '"price_native": 12.3456, "currency": "USD"' in text
+        assert '"date": "2026-09-07", "source": "synthetic close"' in text
+        assert '"fx_base": "USD", "fx_quote": "EUR"' in text
+        assert (
+            '"rate": 0.9, "rate_date": "2026-09-07", "source": "synthetic FX"' in text
+        )
+        assert "Reserved cash EUR 50.00 · available funded cash EUR 850.00" in text
+        assert "Pending execution: TEST" in text
+
+    def test_missing_quote_and_fx_are_not_rendered_as_zero(
+        self, book: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        book.execute("DELETE FROM prices")
+        book.execute("UPDATE securities SET currency='USD', pricing_mode='manual'")
+        seen = model(monkeypatch, {"recommendations": []})
+        run_decision(book, today=TODAY)
+        assert '"latest_stored_close": null' in seen[-1]
+        assert '"fx_to_eur": null' in seen[-1]
+        assert '"pricing_mode": "manual"' in seen[-1]
+        assert "TEST: unpriced" in seen[-1]
+
     def test_fresh_research_reaches_decision(
         self, book: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -271,6 +358,10 @@ class TestAtomicDecisions:
         assert "Revenue observation" in seen[-1]
         assert "https://example.com/revenue" in seen[-1]
         assert "2026-09-07" in seen[-1]
+        assert (
+            '"fx_to_eur": {"rate": 1.0, "rate_date": null, "source": "EUR identity"}'
+            in seen[-1]
+        )
 
     @pytest.mark.parametrize(
         "payload",
@@ -591,7 +682,10 @@ class TestUpgradeAndNotifications:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         migrations = discover_migrations()
-        for migration in migrations[:-1]:
+        target = next(
+            i for i, m in enumerate(migrations) if m.key.endswith("011_review_workflow")
+        )
+        for migration in migrations[:target]:
             migration.upgrade(conn)
         conn.execute(
             "INSERT INTO evidence(claim,kind,created_at) VALUES ('Synthetic background','background','2026-09-01')"
@@ -602,7 +696,7 @@ class TestUpgradeAndNotifications:
         conn.execute(
             "INSERT INTO user_decision(recommendation_id,decision,decided_at) VALUES (1,'later','2026-09-01')"
         )
-        migrations[-1].upgrade(conn)
+        migrations[target].upgrade(conn)
         assert (
             conn.execute("SELECT claim FROM evidence").fetchone()[0]
             == "Synthetic background"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import date
 
 import pytest
 
@@ -150,6 +151,28 @@ class TestResearchPass:
         research_security(seeded, ticker="AAA", source=_Source())
         assert "I like the product" in seen[1]
         assert "they stop making it" in seen[1]
+
+    def test_research_date_and_full_thesis_reach_the_models(
+        self, seeded: sqlite3.Connection, fake_llm
+    ) -> None:
+        save_thesis(
+            seeded,
+            Thesis(
+                security_id=1,
+                summary="Product demand persists",
+                source="user",
+                rationale="Repeat purchases matter",
+                key_assumptions=("Renewals persist",),
+            ),
+        )
+        seen = fake_llm(_plan(), _analysis())
+        research_security(
+            seeded, ticker="AAA", source=_Source(), today=date(2026, 9, 7)
+        )
+        for message in seen:
+            assert "Research date: 2026-09-07" in message
+            assert "Repeat purchases matter" in message
+            assert "Renewals persist" in message
 
     def test_evidence_is_fetched_by_feed_symbol(
         self, seeded: sqlite3.Connection, fake_llm

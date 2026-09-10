@@ -60,6 +60,9 @@ A weekly cycle syncs data, ranks holdings, reserves research capacity for overdu
 coverage, researches selected companies and proposes actions. Findings remain
 separate from the owner's active thesis until explicitly accepted. Decisions
 receive dated findings, citations and unanswered questions.
+They also receive stored native closes, dated FX, reserved cash, and the current
+written `strategy.md` and `investor.md`. Missing context stays explicit; valuation
+figures and transaction costs must come from supplied evidence or owner context.
 
 Reports distinguish completed, incomplete and unperformed reviews. Missing
 valuations suppress aggregate returns; stale prices or FX block trade proposals.
@@ -79,6 +82,9 @@ release or filing excerpts to your profile's `context/evidence.json` to supply
 primary material. Citations must reference supplied IDs and exact excerpts;
 that checks provenance, not whether the conclusion follows. See
 [commands and evidence format](docs/commands.md).
+Sufficient coverage requires sourced answers to every planned question;
+background explanations cannot establish that current company facts were checked.
+Coverage alone does not establish an attractive investment.
 
 ## How the book is kept
 

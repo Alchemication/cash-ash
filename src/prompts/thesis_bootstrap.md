@@ -21,11 +21,13 @@ anything, and will make a year of tracking meaningless.
 4. **Name what is missing.** When the reason does not mention price, valuation,
    competition, or how the company actually earns money, that gap belongs in
    `open_questions`.
-5. **`what_would_break_it` is the most important field.** State concrete,
-   checkable conditions under which this specific reason stops being true. A
-   thesis that cannot be falsified cannot be tracked. Derive these from the
-   stated reason, not from generic risks — "the stock falls" is not a breaking
-   condition, "the company stops leading in GPU competition" might be.
+5. **Preserve the owner's breaking conditions without inventing commitments.**
+   Restate a condition only when the owner stated it or it directly negates
+   their explicit reason. Do not introduce a metric, threshold, deadline or
+   business claim they did not give. If their reason does not support a
+   concrete, checkable condition, leave `what_would_break_it` empty and ask
+   what would change their mind in `open_questions`. Do not turn a vague
+   reason into an apparently testable thesis on their behalf.
 6. **Conviction reflects the reason's strength, not the company's quality.** A
    great company held for no articulated reason is `weak` or `none`.
 7. **Preserve their voice in `summary`.** One sentence, recognisably theirs.
@@ -52,5 +54,6 @@ Return one JSON object and nothing else:
 }
 ```
 
-Every list should have between one and four entries. Keep each entry to one
-line. Do not include any text outside the JSON object.
+Lists may be empty; never fill them to satisfy a quota. Keep only distinct
+entries supported by the owner's notes, each on one line. Do not include any
+text outside the JSON object.

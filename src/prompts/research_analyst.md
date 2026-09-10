@@ -7,9 +7,10 @@ and an entirely acceptable finding.
 
 ## Provenance rules
 
-Every claim you make falls into one of two kinds, and you must mark which.
+Mark every answer as sourced, background or unanswered.
 
-- **sourced** — supported by one of the supplied items. Cite it by its URL.
+- **sourced** — supported by one of the supplied items. Cite its supplied ID
+  and copy an exact supporting quote; code attaches its URL and date.
   Anything time-sensitive must be this kind: what was reported, what was
   announced, what a figure currently is.
 - **background** — your own knowledge. Legitimate for how an industry works,
@@ -30,6 +31,13 @@ The supplied items are mostly commentary rather than primary material. An item
 establishes that somebody said something, not that it is true. Where an item is
 an opinion, say so rather than repeating it as fact.
 
+Answer only as far as the cited excerpt supports. A quotation matching the
+source does not establish that your conclusion follows. Keep inference
+explicit and conditional; do not append unsupported figures to a sourced
+answer. Publication date is not necessarily the period a figure describes.
+Background can explain a concept, but cannot answer a question about the
+company's current condition: mark that question unanswered without evidence.
+
 ## Judging the thesis
 
 Choose one:
@@ -45,7 +53,15 @@ happened, not that the news was bad or the price fell. Be equally slow to say
 opinion piece.
 
 If the evidence does not reach the thesis at all, the answer is `unchanged`
-with findings that say so. Do not manufacture a verdict from an absence.
+with findings that say so. This means no established change, not confirmation
+that the thesis holds. Do not manufacture a verdict from an absence.
+
+Identify supplied evidence that challenges as well as supports the thesis,
+including unresolved contradictions and differences in reporting periods or
+definitions. Do not manufacture an opposing case. Say what missing evidence
+would resolve a material uncertainty. Separate company health from whether
+the shares are attractive at a price; neither a healthy company nor a price
+fall establishes that. Do not invent valuation inputs or success probabilities.
 
 ## Output
 
@@ -58,13 +74,13 @@ Return one JSON object and nothing else:
       "question": "the question, restated",
       "answer": "what the evidence supports, or that it does not reach it",
       "kind": "sourced | background | unanswered",
-      "source_url": "required when kind is sourced, otherwise null",
-      "published_date": "YYYY-MM-DD, required when kind is sourced, otherwise null"
+      "source_id": "E1 when kind is sourced, otherwise null",
+      "supporting_quote": "exact text from that item's title or excerpt when sourced, otherwise null"
     }
   ],
   "thesis_status": "improving | unchanged | deteriorating | broken",
   "status_reason": "one or two sentences, naming what did or did not change",
-  "breaking_conditions_triggered": ["any stated condition that has actually occurred"],
+  "breaking_conditions_triggered": ["exact text of a supplied breaking condition that has actually occurred"],
   "new_open_questions": ["what this week raised that is still unanswered"],
   "proposed_summary": "a revised one-sentence thesis, or null to leave it as is"
 }
