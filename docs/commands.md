@@ -171,7 +171,11 @@ teach you anything.
 The prompt permits empty assumption and breaking-condition lists. It restates
 explicit conditions or the direct negation of an explicit reason, without
 inventing thresholds or deadlines. Missing conditions become open questions;
-inspect the bootstrap with `main.py thesis show` before relying on it.
+inspect the bootstrap with `main.py thesis show` before relying on it. An
+empty breaking-condition list is a debt the owner carries, not one the model
+pays: `eval` lists such theses as broken invariants until you write what would
+change your mind in `context/log.md` and rerun `thesis bootstrap TICKER
+--overwrite`.
 
 Theses are versioned and never edited. A revision is a new version and the old
 one is kept, so a year later it is still possible to ask what was believed at
@@ -363,15 +367,22 @@ Logs go to `~/Library/Logs`, where Console.app looks.
 **Invariants** are statements that should never be true. An active thesis with
 nothing that would break it. A claim marked sourced without a URL and a date. A
 decision recorded against advice a later run withdrew. An active thesis the
-owner never accepted. A holding recorded as worth zero rather than omitted.
-Each is a defect with no tolerable rate, so each is reported as broken or not
-and the command exits non-zero when any is.
+owner never accepted. Stored advice or a finding that quotes a percentage
+chance, probability or confidence. A holding recorded as worth zero rather
+than omitted. Each is a defect with no tolerable rate, so each is reported as
+broken or not and the command exits non-zero when any is. The percentage check
+is a pattern match on the text a model produced, so it names the rows for you
+to read rather than proving intent.
 
 **Observations** are numbers with no correct value: how many claims rest on a
 source, how many holdings are held on a thin reason, how often the rules
-refused a proposal, truncation and fallback rates, spend, coverage. These carry
-no verdict, because a threshold nobody can justify is worse than an honest
-number.
+refused a proposal, truncation and fallback rates, spend, coverage. Two of them
+are split by prompt version — the sourced share per analyst prompt, and trades
+and REVIEWs proposed per decision run per decide prompt, counting proposals
+the rules refused. That is what a prompt rewrite can honestly show: the model
+behaves differently, visible as a different number. Whether it behaves better
+is not measurable at this scale. These carry no verdict, because a threshold
+nobody can justify is worse than an honest number.
 
 What `eval` deliberately does not measure is whether the advice was any good.
 Fourteen holdings a week will never produce the sample size for that, and
@@ -473,14 +484,21 @@ ID and copy an exact supporting excerpt. URL and date come from that item, not
 from model output. Unknown IDs and invented excerpts become unanswered findings.
 Membership and quote checks do not prove semantic support; inspect the source.
 
-Coverage is sufficient only when every planned question has an answer and all
-answers are sourced without citation-validation errors. Background explanations
-remain stored, but cannot substitute for evidence about current company facts.
-On database migration, historical sufficient labels that fail this rule are
-downgraded; findings, evidence packages and owner theses are preserved. Even
-sufficient coverage does not establish that the questions addressed valuation
-or that an investment is attractive. `main.py process` reports coverage;
-`main.py review` displays the latest findings and remaining gaps.
+Coverage is sufficient only when every planned question has a sourced answer
+that passed citation validation. Background explanations remain stored, but
+cannot substitute for evidence about current company facts. Extra answers the
+analyst volunteers beyond the plan count neither for nor against coverage. On
+database migration, historical labels are recomputed under this rule; findings,
+evidence packages and owner theses are preserved. Even sufficient coverage does
+not establish that the questions addressed valuation or that an investment is
+attractive.
+
+In practice the default news feed rarely sources every planned question, so
+BUY, ADD and EXIT stay refused until you supply targeted excerpts. `research
+TICKER` ends by listing the planned questions still without a sourced answer,
+verbatim, so they can be pasted into the `questions` field of an entry in
+`context/evidence.json`; the Telegram `/evidence TICKER` view shows the same
+list. `main.py process` reports the unanswered count across holdings.
 
 Evidence packages are stored with a content hash alongside completed assessments,
 including unchanged assessments and open questions. These dated assessments feed

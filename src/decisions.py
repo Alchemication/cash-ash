@@ -128,7 +128,7 @@ def run_decision(
     from config import RECOMMENDATION_EXPIRY_DAYS
     from guardrails import check_proposal
     from store import latest_prices, load_securities
-    from store_research import create_research_run
+    from store_research import create_llm_trace, create_research_run
 
     inputs = triage_inputs(
         conn, account_id=account_id, today=today, include_sell_eligibility=True
@@ -142,8 +142,13 @@ def run_decision(
     if blocked_reason:
         context = replace(context, blocked_reason=blocked_reason)
     run_date = (today or date.today()).isoformat()
+    trace_id = create_llm_trace(conn, operation="decision", feature="decision")
     run_id = create_research_run(
-        conn, run_date=run_date, kind="deep", note="Portfolio decision"
+        conn,
+        run_date=run_date,
+        kind="deep",
+        trace_id=trace_id,
+        note="Portfolio decision",
     )
 
     securities = load_securities(conn)
@@ -184,6 +189,7 @@ def run_decision(
         ],
         prompt_version=DECIDE_PROMPT_VERSION,
         max_tokens=DECISION_MAX_TOKENS,
+        trace_id=trace_id,
     )
     payload = extract_json(result.text)
 

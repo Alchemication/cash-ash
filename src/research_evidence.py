@@ -168,24 +168,26 @@ def store_evidence(
     return len(answers), sum(a["kind"] == "sourced" for a in answers)
 
 
-def sufficient_coverage(questions: list[str], answers: list[dict]) -> bool:
-    """Require sourced answers covering every planned question.
+def uncovered_questions(questions: list[str], answers: list[dict]) -> list[str]:
+    """Return planned questions that no sourced, validated answer covers.
 
     Background remains useful explanation, but is not evidence that a current
-    company question was checked. This checks coverage, not semantic support
+    company question was checked. Extra answers the analyst volunteers do not
+    count for or against coverage. This checks coverage, not semantic support
     or whether the questions establish an attractive investment.
     """
-    required = {q.strip().casefold() for q in questions if q.strip()}
-    answered = {a.get("question", "").strip().casefold() for a in answers}
-    return (
-        bool(required)
-        and required <= answered
-        and bool(answers)
-        and all(
-            a.get("kind") == "sourced" and not a.get("validation_error")
-            for a in answers
-        )
-    )
+    covered = {
+        a.get("question", "").strip().casefold()
+        for a in answers
+        if a.get("kind") == "sourced" and not a.get("validation_error")
+    }
+    return [q for q in questions if q.strip() and q.strip().casefold() not in covered]
+
+
+def sufficient_coverage(questions: list[str], answers: list[dict]) -> bool:
+    """True when every planned question has a sourced, validated answer."""
+    planned = [q for q in questions if q.strip()]
+    return bool(planned) and not uncovered_questions(planned, answers)
 
 
 def save_assessment(

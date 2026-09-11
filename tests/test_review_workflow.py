@@ -323,6 +323,28 @@ class TestAtomicDecisions:
         assert "Reserved cash EUR 50.00 · available funded cash EUR 850.00" in text
         assert "Pending execution: TEST" in text
 
+    def test_decision_run_is_traced_so_proposals_link_to_their_prompt(
+        self, book: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen_kwargs: dict = {}
+
+        def reply(conn: sqlite3.Connection, **kwargs: object) -> LLMResult:
+            seen_kwargs.update(kwargs)
+            return LLMResult(
+                text=json.dumps({"recommendations": []}),
+                model="test",
+                requested_model="test",
+            )
+
+        monkeypatch.setattr(decisions, "call_llm", reply)
+        run_decision(book, today=TODAY)
+        row = book.execute(
+            "SELECT r.trace_id, t.operation FROM research_run r "
+            "JOIN llm_trace t ON t.id = r.trace_id WHERE r.note='Portfolio decision'"
+        ).fetchone()
+        assert row is not None and row["operation"] == "decision"
+        assert seen_kwargs["trace_id"] == row["trace_id"]
+
     def test_missing_quote_and_fx_are_not_rendered_as_zero(
         self, book: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
     ) -> None:

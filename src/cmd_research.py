@@ -52,6 +52,7 @@ def cmd_research(args: argparse.Namespace) -> None:
     from rich.table import Table
 
     from research import research_security
+    from research_evidence import uncovered_questions
 
     console = Console()
     profile, db_path = resolve_cli_profile(args.profile, db=args.db)
@@ -124,6 +125,19 @@ def cmd_research(args: argparse.Namespace) -> None:
             f"  [dim]{result.evidence_count} claim(s) stored, "
             f"{result.sourced_count} with a source · run {result.run_id}[/dim]"
         )
+        gaps = uncovered_questions(list(result.questions), list(result.answers))
+        if gaps:
+            console.print(
+                Panel(
+                    "\n".join(f"• {question}" for question in gaps)
+                    + "\n\n[dim]Coverage is insufficient until each has a sourced "
+                    "answer, so BUY, ADD and EXIT stay refused. Add dated "
+                    "excerpts tagged with these questions to "
+                    "context/evidence.json and rerun.[/dim]",
+                    title="questions without a sourced answer",
+                    border_style="yellow",
+                )
+            )
         if result.proposed_version is not None:
             console.print(
                 f"  [yellow]Proposed thesis v{result.proposed_version}.[/yellow] "

@@ -25,12 +25,26 @@ Example:
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 logger = logging.getLogger(__name__)
+
+# A percentage within a few words of a term that turns it into a forecast.
+# "Revenue up 12%" is a figure; "70% chance" and "confidence: 91%" are the model
+# dressing a guess as a calibrated probability, which the prompts forbid and
+# nothing should store. "Consumer confidence fell 3%" is a figure, so a
+# sentiment-index qualifier before "confidence" is let through.
+_STATED_ODDS = re.compile(
+    r"(\d{1,3}\s?%\s*(?:chance|probability|likelihood|likely|confidence|confident|odds)\b)"
+    r"|(\b(?<!consumer )(?<!business )(?<!investor )"
+    r"(?:chance|probability|likelihood|confidence|odds)\b.{0,30}?\d{1,3}\s?%)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -86,7 +100,10 @@ def run_checks(conn: sqlite3.Connection) -> list[Check]:
             why=(
                 "A thesis that states nothing which would prove it wrong cannot "
                 "be tracked, so nothing downstream can notice it stopped being "
-                "true."
+                "true. The bootstrap leaves the list empty rather than invent a "
+                "condition, so this is a question for the owner: write what "
+                "would change your mind in context/log.md and rerun "
+                "'thesis bootstrap TICKER --overwrite'."
             ),
             offenders=tuple(row["ticker"] for row in unfalsifiable),
         )
@@ -152,6 +169,19 @@ def run_checks(conn: sqlite3.Connection) -> list[Check]:
         )
     )
 
+    stated_odds = _stated_odds(conn)
+    checks.append(
+        Check(
+            name="no stored advice quotes a probability or confidence",
+            passed=not stated_odds,
+            why=(
+                "A percentage chance from a language model is not a calibrated "
+                "probability. Stored once, it will be read back as one."
+            ),
+            offenders=tuple(stated_odds),
+        )
+    )
+
     priced_at_zero = _rows(
         conn,
         """
@@ -177,6 +207,27 @@ def run_checks(conn: sqlite3.Connection) -> list[Check]:
     )
 
     return checks
+
+
+def _stated_odds(conn: sqlite3.Connection) -> list[str]:
+    """Label every stored model text that quotes a percentage as a forecast."""
+    found: list[str] = []
+    for row in _rows(conn, "SELECT id, rationale FROM recommendation ORDER BY id"):
+        if _STATED_ODDS.search(row["rationale"]):
+            found.append(f"recommendation {row['id']}")
+    for row in _rows(conn, "SELECT id, rationale FROM decision_refusal ORDER BY id"):
+        if _STATED_ODDS.search(row["rationale"]):
+            found.append(f"refusal {row['id']}")
+    for row in _rows(
+        conn,
+        "SELECT run_id, reason, answers_json FROM research_assessment ORDER BY run_id",
+    ):
+        texts = [row["reason"]] + [
+            str(a.get("answer", "")) for a in json.loads(row["answers_json"])
+        ]
+        if any(_STATED_ODDS.search(text) for text in texts):
+            found.append(f"assessment {row['run_id']}")
+    return found
 
 
 def observe(
@@ -214,6 +265,35 @@ def observe(
     else:
         out.append(Observation("claims resting on a source", "no claims recorded yet"))
 
+    by_analyst = _rows(
+        conn,
+        """
+        SELECT c.prompt_version,
+               COUNT(*) n,
+               SUM(CASE WHEN e.kind = 'sourced' THEN 1 ELSE 0 END) sourced
+        FROM evidence e
+        JOIN research_run r ON r.id = e.research_run_id
+        JOIN (
+            SELECT trace_id, MAX(prompt_version) prompt_version
+            FROM llm_call WHERE feature = 'analyst' AND trace_id IS NOT NULL
+            GROUP BY trace_id
+        ) c ON c.trace_id = r.trace_id
+        GROUP BY c.prompt_version ORDER BY c.prompt_version
+        """,
+    )
+    if by_analyst:
+        out.append(
+            Observation(
+                "claims resting on a source, by analyst prompt",
+                " · ".join(
+                    f"{row['prompt_version']}: {row['sourced']}/{row['n']}"
+                    for row in by_analyst
+                ),
+                "A prompt change shows up here as a different share, not as a "
+                "better one; a higher share can also mean easier questions.",
+            )
+        )
+
     conviction = {
         row["conviction"]: row["n"]
         for row in _rows(
@@ -243,6 +323,42 @@ def observe(
             "differently from one that never does.",
         )
     )
+
+    by_decide = _rows(
+        conn,
+        """
+        WITH runs AS (
+            SELECT r.id run_id, MAX(c.prompt_version) prompt_version
+            FROM research_run r
+            JOIN llm_call c ON c.trace_id = r.trace_id AND c.feature = 'decision'
+            GROUP BY r.id
+        ),
+        proposals AS (
+            SELECT research_run_id run_id, action FROM recommendation
+            UNION ALL
+            SELECT run_id, action FROM decision_refusal
+        )
+        SELECT runs.prompt_version,
+               COUNT(DISTINCT runs.run_id) runs,
+               SUM(CASE WHEN p.action IN ('BUY','ADD','TRIM','EXIT') THEN 1 ELSE 0 END) trades,
+               SUM(CASE WHEN p.action = 'REVIEW' THEN 1 ELSE 0 END) reviews
+        FROM runs LEFT JOIN proposals p ON p.run_id = runs.run_id
+        GROUP BY runs.prompt_version ORDER BY runs.prompt_version
+        """,
+    )
+    if by_decide:
+        out.append(
+            Observation(
+                "proposals per decision run, by decide prompt",
+                " · ".join(
+                    f"{row['prompt_version']}: {row['runs']} runs, "
+                    f"{row['trades'] or 0} trades, {row['reviews'] or 0} REVIEW"
+                    for row in by_decide
+                ),
+                "Trades include ones the rules refused. A prompt that proposes "
+                "more is behaving differently, not better or worse.",
+            )
+        )
 
     calls = _rows(
         conn,

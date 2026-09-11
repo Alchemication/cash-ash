@@ -15,7 +15,12 @@ import pytest
 from evals import observe, run_checks
 from models import Thesis
 from seed import load_snapshot, seed_database
-from store_research import create_research_run, save_thesis
+from store_research import (
+    create_llm_trace,
+    create_research_run,
+    log_llm_call,
+    save_thesis,
+)
 from tests.test_seed import FIXTURE
 
 TODAY = date(2026, 9, 7)
@@ -216,6 +221,180 @@ class TestZeroValuation:
             source="weekly",
         )
         assert _check(seeded, self.NAME).passed is True
+
+
+class TestStatedOdds:
+    """A model's percentage is a guess in a lab coat."""
+
+    NAME = "no stored advice quotes a probability or confidence"
+
+    def _recommend(self, conn: sqlite3.Connection, rationale: str) -> None:
+        run_id = create_research_run(conn, run_date="2026-09-07", kind="deep")
+        conn.execute(
+            """
+            INSERT INTO recommendation (run_date, research_run_id, security_id,
+                                        action, rationale, urgency, expires_on,
+                                        created_at)
+            VALUES ('2026-09-07', ?, 1, 'REVIEW', ?, 'low', '2099-01-01', 'x')
+            """,
+            (run_id, rationale),
+        )
+
+    def _assess(self, conn: sqlite3.Connection, answer: str) -> None:
+        run_id = create_research_run(conn, run_date="2026-09-07", kind="deep")
+        conn.execute(
+            """
+            INSERT INTO research_assessment (run_id, security_id, status, reason,
+                questions_json, answers_json, triggered_json, open_questions_json,
+                package_json, package_hash, coverage, created_at)
+            VALUES (?, 1, 'unchanged', 'r', '["q"]', ?, '[]', '[]', '[]', 'h',
+                    'insufficient', 'x')
+            """,
+            (
+                run_id,
+                f'[{{"question": "q", "answer": "{answer}", "kind": "background"}}]',
+            ),
+        )
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Revenue rose 12% and margins held at 40%.",
+            "Roughly 35% of sales come from one customer.",
+            "Keep 20% of the portfolio in cash.",
+            "Consumer confidence fell 3% in August.",
+        ],
+    )
+    def test_ordinary_figures_pass(self, seeded: sqlite3.Connection, text: str) -> None:
+        self._recommend(seeded, text)
+        self._assess(seeded, text)
+        assert _check(seeded, self.NAME).passed is True
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "There is a 70% chance the thesis holds.",
+            "Confidence: 91%.",
+            "I estimate the probability of a beat at 60 %.",
+            "Odds of recovery are about 80%.",
+        ],
+    )
+    def test_forecast_percentages_fail(
+        self, seeded: sqlite3.Connection, text: str
+    ) -> None:
+        self._recommend(seeded, text)
+        check = _check(seeded, self.NAME)
+        assert check.passed is False
+        assert check.offenders == ("recommendation 1",)
+
+    def test_findings_are_checked_too(self, seeded: sqlite3.Connection) -> None:
+        self._assess(seeded, "Likelihood of a dividend cut: 25%")
+        check = _check(seeded, self.NAME)
+        assert check.passed is False
+        assert check.offenders[0].startswith("assessment ")
+
+
+class TestByPromptVersion:
+    """A prompt change should be visible as a different number, never a verdict."""
+
+    def _named(self, conn: sqlite3.Connection, name: str):
+        return next(
+            (item for item in observe(conn, today=TODAY) if item.name == name), None
+        )
+
+    def _analyst_run(
+        self, conn: sqlite3.Connection, version: str, kinds: list[str]
+    ) -> None:
+        trace = create_llm_trace(conn, operation="deep_research", feature="analyst")
+        log_llm_call(
+            conn,
+            feature="analyst",
+            model="m",
+            requested_model="m",
+            messages_json="[]",
+            trace_id=trace,
+            prompt_version=version,
+        )
+        run_id = create_research_run(
+            conn, run_date="2026-09-07", kind="deep", trace_id=trace
+        )
+        for kind in kinds:
+            conn.execute(
+                "INSERT INTO evidence (research_run_id, security_id, claim, kind, "
+                "source_url, published_date, created_at) VALUES (?, 1, 'c', ?, ?, ?, 'x')",
+                (
+                    run_id,
+                    kind,
+                    "https://e.com" if kind == "sourced" else None,
+                    "2026-09-05" if kind == "sourced" else None,
+                ),
+            )
+
+    def _decision_run(
+        self,
+        conn: sqlite3.Connection,
+        version: str,
+        actions: list[str],
+        refused: list[str],
+    ) -> None:
+        trace = create_llm_trace(conn, operation="decision", feature="decision")
+        log_llm_call(
+            conn,
+            feature="decision",
+            model="m",
+            requested_model="m",
+            messages_json="[]",
+            trace_id=trace,
+            prompt_version=version,
+        )
+        run_id = create_research_run(
+            conn, run_date="2026-09-07", kind="deep", trace_id=trace
+        )
+        for action in actions:
+            conn.execute(
+                "INSERT INTO recommendation (run_date, research_run_id, security_id, "
+                "action, rationale, urgency, expires_on, created_at) "
+                "VALUES ('2026-09-07', ?, 1, ?, 'r', 'low', '2099-01-01', 'x')",
+                (run_id, action),
+            )
+        for action in refused:
+            conn.execute(
+                "INSERT INTO decision_refusal (run_id, ticker, action, rationale, "
+                "refusal) VALUES (?, 'AAA', ?, 'r', 'no')",
+                (run_id, action),
+            )
+
+    def test_absent_until_there_is_a_traced_call(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        assert (
+            self._named(seeded, "claims resting on a source, by analyst prompt") is None
+        )
+        assert (
+            self._named(seeded, "proposals per decision run, by decide prompt") is None
+        )
+
+    def test_sourced_share_is_split_by_analyst_prompt(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        self._analyst_run(seeded, "research_analyst/3", ["unanswered", "unanswered"])
+        self._analyst_run(seeded, "research_analyst/4", ["sourced", "background"])
+        self._analyst_run(seeded, "research_analyst/4", ["sourced"])
+        item = self._named(seeded, "claims resting on a source, by analyst prompt")
+        assert item is not None
+        assert item.value == "research_analyst/3: 0/2 · research_analyst/4: 2/3"
+
+    def test_proposals_count_refusals_and_split_by_decide_prompt(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        self._decision_run(seeded, "decide/3", ["REVIEW"], [])
+        self._decision_run(seeded, "decide/3", [], [])
+        self._decision_run(seeded, "decide/4", ["ADD", "REVIEW"], ["EXIT"])
+        item = self._named(seeded, "proposals per decision run, by decide prompt")
+        assert item is not None
+        assert item.value == (
+            "decide/3: 2 runs, 0 trades, 1 REVIEW · decide/4: 1 runs, 2 trades, 1 REVIEW"
+        )
 
 
 class TestObservations:
