@@ -49,11 +49,13 @@ def evidence_text(conn: sqlite3.Connection, ticker: str) -> str:
     answers = json.loads(row["answers_json"])
     gaps = uncovered_questions(json.loads(row["questions_json"]), answers)
     if gaps:
-        lines.append("Needs a sourced answer before a trade is permitted:")
+        lines.append("Needs a sourced answer before BUY, ADD or EXIT is permitted:")
         lines += [f"- {escape(question)}" for question in gaps]
         lines.append(
             "Add dated excerpts tagged with these questions to "
-            "context/evidence.json and rerun research."
+            "context/evidence.json and rerun research. Each run generates a new "
+            "plan; if questions change, use an empty questions list on relevant "
+            "excerpts to match by symbol."
         )
     for answer in answers:
         lines += [

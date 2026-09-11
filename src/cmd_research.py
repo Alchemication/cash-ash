@@ -133,7 +133,9 @@ def cmd_research(args: argparse.Namespace) -> None:
                     + "\n\n[dim]Coverage is insufficient until each has a sourced "
                     "answer, so BUY, ADD and EXIT stay refused. Add dated "
                     "excerpts tagged with these questions to "
-                    "context/evidence.json and rerun.[/dim]",
+                    "context/evidence.json and rerun. Research generates a new "
+                    "plan each time; if the questions change, use an empty "
+                    "questions list on relevant excerpts to match by symbol.[/dim]",
                     title="questions without a sourced answer",
                     border_style="yellow",
                 )

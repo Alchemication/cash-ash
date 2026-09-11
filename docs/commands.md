@@ -367,22 +367,29 @@ Logs go to `~/Library/Logs`, where Console.app looks.
 **Invariants** are statements that should never be true. An active thesis with
 nothing that would break it. A claim marked sourced without a URL and a date. A
 decision recorded against advice a later run withdrew. An active thesis the
-owner never accepted. Stored advice or a finding that quotes a percentage
-chance, probability or confidence. A holding recorded as worth zero rather
+owner never accepted. A holding recorded as worth zero rather
 than omitted. Each is a defect with no tolerable rate, so each is reported as
-broken or not and the command exits non-zero when any is. The percentage check
-is a pattern match on the text a model produced, so it names the rows for you
-to read rather than proving intent.
+broken or not and the command exits non-zero when any is.
+
+Possible percentage forecasts are an advisory observation listing matching
+recommendations, refusals and assessments across all history. The regex can
+match negations or legitimate sourced statistics and miss other phrasings.
+Inspect the named rows; a match alone does not fail `eval`, and no match is not
+proof that model text complies with the probability rule.
 
 **Observations** are numbers with no correct value: how many claims rest on a
 source, how many holdings are held on a thin reason, how often the rules
 refused a proposal, truncation and fallback rates, spend, coverage. Two of them
 are split by prompt version — the sourced share per analyst prompt, and trades
-and REVIEWs proposed per decision run per decide prompt, counting proposals
-the rules refused. That is what a prompt rewrite can honestly show: the model
-behaves differently, visible as a different number. Whether it behaves better
-is not measurable at this scale. These carry no verdict, because a threshold
-nobody can justify is worse than an honest number.
+and REVIEWs per published decision batch per decide prompt, counting proposals
+the rules refused and completed batches with no proposals. Both prompt splits
+use the run date and the `--weeks` window. Attempts without a published batch
+are counted separately, including failures, invalid output and work still in
+progress; they do not represent deliberate inactivity. Model-call and cost
+metrics also use `--weeks`; other observations describe current state or stored
+history. These descriptive counts alone cannot attribute a change to a prompt
+or establish improvement. Process quality can be evaluated on controlled cases;
+investment skill is not established by these observations.
 
 What `eval` deliberately does not measure is whether the advice was any good.
 Fourteen holdings a week will never produce the sample size for that, and
@@ -499,6 +506,11 @@ TICKER` ends by listing the planned questions still without a sourced answer,
 verbatim, so they can be pasted into the `questions` field of an entry in
 `context/evidence.json`; the Telegram `/evidence TICKER` view shows the same
 list. `main.py process` reports the unanswered count across holdings.
+Each rerun generates a new plan. Question matching uses text containment, so a
+rephrased question can exclude a previously tagged excerpt. For relevant
+material you want available across plans, set its `questions` field to `[]` to
+match by symbol instead; the analyst still has to judge whether it answers the
+new questions. Reusing a previous plan is not currently supported.
 
 Evidence packages are stored with a content hash alongside completed assessments,
 including unchanged assessments and open questions. These dated assessments feed

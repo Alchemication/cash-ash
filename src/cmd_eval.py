@@ -41,7 +41,7 @@ def cmd_eval(args: argparse.Namespace) -> None:
         table.add_row(mark, check.name, detail)
     console.print(table)
 
-    metrics = Table(title=f"Observations — last {args.weeks} weeks")
+    metrics = Table(title="Observations — activity windows stated in each measure")
     metrics.add_column("Measure", style="bold")
     metrics.add_column("Value")
     metrics.add_column("What it does not mean", style="dim", overflow="fold")

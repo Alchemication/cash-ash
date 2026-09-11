@@ -224,9 +224,14 @@ class TestZeroValuation:
 
 
 class TestStatedOdds:
-    """A model's percentage is a guess in a lab coat."""
+    """Heuristic matches identify rows to review without declaring violations."""
 
-    NAME = "no stored advice quotes a probability or confidence"
+    NAME = "possible percentage forecasts to review (all history)"
+
+    def _observation(self, conn: sqlite3.Connection):
+        return next(
+            item for item in observe(conn, today=TODAY) if item.name == self.NAME
+        )
 
     def _recommend(self, conn: sqlite3.Connection, rationale: str) -> None:
         run_id = create_research_run(conn, run_date="2026-09-07", kind="deep")
@@ -268,7 +273,7 @@ class TestStatedOdds:
     def test_ordinary_figures_pass(self, seeded: sqlite3.Connection, text: str) -> None:
         self._recommend(seeded, text)
         self._assess(seeded, text)
-        assert _check(seeded, self.NAME).passed is True
+        assert self._observation(seeded).value == "none detected"
 
     @pytest.mark.parametrize(
         "text",
@@ -277,21 +282,21 @@ class TestStatedOdds:
             "Confidence: 91%.",
             "I estimate the probability of a beat at 60 %.",
             "Odds of recovery are about 80%.",
+            "Do not interpret confidence: 91% as a calibrated probability.",
+            "The published estimate has a 95% confidence interval.",
         ],
     )
-    def test_forecast_percentages_fail(
+    def test_matches_are_advisory_and_do_not_break_invariants(
         self, seeded: sqlite3.Connection, text: str
     ) -> None:
+        before = run_checks(seeded)
         self._recommend(seeded, text)
-        check = _check(seeded, self.NAME)
-        assert check.passed is False
-        assert check.offenders == ("recommendation 1",)
+        assert self._observation(seeded).value == "recommendation 1"
+        assert run_checks(seeded) == before
 
     def test_findings_are_checked_too(self, seeded: sqlite3.Connection) -> None:
         self._assess(seeded, "Likelihood of a dividend cut: 25%")
-        check = _check(seeded, self.NAME)
-        assert check.passed is False
-        assert check.offenders[0].startswith("assessment ")
+        assert self._observation(seeded).value.startswith("assessment ")
 
 
 class TestByPromptVersion:
@@ -336,6 +341,9 @@ class TestByPromptVersion:
         version: str,
         actions: list[str],
         refused: list[str],
+        *,
+        published: bool = True,
+        error: str | None = None,
     ) -> None:
         trace = create_llm_trace(conn, operation="decision", feature="decision")
         log_llm_call(
@@ -346,10 +354,16 @@ class TestByPromptVersion:
             messages_json="[]",
             trace_id=trace,
             prompt_version=version,
+            error=error,
         )
         run_id = create_research_run(
             conn, run_date="2026-09-07", kind="deep", trace_id=trace
         )
+        if published:
+            conn.execute(
+                "INSERT INTO decision_batch(run_id,summary,created_at) VALUES (?, 'Synthetic batch', '2026-09-07')",
+                (run_id,),
+            )
         for action in actions:
             conn.execute(
                 "INSERT INTO recommendation (run_date, research_run_id, security_id, "
@@ -395,6 +409,55 @@ class TestByPromptVersion:
         assert item.value == (
             "decide/3: 2 runs, 0 trades, 1 REVIEW · decide/4: 1 runs, 2 trades, 1 REVIEW"
         )
+
+    @pytest.mark.parametrize("error", ["Provider unavailable", None])
+    def test_unpublished_attempts_do_not_look_like_inactivity(
+        self, seeded: sqlite3.Connection, error: str | None
+    ) -> None:
+        self._decision_run(seeded, "decide/4", ["ADD"], [])
+        self._decision_run(seeded, "decide/4", [], [], published=False, error=error)
+        item = self._named(seeded, "proposals per decision run, by decide prompt")
+        assert item.value == "decide/4: 1 runs, 1 trades, 0 REVIEW"
+        assert (
+            self._named(seeded, "decision runs without a published batch").value == "1"
+        )
+
+    @pytest.mark.parametrize("outside_date", ["2026-06-01", "2026-10-01"])
+    def test_prompt_metrics_exclude_runs_outside_window(
+        self, seeded: sqlite3.Connection, outside_date: str
+    ) -> None:
+        self._analyst_run(seeded, "research_analyst/old", ["sourced"])
+        self._decision_run(seeded, "decide/old", ["ADD"], [])
+        self._decision_run(seeded, "decide/old", [], [], published=False)
+        seeded.execute("UPDATE research_run SET run_date=?", (outside_date,))
+        self._analyst_run(seeded, "research_analyst/current", ["background"])
+        self._decision_run(seeded, "decide/current", [], [])
+        assert (
+            self._named(seeded, "claims resting on a source, by analyst prompt").value
+            == "research_analyst/current: 0/1"
+        )
+        assert (
+            self._named(seeded, "proposals per decision run, by decide prompt").value
+            == "decide/current: 1 runs, 0 trades, 0 REVIEW"
+        )
+        assert (
+            self._named(seeded, "decision runs without a published batch").value == "0"
+        )
+
+    def test_weeks_argument_controls_prompt_activity(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        self._analyst_run(seeded, "research_analyst/4", ["sourced"])
+        self._decision_run(seeded, "decide/4", ["ADD"], [])
+        seeded.execute("UPDATE research_run SET run_date='2026-08-20'")
+        narrow = {item.name: item for item in observe(seeded, today=TODAY, weeks=1)}
+        wide = {item.name: item for item in observe(seeded, today=TODAY, weeks=4)}
+        for name in (
+            "claims resting on a source, by analyst prompt",
+            "proposals per decision run, by decide prompt",
+        ):
+            assert name not in narrow
+            assert name in wide
 
 
 class TestObservations:

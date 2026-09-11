@@ -35,9 +35,9 @@ from datetime import date, timedelta
 logger = logging.getLogger(__name__)
 
 # A percentage within a few words of a term that turns it into a forecast.
-# "Revenue up 12%" is a figure; "70% chance" and "confidence: 91%" are the model
-# dressing a guess as a calibrated probability, which the prompts forbid and
-# nothing should store. "Consumer confidence fell 3%" is a figure, so a
+# "Revenue up 12%" is a figure; "70% chance" and "confidence: 91%" may be model
+# forecasts, quotations or warnings. Matches need review, not a failure label.
+# "Consumer confidence fell 3%" is a figure, so a
 # sentiment-index qualifier before "confidence" is let through.
 _STATED_ODDS = re.compile(
     r"(\d{1,3}\s?%\s*(?:chance|probability|likelihood|likely|confidence|confident|odds)\b)"
@@ -169,19 +169,6 @@ def run_checks(conn: sqlite3.Connection) -> list[Check]:
         )
     )
 
-    stated_odds = _stated_odds(conn)
-    checks.append(
-        Check(
-            name="no stored advice quotes a probability or confidence",
-            passed=not stated_odds,
-            why=(
-                "A percentage chance from a language model is not a calibrated "
-                "probability. Stored once, it will be read back as one."
-            ),
-            offenders=tuple(stated_odds),
-        )
-    )
-
     priced_at_zero = _rows(
         conn,
         """
@@ -210,7 +197,7 @@ def run_checks(conn: sqlite3.Connection) -> list[Check]:
 
 
 def _stated_odds(conn: sqlite3.Connection) -> list[str]:
-    """Label every stored model text that quotes a percentage as a forecast."""
+    """Identify possible percentage forecasts for review, without judging intent."""
     found: list[str] = []
     for row in _rows(conn, "SELECT id, rationale FROM recommendation ORDER BY id"):
         if _STATED_ODDS.search(row["rationale"]):
@@ -238,7 +225,7 @@ def observe(
     Args:
         conn: Open database connection.
         today: Reference date, for tests.
-        weeks: Window for coverage and cost.
+        weeks: Window for prompt activity, model calls and cost.
 
     Returns:
         Metrics in reading order.
@@ -246,6 +233,17 @@ def observe(
     now = today or date.today()
     since = (now - timedelta(weeks=weeks)).isoformat()
     out: list[Observation] = []
+
+    stated_odds = _stated_odds(conn)
+    out.append(
+        Observation(
+            "possible percentage forecasts to review (all history)",
+            ", ".join(stated_odds) if stated_odds else "none detected",
+            "Pattern matches only: quotations, negations and sourced statistics "
+            "can match; other wording can be missed. Inspect these rows. "
+            "This does not establish a violation or affect the eval exit status.",
+        )
+    )
 
     kinds = {
         row["kind"]: row["n"]
@@ -278,8 +276,10 @@ def observe(
             FROM llm_call WHERE feature = 'analyst' AND trace_id IS NOT NULL
             GROUP BY trace_id
         ) c ON c.trace_id = r.trace_id
+        WHERE r.run_date BETWEEN ? AND ?
         GROUP BY c.prompt_version ORDER BY c.prompt_version
         """,
+        (since, now.isoformat()),
     )
     if by_analyst:
         out.append(
@@ -289,7 +289,7 @@ def observe(
                     f"{row['prompt_version']}: {row['sourced']}/{row['n']}"
                     for row in by_analyst
                 ),
-                "A prompt change shows up here as a different share, not as a "
+                f"Last {weeks} weeks. A prompt change shows up as a different share, not as a "
                 "better one; a higher share can also mean easier questions.",
             )
         )
@@ -330,7 +330,9 @@ def observe(
         WITH runs AS (
             SELECT r.id run_id, MAX(c.prompt_version) prompt_version
             FROM research_run r
+            JOIN decision_batch b ON b.run_id = r.id
             JOIN llm_call c ON c.trace_id = r.trace_id AND c.feature = 'decision'
+            WHERE r.run_date BETWEEN ? AND ?
             GROUP BY r.id
         ),
         proposals AS (
@@ -345,6 +347,7 @@ def observe(
         FROM runs LEFT JOIN proposals p ON p.run_id = runs.run_id
         GROUP BY runs.prompt_version ORDER BY runs.prompt_version
         """,
+        (since, now.isoformat()),
     )
     if by_decide:
         out.append(
@@ -355,10 +358,29 @@ def observe(
                     f"{row['trades'] or 0} trades, {row['reviews'] or 0} REVIEW"
                     for row in by_decide
                 ),
+                f"Published batches in the last {weeks} weeks, including empty ones. "
                 "Trades include ones the rules refused. A prompt that proposes "
                 "more is behaving differently, not better or worse.",
             )
         )
+
+    unpublished = _rows(
+        conn,
+        """SELECT COUNT(*) n FROM research_run r
+        WHERE r.run_date BETWEEN ? AND ?
+          AND EXISTS (SELECT 1 FROM llm_call c
+                      WHERE c.trace_id=r.trace_id AND c.feature='decision')
+          AND NOT EXISTS (SELECT 1 FROM decision_batch b WHERE b.run_id=r.id)""",
+        (since, now.isoformat()),
+    )[0]["n"]
+    out.append(
+        Observation(
+            "decision runs without a published batch",
+            str(unpublished),
+            f"Last {weeks} weeks. Failed, rejected or still running attempts; "
+            "excluded from proposal activity, never counted as decisions to do nothing.",
+        )
+    )
 
     calls = _rows(
         conn,

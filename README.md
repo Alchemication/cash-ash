@@ -86,6 +86,10 @@ Sufficient coverage requires sourced answers to every planned question;
 background explanations cannot establish that current company facts were checked.
 Coverage alone does not establish an attractive investment.
 
+`main.py eval` separates completed decision activity from unpublished attempts.
+Prompt comparisons use `--weeks`; possible percentage forecasts are flagged for
+manual review and do not fail an invariant solely on a text match.
+
 ## How the book is kept
 
 The database is seeded from a broker snapshot you write by hand. That snapshot
