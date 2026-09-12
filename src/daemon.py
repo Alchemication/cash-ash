@@ -68,6 +68,14 @@ piece of user-controlled input that reaches a database write, so it is matched
 against a fixed shape rather than parsed.
 """
 
+_PROPOSAL_CALLBACK = re.compile(r"^pw:(\d+):(ok|no)$")
+"""Callback payloads confirming or cancelling a write the chat agent proposed.
+
+Matched the same way and for the same reason. What gets applied is the stored
+proposal, identified by this id — never anything carried in the payload, so a
+tampered callback can at most confirm something the owner was already shown.
+"""
+
 
 @dataclass(frozen=True)
 class Handled:
@@ -270,7 +278,20 @@ def handle_update(update: dict) -> Handled:
             )
             return Handled(kind="ignored", detail="unauthorised sender")
 
-        match = _CALLBACK.match(str(callback.get("data", "")))
+        data = str(callback.get("data", ""))
+        proposal = _PROPOSAL_CALLBACK.match(data)
+        if proposal is not None:
+            from daemon_chat import resolve_proposal
+
+            message = resolve_proposal(
+                profile, int(proposal.group(1)), proposal.group(2)
+            )
+            answer_callback(callback_id=callback["id"], text=message)
+            return Handled(
+                kind="proposal", profile=profile.name, detail=proposal.group(2)
+            )
+
+        match = _CALLBACK.match(data)
         if match is None:
             answer_callback(callback_id=callback["id"], text="Unrecognised button.")
             return Handled(kind="bad_callback", profile=profile.name)
@@ -476,11 +497,38 @@ def _scheduler_loop(stop: threading.Event) -> None:
     from reminders import send_due_snoozes
 
     while not stop.wait(SCHEDULED_CHECK_INTERVAL_S):
-        for task in (send_due_snoozes, _run_weekly_for_profiles):
+        for task in (_expire_proposals, send_due_snoozes, _run_weekly_for_profiles):
             try:
                 task()
             except Exception:  # noqa: BLE001 - one delivery must not stop the weekly run
                 logger.exception("Scheduler task failed: %s", task.__name__)
+
+
+def _expire_proposals() -> None:
+    """Close proposed writes nobody answered.
+
+    A cash proposal is arithmetic against the balance when it was made, so one
+    confirmed a day later would record a figure nobody checked. Left open they
+    also accumulate silently, which makes the table useless as a record of what
+    was actually decided.
+    """
+    from profiles import ProfileConfigError, load_profiles
+    from proposals import expire_stale
+    from store import open_existing_db
+
+    try:
+        profiles = load_profiles()
+    except ProfileConfigError:
+        return
+    for profile in profiles.values():
+        if not profile.enabled or not profile.db.exists():
+            continue
+        with open_existing_db(profile.db) as conn:
+            closed = expire_stale(conn)
+        if closed:
+            logger.info(
+                "Expired %d unanswered proposal(s) for %s", closed, profile.name
+            )
 
 
 def run_daemon(

@@ -46,12 +46,21 @@ Natural-language LLM prompts live in `src/prompts/`; keep tool schemas beside
 tool code.
 
 **The chat agent may read, never write, and never advise.** `run_sql` is a
-`mode=ro` connection and must stay one. SQL must not compute money: cost basis
+`mode=ro` connection and must stay one. A change it asks for is a `Proposal`
+returned from the tool, persisted to `pending_write`, and applied only by the
+owner's button — so the sentence they agreed to and the write are the same
+object, and every proposal states the resulting state (`cash goes €90 → €250`)
+so a misparsed sentence is visible before it is recorded. Validate when the
+proposal is built, never when it is applied. SQL must not compute money: cost basis
 is path-dependent and an unpriceable holding reports `None`, so every euro
 figure, weight and return comes from `portfolio_snapshot` or
 `concentration_report`, which call `portfolio.py`. Buy and sell recommendations
 come from the weekly run with its guardrails — chat points at it and does not
 answer itself, and never states a probability, confidence or price target.
+
+Model-written chart code runs in a subprocess that can be killed, never on a
+thread: a thread cannot be stopped, and one runaway loop starves every later
+chart for the life of the daemon.
 
 Tool results reach the model as markdown, not JSON: JSON repeats a key per row
 and leaves `"value_eur": null` to be interpreted. Structured rows travel beside
@@ -175,6 +184,9 @@ Layers, bottom up:
 - `src/models.py` — plain dataclasses, no persistence
 - `src/portfolio.py` — derived positions, valuation, concentration
 - `src/seed.py` — the 2026-09-02 Revolut snapshot and its cost-basis derivation
+- `src/proposals.py` — writes the agent proposes and the owner confirms
+- `src/charts.py`, `src/chart_worker.py` — charts the agent draws, run in a
+  killable child process
 - `src/chat_tools.py` — the agent's read-only tools and their rendering
 - `src/chat.py` — the chat tool loop and its guards
 - `src/daemon_chat.py` — running a chat turn off the polling thread

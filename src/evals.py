@@ -84,6 +84,8 @@ def run_checks(conn: sqlite3.Connection) -> list[Check]:
     """
     checks: list[Check] = []
 
+    checks.extend(_chat_checks(conn))
+
     unfalsifiable = _rows(
         conn,
         """
@@ -196,6 +198,106 @@ def run_checks(conn: sqlite3.Connection) -> list[Check]:
     return checks
 
 
+def _chat_checks(conn: sqlite3.Connection) -> list[Check]:
+    """Return the invariants covering the chat agent's write path.
+
+    Only integrity is checked here, not judgement. Whether an answer was a good
+    answer has no threshold worth inventing; whether a write reached the ledger
+    without the owner agreeing to it is a defect with no tolerable rate.
+    """
+    if not _has_table(conn, "pending_write"):
+        return []
+
+    applied_unconfirmed = _rows(
+        conn,
+        """
+        SELECT id FROM pending_write
+        WHERE result IS NOT NULL AND resolution IS NOT 'confirmed'
+        ORDER BY id
+        """,
+    )
+    checks = [
+        Check(
+            name="only a confirmed proposal was ever applied",
+            passed=not applied_unconfirmed,
+            why=(
+                "A proposal carrying a result is one that was written to the "
+                "book. If it was cancelled or expired, something applied a "
+                "change the owner declined or never answered, which is the one "
+                "thing the confirmation step exists to prevent."
+            ),
+            offenders=tuple(f"proposal {row['id']}" for row in applied_unconfirmed),
+        )
+    ]
+
+    # Everything the chat path wrote carries this note, and every one of them
+    # should be traceable back to a proposal the owner confirmed. One that is
+    # not means a write reached the ledger around the buttons. The marker
+    # differs by table so a cash flow and a trade sharing a row id cannot vouch
+    # for each other.
+    unbacked: list[str] = []
+    for table, marker in (("cash_flows", "#{}"), ("trades", "#t{}")):
+        for row in _rows(
+            conn, f"SELECT id FROM {table} WHERE note LIKE '%via chat%' ORDER BY id"
+        ):
+            backed = _rows(
+                conn,
+                """
+                SELECT 1 FROM pending_write
+                WHERE resolution = 'confirmed' AND result LIKE ?
+                """,
+                (f"%[{marker.format(row['id'])}]%",),
+            )
+            if not backed:
+                unbacked.append(f"{table} {row['id']}")
+    checks.append(
+        Check(
+            name="every write from chat has a confirmation behind it",
+            passed=not unbacked,
+            why=(
+                "The chat agent proposes and never writes. A cash flow or trade "
+                "marked as coming from chat with no confirmed proposal behind "
+                "it means that rule was bypassed, and the owner may never have "
+                "seen the figure that was recorded. A trade especially: it is "
+                "wrong in every derived number until somebody notices."
+            ),
+            offenders=tuple(unbacked),
+        )
+    )
+    return checks
+
+
+_LEDGER_FIGURE = re.compile(
+    r"€\s?\d|(?<![\w.])\d{1,3}(?:\.\d+)?\s?%\s*(?:of|weight|position|portfolio)"
+)
+"""A figure in a note that the ledger probably already holds.
+
+A note is replayed into later research without the conversation around it, and
+a weight or a value written down today is wrong within the week — the ledger has
+the real one. Numbers the owner supplied are legitimate, so this cannot be a
+failure: it is a prompt to read the line and decide.
+"""
+
+
+def _notes_restating_figures(conn: sqlite3.Connection) -> list[str]:
+    """Identify confirmed notes that look like they restate a stored figure."""
+    if not _has_table(conn, "pending_write"):
+        return []
+    found: list[str] = []
+    for row in _rows(
+        conn,
+        """
+        SELECT id, payload_json FROM pending_write
+        WHERE kind = 'context_note' AND resolution = 'confirmed'
+        ORDER BY id
+        """,
+    ):
+        line = str(json.loads(row["payload_json"]).get("line", ""))
+        if _LEDGER_FIGURE.search(line):
+            found.append(f"note {row['id']}")
+    return found
+
+
 def _stated_odds(conn: sqlite3.Connection) -> list[str]:
     """Identify possible percentage forecasts for review, without judging intent."""
     found: list[str] = []
@@ -205,6 +307,16 @@ def _stated_odds(conn: sqlite3.Connection) -> list[str]:
     for row in _rows(conn, "SELECT id, rationale FROM decision_refusal ORDER BY id"):
         if _STATED_ODDS.search(row["rationale"]):
             found.append(f"refusal {row['id']}")
+    for row in _rows(
+        conn,
+        """
+        SELECT id, response_text FROM llm_call
+        WHERE feature = 'chat' AND response_text IS NOT NULL
+        ORDER BY id
+        """,
+    ):
+        if _STATED_ODDS.search(row["response_text"]):
+            found.append(f"chat answer {row['id']}")
     for row in _rows(
         conn,
         "SELECT run_id, reason, answers_json FROM research_assessment ORDER BY run_id",
@@ -244,6 +356,22 @@ def observe(
             "This does not establish a violation or affect the eval exit status.",
         )
     )
+
+    notes = _notes_restating_figures(conn)
+    if notes:
+        out.append(
+            Observation(
+                "notes that may restate a stored figure",
+                ", ".join(notes),
+                "A note is read back into later research without the "
+                "conversation around it, so a weight or a value written into "
+                "one is wrong by the time it is read — the ledger has the real "
+                "figure. Numbers the owner supplied are fine, so read the line "
+                "rather than assume. This does not affect the exit status.",
+            )
+        )
+
+    out.extend(_chat_observations(conn, since=since, weeks=weeks))
 
     kinds = {
         row["kind"]: row["n"]
@@ -472,6 +600,86 @@ def observe(
         )
 
     return out
+
+
+def _chat_observations(
+    conn: sqlite3.Connection, *, since: str, weeks: int
+) -> list[Observation]:
+    """Return what the chat agent has been doing, without judging it."""
+    out: list[Observation] = []
+
+    turns = _rows(
+        conn,
+        """
+        SELECT
+            COUNT(DISTINCT t.id) turns,
+            COUNT(c.id) calls,
+            COALESCE(SUM(c.cost_usd), 0) cost
+        FROM llm_trace t
+        LEFT JOIN llm_call c ON c.trace_id = t.id
+        WHERE t.operation = 'chat' AND t.started_at >= ?
+        """,
+        (since,),
+    )[0]
+    if turns["turns"]:
+        per_turn = turns["calls"] / turns["turns"]
+        out.append(
+            Observation(
+                f"chat questions in {weeks} weeks",
+                f"{turns['turns']} ({turns['calls']} model calls, "
+                f"{per_turn:.1f} per question)",
+                "Two calls a question is the ordinary shape: one to pick a "
+                "tool, one to answer. A rising figure means the loop is not "
+                "converging and is worth reading in 'llm-log'.",
+            )
+        )
+        out.append(
+            Observation(
+                f"chat spend in {weeks} weeks",
+                f"${turns['cost']:.4f}",
+                "Chat is asked for on demand rather than once a week, so it is "
+                "the easiest part of the system to spend real money on. Judge "
+                "it against the portfolio, not against the number.",
+            )
+        )
+
+    if not _has_table(conn, "pending_write"):
+        return out
+
+    proposals = _rows(
+        conn,
+        """
+        SELECT COALESCE(resolution, 'waiting') state, COUNT(*) n
+        FROM pending_write
+        WHERE proposed_at >= ?
+        GROUP BY state
+        ORDER BY state
+        """,
+        (since,),
+    )
+    if proposals:
+        out.append(
+            Observation(
+                f"writes proposed in {weeks} weeks",
+                ", ".join(f"{row['n']} {row['state']}" for row in proposals),
+                "Cancelled means a proposal was read and refused, which is the "
+                "step working. Expired means it was never answered, which more "
+                "often means the sentence did not make sense than that the "
+                "owner changed their mind.",
+            )
+        )
+    return out
+
+
+def _has_table(conn: sqlite3.Connection, table: str) -> bool:
+    """Return whether a table exists, so a database behind a migration reports."""
+    return bool(
+        _rows(
+            conn,
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        )
+    )
 
 
 def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:

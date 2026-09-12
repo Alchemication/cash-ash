@@ -460,6 +460,226 @@ class TestByPromptVersion:
             assert name in wide
 
 
+class TestChatWritePath:
+    """The agent proposes and never writes. These break that on purpose."""
+
+    APPLIED = "only a confirmed proposal was ever applied"
+    BACKED = "every write from chat has a confirmation behind it"
+
+    def _proposal(self, conn: sqlite3.Connection, amount: float = 25.0) -> int:
+        from proposals import cash_flow, save
+
+        return save(conn, cash_flow(conn, kind="CONTRIBUTION", amount_eur=amount))
+
+    def test_an_untouched_book_passes_both(self, seeded: sqlite3.Connection) -> None:
+        assert _check(seeded, self.APPLIED).passed
+        assert _check(seeded, self.BACKED).passed
+
+    def test_a_confirmed_proposal_passes_both(self, seeded: sqlite3.Connection) -> None:
+        from proposals import confirm
+
+        confirm(seeded, self._proposal(seeded))
+        assert _check(seeded, self.APPLIED).passed
+        assert _check(seeded, self.BACKED).passed
+
+    def test_a_cancelled_proposal_that_wrote_anyway_fails(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        # The one thing the confirmation step exists to prevent.
+        proposal_id = self._proposal(seeded)
+        with seeded:
+            seeded.execute(
+                """
+                UPDATE pending_write
+                SET resolved_at = '2026-09-07T10:00:00',
+                    resolution = 'cancelled',
+                    result = 'Recorded CONTRIBUTION of €25.00. [#99]'
+                WHERE id = ?
+                """,
+                (proposal_id,),
+            )
+        check = _check(seeded, self.APPLIED)
+        assert not check.passed
+        assert check.offenders == (f"proposal {proposal_id}",)
+
+    def test_a_chat_trade_with_no_proposal_behind_it_fails(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        # The worst case the check exists for: a trade is wrong in every
+        # derived figure until somebody notices.
+        from models import Trade
+        from store import insert_trade, load_securities
+
+        security = next(iter(load_securities(seeded).values()))
+        row_id = insert_trade(
+            seeded,
+            Trade(
+                security_id=security.id,
+                trade_date="2026-09-07",
+                side="BUY",
+                quantity=1.0,
+                amount_eur=25.0,
+                note="via chat",
+            ),
+        )
+        check = _check(seeded, self.BACKED)
+        assert not check.passed
+        assert check.offenders == (f"trades {row_id}",)
+
+    def test_a_confirmed_trade_passes(self, seeded: sqlite3.Connection) -> None:
+        from proposals import confirm, save, trade
+        from store import load_securities
+
+        ticker = next(iter(load_securities(seeded))).upper()
+        confirm(
+            seeded,
+            save(
+                seeded,
+                trade(seeded, ticker=ticker, side="BUY", quantity=1.0, amount_eur=5.0),
+            ),
+        )
+        assert _check(seeded, self.BACKED).passed
+
+    def test_a_chat_cash_flow_with_no_proposal_behind_it_fails(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        # A write that reached the ledger around the buttons.
+        from models import CashFlow
+        from store import insert_cash_flow
+
+        row_id = insert_cash_flow(
+            seeded,
+            CashFlow(
+                flow_date="2026-09-07",
+                kind="CONTRIBUTION",
+                amount_eur=25.0,
+                note="via chat",
+            ),
+        )
+        check = _check(seeded, self.BACKED)
+        assert not check.passed
+        assert check.offenders == (f"cash_flows {row_id}",)
+
+    def test_a_cash_flow_recorded_by_hand_is_not_implicated(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        # 'main.py cash' writes directly and always has; only the chat path
+        # carries the marker this check looks for.
+        from models import CashFlow
+        from store import insert_cash_flow
+
+        insert_cash_flow(
+            seeded,
+            CashFlow(
+                flow_date="2026-09-07",
+                kind="CONTRIBUTION",
+                amount_eur=25.0,
+                note="Actual deposit",
+            ),
+        )
+        assert _check(seeded, self.BACKED).passed
+
+
+class TestChatObservations:
+    """Reported without a verdict, because none of these has a right value."""
+
+    @pytest.fixture
+    def notes_dir(self, tmp_path):  # type: ignore[no-untyped-def]
+        """Somewhere for a confirmed note to land."""
+        return tmp_path / "context"
+
+    def _observation(self, conn: sqlite3.Connection, fragment: str):
+        return next(
+            (item for item in observe(conn, today=TODAY) if fragment in item.name),
+            None,
+        )
+
+    def test_nothing_is_reported_before_the_first_question(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        assert self._observation(seeded, "chat questions") is None
+
+    def test_questions_and_calls_per_question_are_counted(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        trace = create_llm_trace(seeded, operation="chat", feature="chat")
+        for _ in range(3):
+            log_llm_call(
+                seeded,
+                trace_id=trace,
+                feature="chat",
+                model="flash",
+                requested_model="flash",
+                messages_json="[]",
+                response_text="You hold €4.15.",
+                cost_usd=0.0002,
+            )
+        observation = self._observation(seeded, "chat questions")
+        assert "1 (3 model calls, 3.0 per question)" in observation.value
+
+    def test_spend_is_reported_so_it_can_be_judged(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        trace = create_llm_trace(seeded, operation="chat", feature="chat")
+        log_llm_call(
+            seeded,
+            trace_id=trace,
+            feature="chat",
+            model="flash",
+            requested_model="flash",
+            messages_json="[]",
+            response_text="ok",
+            cost_usd=0.0006,
+        )
+        assert self._observation(seeded, "chat spend").value == "$0.0006"
+
+    def test_proposals_are_reported_by_how_they_ended(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        from proposals import cancel, cash_flow, confirm, save
+
+        confirm(
+            seeded, save(seeded, cash_flow(seeded, kind="CONTRIBUTION", amount_eur=5.0))
+        )
+        cancel(seeded, save(seeded, cash_flow(seeded, kind="DIVIDEND", amount_eur=1.0)))
+        save(seeded, cash_flow(seeded, kind="FEE", amount_eur=2.0))
+        value = self._observation(seeded, "writes proposed").value
+        assert "1 cancelled" in value
+        assert "1 confirmed" in value
+        assert "1 waiting" in value
+
+    def test_a_note_restating_a_weight_is_flagged_for_review(
+        self, seeded: sqlite3.Connection, notes_dir
+    ) -> None:
+        # Wrong within the week, and the ledger holds the real figure.
+        from proposals import confirm, context_note, save
+
+        proposal_id = save(
+            seeded, context_note(file="log", text="TEST now 19.4% of the portfolio")
+        )
+        confirm(seeded, proposal_id, context_dir=notes_dir)
+        observation = self._observation(seeded, "restate a stored figure")
+        assert observation is not None
+        assert f"note {proposal_id}" in observation.value
+
+    def test_a_note_carrying_the_owner_s_own_numbers_is_not_flagged(
+        self, seeded: sqlite3.Connection, notes_dir
+    ) -> None:
+        from proposals import confirm, context_note, save
+
+        confirm(
+            seeded,
+            save(
+                seeded,
+                context_note(
+                    file="log", text="bought more TEST, float argument still holds"
+                ),
+            ),
+            context_dir=notes_dir,
+        )
+        assert self._observation(seeded, "restate a stored figure") is None
+
+
 class TestObservations:
     """Numbers with no correct value, reported without a verdict."""
 

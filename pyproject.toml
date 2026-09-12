@@ -9,6 +9,11 @@ dependencies = [
     "python-dotenv==1.0.1",
     "rich==14.3.3",
     "yfinance==1.7.0",
+    # Charts the chat agent sends to Telegram. Pinned exactly because a major
+    # bump changes how a figure renders, and the only way anyone notices is by
+    # looking at a picture on their phone.
+    "plotly==7.0.0",
+    "kaleido==1.4.0",
 ]
 
 [dependency-groups]

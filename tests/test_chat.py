@@ -296,6 +296,85 @@ class TestGuards:
         assert "Cash: €200.00." in final
 
 
+class TestProposals:
+    """A proposed write travels back unapplied; nothing here may change data."""
+
+    def test_a_proposal_reaches_the_answer(self, log_conn, db: Path, model) -> None:
+        model["replies"] = [
+            _tool_turn(_call("propose_cash_flow", kind="CONTRIBUTION", amount_eur=160)),
+            FakeResult(text="Put that up to confirm."),
+        ]
+        result = _answer(log_conn, db)
+        assert len(result.proposals) == 1
+        assert result.proposals[0].kind == "cash_flow"
+        assert "€200.00 → €360.00" in result.proposals[0].summary
+
+    def test_proposing_writes_nothing_by_itself(
+        self, log_conn, db: Path, model
+    ) -> None:
+        # The whole point: a model cannot change the book, only ask to.
+        from portfolio import cash_eur
+
+        model["replies"] = [
+            _tool_turn(_call("propose_cash_flow", kind="CONTRIBUTION", amount_eur=160)),
+            FakeResult(text="Put that up to confirm."),
+        ]
+        _answer(log_conn, db)
+        assert cash_eur(log_conn, account_id=1) == pytest.approx(200.0)
+        assert log_conn.execute("SELECT COUNT(*) FROM pending_write").fetchone()[0] == 0
+
+    def test_the_model_is_told_it_is_not_done(self, log_conn, db: Path, model) -> None:
+        # Told only "proposed", a model reports back that it is recorded and the
+        # owner stops looking for the button.
+        model["replies"] = [
+            _tool_turn(_call("propose_context_note", file="log", text="float holds")),
+            FakeResult(text="Put that up to confirm."),
+        ]
+        _answer(log_conn, db)
+        told = model["sent"][1][-1]["content"]
+        assert "nothing is recorded yet" in told
+        assert "Do not say it is done" in told
+
+    def test_a_refused_proposal_is_a_readable_reason(
+        self, log_conn, db: Path, model
+    ) -> None:
+        # The model has to hear what would be acceptable, not that it crashed.
+        model["replies"] = [
+            _tool_turn(
+                _call(
+                    "propose_cash_flow",
+                    kind="CONTRIBUTION",
+                    amount_eur=160,
+                    new_balance_eur=250,
+                )
+            ),
+            FakeResult(text="Which did you mean?"),
+        ]
+        result = _answer(log_conn, db)
+        assert result.proposals == ()
+        assert "not both and not neither" in model["sent"][1][-1]["content"]
+
+    def test_a_read_only_turn_is_offered_no_writing_tools(
+        self, log_conn, db: Path, model
+    ) -> None:
+        model["replies"] = [FakeResult(text="ok")]
+        answer(
+            log_conn,
+            db_path=db,
+            history=[{"role": "user", "content": "cash?"}],
+            can_write=False,
+        )
+        offered = {tool["function"]["name"] for tool in model["tools_offered"][0]}
+        assert offered == {"run_sql", "portfolio_snapshot", "concentration_report"}
+
+    def test_a_writing_turn_offers_both_sets(self, log_conn, db: Path, model) -> None:
+        model["replies"] = [FakeResult(text="ok")]
+        _answer(log_conn, db)
+        offered = {tool["function"]["name"] for tool in model["tools_offered"][0]}
+        assert "propose_cash_flow" in offered
+        assert "portfolio_snapshot" in offered
+
+
 class TestToolFailures:
     """A tool that fails is a fact the model works around, not a crash."""
 
@@ -393,6 +472,45 @@ class TestLogging:
 
         assert "chat" in FEATURES
         assert resolve_route("chat").model
+
+
+class TestPromptContract:
+    """Rules the prompt has to keep carrying, taken from observed failures."""
+
+    @pytest.fixture
+    def prompt(self) -> str:
+        # Whitespace-normalised: these rules are about what the prompt says, and
+        # reflowing a paragraph must not fail a test about its meaning.
+        from research import load_prompt
+
+        return " ".join(load_prompt("chat.md").split())
+
+    def test_a_question_is_not_an_instruction_to_write(self, prompt: str) -> None:
+        # The failure this guards: a model proposing a log note because the
+        # owner asked a question. It puts a button in front of someone who
+        # wanted a number.
+        assert "A question is not" in prompt
+        assert "Only propose when they are telling you something to keep" in prompt
+
+    def test_a_proposal_must_not_be_reported_as_done(self, prompt: str) -> None:
+        assert "Never say it is recorded, added, saved or done" in prompt
+
+    def test_the_model_must_not_ask_for_confirmation_in_words(
+        self, prompt: str
+    ) -> None:
+        # Belt and braces with the buttons: asking as well reads as two
+        # different confirmations and neither is obviously the real one.
+        assert "The buttons do that" in prompt
+
+    def test_a_note_must_not_restate_what_the_ledger_holds(self, prompt: str) -> None:
+        # A note is replayed into later prompts; a weight written down today is
+        # wrong within the week, and the ledger has the real one.
+        assert "Never restate a value, weight, quantity or return" in prompt
+        assert "without this conversation" in prompt
+
+    def test_the_balance_ambiguity_is_called_out(self, prompt: str) -> None:
+        assert "new_balance_eur" in prompt
+        assert "ask" in prompt
 
 
 def test_the_prompt_forbids_an_investment_recommendation() -> None:

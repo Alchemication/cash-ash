@@ -560,3 +560,37 @@ CHAT_CONVERSATION_MESSAGES: int = 20
 Ten exchanges is more than any real follow-up chain reaches, and the cost of
 keeping them is paid on every call — the whole buffer is resent each time.
 """
+
+PROPOSAL_TTL_MINUTES: int = 30
+"""How long a proposed write waits for an answer before it expires.
+
+A cash proposal is built against the balance at the time it was made, so an
+answer arriving hours later would apply arithmetic nobody checked. Half an hour
+covers putting the phone down mid-conversation; past that, asking again is
+cheap and re-reads the current figures.
+"""
+
+PROPOSAL_NOTE_MAX_CHARS: int = 240
+"""Longest note a single chat proposal may append to a context file.
+
+These files are replayed into research prompts, so every line is paid for on
+every later call. One sentence that stands on its own is the unit; a paragraph
+means the conversation was the real record and the note will not make sense
+without it.
+"""
+
+CHART_EXEC_TIMEOUT_S: float = 10.0
+"""Seconds chart code may run before it is abandoned.
+
+Plotly renders a fourteen-point chart in well under a second, so anything near
+this is a loop rather than work — and the person is watching a placeholder while
+it runs.
+"""
+
+CHART_WIDTH_PX: int = 900
+CHART_HEIGHT_PX: int = 450
+"""Chart size before the 2x scale factor, chosen for a phone in portrait.
+
+Wider than it is tall, because every chart here is a handful of categories or a
+short series, and Telegram scales an image to the width of the message.
+"""

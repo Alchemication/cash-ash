@@ -15,16 +15,9 @@ and produce a plausible wrong figure. These return what ``portfolio.py``
 computes, so the euro figures the agent quotes are the ones every other part of
 CashAsh quotes.
 
-Results are rendered as markdown, not JSON. JSON spends tokens repeating a key
-on every row and leaves the reasoning implicit: ``"value_eur": null`` beside
-``"unrealised_return_pct": null`` has to be interpreted, where "UNPRICED —
-excluded from the total" states it. Structured rows are still carried alongside
-the text for anything that needs to compute on them, such as drawing a chart.
-
-One inversion worth noting against the same approach in zdrowskit, where a
-missing metric is simply left out of the rendering: here a missing price is
-stated as loudly as a present one. An omitted holding would read as a portfolio
-that does not contain it.
+What a result *says* lives in ``chat_render``; this module decides what to
+fetch. Results reach the model as markdown rather than JSON, with structured
+rows carried alongside the text for anything that has to compute on them.
 
 Public API:
     chat_tools     -- tool definitions, in litellm's function-calling format
@@ -55,6 +48,8 @@ from config import (
     CHAT_SQL_ROW_LIMIT,
     CHAT_SQL_TIMEOUT_S,
 )
+from chat_render import UNPRICED, eur, rows_table
+from proposals import CASH_FLOW_KINDS, NOTE_FILES, ProposalError
 
 logger = logging.getLogger(__name__)
 
@@ -77,11 +72,16 @@ class ToolResult:
         rows: The same data structured, for code that has to compute on it —
             a chart, an eval assertion. Empty unless the tool returned a table.
         ok: False when the text is a failure the model has to react to.
+        proposal: A ``proposals.Proposal`` the owner must confirm, for a tool
+            that asked to change something. Returned rather than saved here so
+            these tools stay read-only; the caller persists it and puts the
+            buttons on it.
     """
 
     text: str
     rows: tuple[dict, ...] = field(default_factory=tuple)
     ok: bool = True
+    proposal: object | None = None
 
 
 _REQUIRED_VIEWS: frozenset[str] = frozenset(
@@ -98,22 +98,6 @@ query that was already correct. Nothing is granted by allowing it: read-only is
 enforced by the ``mode=ro`` connection, and the ``SELECT`` wrapper below only
 compiles around a statement that is already a query, so ``WITH ... INSERT``
 fails twice over.
-"""
-
-_MAX_CELL_CHARS = 300
-"""Longest value rendered in one table cell before it is cut short.
-
-The row cap bounds how many rows a query returns, not how large one is, and
-``llm_call.messages_json`` holds a whole prompt in a single cell — one row of
-it would crowd out the conversation it is part of. Three hundred characters is
-enough to see what a value is and decide whether to ask about it specifically.
-"""
-
-_UNPRICED = "UNPRICED"
-"""How a holding with no price is shown.
-
-A word rather than a blank or a dash, because it has to survive being read
-quickly: the one mistake that matters here is treating it as zero.
 """
 
 
@@ -172,7 +156,7 @@ def chat_tools() -> list[dict]:
                     "unrealised return, weight and how it was priced, plus cash "
                     "and the total. Any euro figure, weight or return you state "
                     "must come from here. A holding that cannot be priced is "
-                    f"marked {_UNPRICED} and is excluded from the total and "
+                    f"marked {UNPRICED} and is excluded from the total and "
                     "from every weight — say so rather than treating it as "
                     "zero."
                 ),
@@ -215,8 +199,183 @@ def chat_tools() -> list[dict]:
     ]
 
 
+def propose_tools() -> list[dict]:
+    """Return the tool definitions that ask to change something.
+
+    Separate from :func:`chat_tools` so a caller can offer the reading tools
+    without the writing ones — an eval measuring how a question is answered
+    should not be able to propose a contribution.
+
+    Returns:
+        Tool definitions, ready to append to ``tools=``.
+    """
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "propose_cash_flow",
+                "description": (
+                    "Propose recording money that moved in or out of the "
+                    "account: a top-up, a withdrawal, a dividend, a fee. This "
+                    "does NOT record anything — the owner is shown one sentence "
+                    "and taps to confirm. Never tell them it is done; say you "
+                    "have put it up for confirmation. Pass amount_eur when they "
+                    "said how much moved ('added 160', 'put in 160'), or "
+                    "new_balance_eur when they said what the balance now is "
+                    "('topped up to 250'). Those differ by a lot and sound "
+                    "alike: when it is genuinely unclear which they meant, ask "
+                    "instead of choosing."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": sorted(CASH_FLOW_KINDS),
+                            "description": "What kind of movement it was.",
+                        },
+                        "amount_eur": {
+                            "type": "number",
+                            "description": (
+                                "How much moved, as a positive number. The sign "
+                                "follows from the kind."
+                            ),
+                        },
+                        "new_balance_eur": {
+                            "type": "number",
+                            "description": (
+                                "What cash is now, when that is what they said "
+                                "rather than how much moved."
+                            ),
+                        },
+                        "day": {
+                            "type": "string",
+                            "description": (
+                                "ISO date it happened. Omit for today. Never a "
+                                "future date."
+                            ),
+                        },
+                        "note": {
+                            "type": "string",
+                            "description": "Short reason, in their words.",
+                        },
+                    },
+                    "required": ["kind"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "propose_trade",
+                "description": (
+                    "Propose recording a buy or a sell the owner already made "
+                    "at their broker. This does NOT record anything — they "
+                    "confirm with a button, and you must not say it is done. "
+                    "Only for a security already in the portfolio: something "
+                    "new needs its listing currency and feed symbol set "
+                    "deliberately or it can never be priced, so say that and "
+                    "do not attempt it. Give amount_eur when they said the "
+                    "total they paid or received, or price_native when they "
+                    "said a price per share — 'bought 2 at 470' is "
+                    "price_native. Quantity is units, always positive; the "
+                    "side carries the direction. This changes every derived "
+                    "figure in the book, so if the quantity, the price or "
+                    "which way round it was is unclear, ask."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "ticker": {
+                            "type": "string",
+                            "description": "A currently held security.",
+                        },
+                        "side": {
+                            "type": "string",
+                            "enum": ["BUY", "SELL"],
+                            "description": "Which way the trade went.",
+                        },
+                        "quantity": {
+                            "type": "number",
+                            "description": "Units traded, positive.",
+                        },
+                        "amount_eur": {
+                            "type": "number",
+                            "description": (
+                                "EUR total, excluding the fee, when that is "
+                                "what they gave."
+                            ),
+                        },
+                        "price_native": {
+                            "type": "number",
+                            "description": (
+                                "Price per unit in the security's own "
+                                "currency, when that is what they gave."
+                            ),
+                        },
+                        "fee_eur": {
+                            "type": "number",
+                            "description": "Commission charged, positive.",
+                        },
+                        "day": {
+                            "type": "string",
+                            "description": "ISO date it filled. Omit for today.",
+                        },
+                        "note": {
+                            "type": "string",
+                            "description": "Short reason, in their words.",
+                        },
+                    },
+                    "required": ["ticker", "side", "quantity"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "propose_context_note",
+                "description": (
+                    "Propose appending one dated line to the owner's own notes: "
+                    "'log' for why they did something, what they are watching, "
+                    "a doubt they have not acted on; 'watchlist' for a company "
+                    "they are interested in but do not own. This does NOT write "
+                    "anything — they confirm with a button. Only when they are "
+                    "telling you something to keep. A question is not a note, "
+                    "and neither is something you worked out yourself. These "
+                    "lines are read back into later research without this "
+                    "conversation, so the line must make sense alone, and must "
+                    "not restate a value, weight or return the ledger already "
+                    "holds — those move, the note does not."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file": {
+                            "type": "string",
+                            "enum": sorted(NOTE_FILES),
+                            "description": "Which of their notes to add to.",
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": (
+                                "One line, their words where possible, their "
+                                "numbers verbatim. No date — it is added."
+                            ),
+                        },
+                        "day": {
+                            "type": "string",
+                            "description": "ISO date it concerns. Omit for today.",
+                        },
+                    },
+                    "required": ["file", "text"],
+                },
+            },
+        },
+    ]
+
+
 TOOL_NAMES: frozenset[str] = frozenset(
-    tool["function"]["name"] for tool in chat_tools()
+    tool["function"]["name"] for tool in (*chat_tools(), *propose_tools())
 )
 
 
@@ -244,6 +403,17 @@ def execute_tool(name: str, arguments: dict, db_path: Path) -> ToolResult:
             return _portfolio_snapshot(db_path, arguments)
         if name == "concentration_report":
             return _concentration_report(db_path, arguments)
+        if name == "propose_cash_flow":
+            return _propose_cash_flow(db_path, arguments)
+        if name == "propose_trade":
+            return _propose_trade(db_path, arguments)
+        if name == "propose_context_note":
+            return _propose_context_note(arguments)
+    except ProposalError as exc:
+        # Not a fault: the model asked for something the rules refuse, and the
+        # message says what would be acceptable instead.
+        logger.info("Tool %s refused: %s", name, exc)
+        return _failed(str(exc))
     except ChatToolError as exc:
         logger.warning("Tool %s cannot run: %s", name, exc)
         return _failed(str(exc))
@@ -256,67 +426,6 @@ def execute_tool(name: str, arguments: dict, db_path: Path) -> ToolResult:
 def _failed(message: str) -> ToolResult:
     """Render a failure the model has to read and work around."""
     return ToolResult(text=f"Error: {message}", ok=False)
-
-
-# ---------------------------------------------------------------------------
-# Rendering
-# ---------------------------------------------------------------------------
-
-
-def _eur(amount: float) -> str:
-    """Render a EUR amount at cent precision, thousands separated."""
-    return f"€{amount:,.2f}"
-
-
-def _pct(value: float, *, signed: bool = False) -> str:
-    """Render a percentage at one decimal, optionally with an explicit sign."""
-    return f"{value:+.1f}%" if signed else f"{value:.1f}%"
-
-
-def _quantity(value: float) -> str:
-    """Render a share count without inventing precision it does not have.
-
-    Fractional-share brokers produce quantities like 0.0741, and 2.0 shares is
-    two shares. Trailing zeros are dropped so neither reads as noise.
-    """
-    text = f"{value:,.4f}".rstrip("0").rstrip(".")
-    return text or "0"
-
-
-def _cell(value: object) -> str:
-    """Render one arbitrary SQL value for a markdown table.
-
-    SQL NULL is spelled out rather than blanked: a query about what is missing
-    is a normal question, and an empty cell would read as a rendering gap. A
-    pipe or newline inside a value is neutralised so one trade note cannot
-    break the table it sits in.
-    """
-    if value is None:
-        return "NULL"
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, float):
-        # Six significant figures keeps a price readable and stops a float
-        # artefact like 50.333333333333336 from looking like precision.
-        text = f"{value:.6g}"
-    elif isinstance(value, bytes):
-        text = value.decode("utf-8", errors="replace")
-    else:
-        text = str(value)
-    text = text.replace("|", "\\|").replace("\n", " ").strip()
-    if len(text) > _MAX_CELL_CHARS:
-        return f"{text[:_MAX_CELL_CHARS]}… [{len(text)} chars, truncated]"
-    return text
-
-
-def _table(headers: list[str], rows: list[list[str]]) -> str:
-    """Render a markdown pipe table, header once and values after."""
-    lines = [
-        "| " + " | ".join(headers) + " |",
-        "| " + " | ".join("---" for _ in headers) + " |",
-    ]
-    lines.extend("| " + " | ".join(row) + " |" for row in rows)
-    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -449,7 +558,9 @@ def _run_sql(db_path: Path, arguments: dict) -> ToolResult:
                 rows = [dict(row) for row in cursor.fetchall()]
             finally:
                 conn.close()
-            outcome[0] = _render_rows(columns, rows, limit)
+            outcome[0] = ToolResult(
+                text=rows_table(columns, rows, limit), rows=tuple(rows)
+            )
         except ChatToolError as exc:
             logger.warning("Chat query cannot run: %s", exc)
             outcome[0] = _failed(str(exc))
@@ -463,30 +574,9 @@ def _run_sql(db_path: Path, arguments: dict) -> ToolResult:
     return outcome[0]
 
 
-def _render_rows(columns: list[str], rows: list[dict], limit: int) -> ToolResult:
-    """Render query rows as a table, saying plainly when there are none."""
-    if not rows:
-        return ToolResult(
-            text="No rows. The query ran and matched nothing.", rows=(), ok=True
-        )
-
-    body = _table(
-        columns, [[_cell(row.get(column)) for column in columns] for row in rows]
-    )
-    header = f"{len(rows)} row{'s' if len(rows) != 1 else ''}."
-    if len(rows) >= limit:
-        # The model cannot tell a complete answer from a truncated one, and a
-        # truncated one silently becomes "that is all of them".
-        header += (
-            f" This is the {limit}-row limit, so there may be more. "
-            f"Aggregate, or narrow the query, before concluding anything about "
-            f"totals or counts."
-        )
-    return ToolResult(text=f"{header}\n\n{body}", rows=tuple(rows), ok=True)
-
-
 def _portfolio_snapshot(db_path: Path, arguments: dict) -> ToolResult:
     """Render the canonical portfolio state, with unpriced holdings named."""
+    from chat_render import holding_row, holdings_table, one_holding
     from portfolio import cash_eur, holdings, total_value
     from quality import valuation_gaps
 
@@ -503,7 +593,7 @@ def _portfolio_snapshot(db_path: Path, arguments: dict) -> ToolResult:
     if not rows:
         return ToolResult(
             text=(
-                f"No open positions. Cash is {_eur(cash)}. Nothing has been "
+                f"No open positions. Cash is {eur(cash)}. Nothing has been "
                 f"bought, or everything has been sold."
             )
         )
@@ -511,7 +601,6 @@ def _portfolio_snapshot(db_path: Path, arguments: dict) -> ToolResult:
     # The total covers every holding even when one ticker was asked for,
     # because a weight means nothing against a filtered total.
     total = total_value(rows, cash=cash)
-    unpriced = [row.position.security.ticker for row in rows if row.value_eur is None]
 
     if ticker:
         selected = [row for row in rows if row.position.security.ticker == ticker]
@@ -519,160 +608,25 @@ def _portfolio_snapshot(db_path: Path, arguments: dict) -> ToolResult:
             held = ", ".join(row.position.security.ticker for row in rows)
             return _failed(f"No open position in {ticker}. Currently held: {held}.")
         return ToolResult(
-            text=_render_one_holding(selected[0], total=total, cash=cash, gaps=gaps),
-            rows=(_holding_row(selected[0], total),),
+            text=one_holding(selected[0], total=total, cash=cash, gaps=gaps),
+            rows=(holding_row(selected[0], total),),
         )
 
-    table = _table(
-        [
-            "Ticker",
-            "Qty",
-            "Avg cost",
-            "Cost basis",
-            "Value",
-            "Return",
-            "Weight",
-            "Priced",
-        ],
-        [_holding_cells(row, total) for row in rows],
-    )
-    lines = [
-        f"Portfolio as of {date.today().isoformat()} — "
-        f"{len(rows)} open position{'s' if len(rows) != 1 else ''}.",
-        "",
-        table,
-        "",
-        f"Cash: {_eur(cash)}.",
-        f"Total: {_eur(total)} — cash plus "
-        f"{len(rows) - len(unpriced)} priced holding"
-        f"{'s' if len(rows) - len(unpriced) != 1 else ''}.",
-    ]
-    lines.extend(_unpriced_warning(unpriced, gaps))
     return ToolResult(
-        text="\n".join(lines), rows=tuple(_holding_row(row, total) for row in rows)
-    )
-
-
-def _unpriced_warning(unpriced: list[str], gaps: list[str]) -> list[str]:
-    """State what could not be priced, and what that does to the total."""
-    if not unpriced:
-        return []
-    return [
-        "",
-        f"{_UNPRICED}: {', '.join(unpriced)}. Excluded from the total and from "
-        f"every weight above, so the total is a floor and not what the "
-        f"portfolio is worth. Never treat an unpriced holding as zero — say it "
-        f"cannot be valued.",
-        f"Why: {'; '.join(gaps)}." if gaps else "",
-    ]
-
-
-def _weight_pct(holding, total: float) -> float | None:  # type: ignore[no-untyped-def]
-    """Return a holding's weight, or None when it cannot be valued."""
-    if holding.value_eur is None or total <= 0:
-        return None
-    return holding.value_eur / total * 100.0
-
-
-def _priced_label(holding) -> str:  # type: ignore[no-untyped-def]
-    """Say when and from where a holding was priced."""
-    if holding.value_eur is None:
-        return "never"
-    date_part = holding.price_date or "undated"
-    return (
-        f"{date_part} ({holding.price_source})" if holding.price_source else date_part
-    )
-
-
-def _holding_cells(holding, total: float) -> list[str]:  # type: ignore[no-untyped-def]
-    """Render one holding as a table row."""
-    position = holding.position
-    weight = _weight_pct(holding, total)
-    avg = position.avg_cost_eur
-    return [
-        position.security.ticker,
-        _quantity(position.quantity),
-        _eur(avg) if avg is not None else "—",
-        _eur(position.cost_basis_eur),
-        _eur(holding.value_eur) if holding.value_eur is not None else _UNPRICED,
-        (
-            _pct(holding.unrealised_return_pct, signed=True)
-            if holding.unrealised_return_pct is not None
-            else "—"
+        text=holdings_table(
+            rows,
+            total=total,
+            cash=cash,
+            gaps=gaps,
+            as_of=date.today().isoformat(),
         ),
-        _pct(weight) if weight is not None else "—",
-        _priced_label(holding),
-    ]
-
-
-def _holding_row(holding, total: float) -> dict:  # type: ignore[no-untyped-def]
-    """Return one holding as structured data, for charts and assertions."""
-    position = holding.position
-    return {
-        "ticker": position.security.ticker,
-        "name": position.security.name,
-        "sector": position.security.sector,
-        "quantity": position.quantity,
-        "cost_basis_eur": position.cost_basis_eur,
-        "value_eur": holding.value_eur,
-        "unrealised_return_pct": holding.unrealised_return_pct,
-        "weight_pct": _weight_pct(holding, total),
-    }
-
-
-def _render_one_holding(  # type: ignore[no-untyped-def]
-    holding, *, total: float, cash: float, gaps: list[str]
-) -> str:
-    """Render a single holding in full.
-
-    Spelled out rather than tabulated: there is no token pressure for one row,
-    and the fields a table leaves out — sector, native currency, how it is
-    priced, what has already been realised — are the ones a follow-up question
-    tends to be about.
-    """
-    position = holding.position
-    security = position.security
-    weight = _weight_pct(holding, total)
-    avg = position.avg_cost_eur
-
-    lines = [
-        f"{security.ticker} — {security.name}",
-        f"- Sector: {security.sector or 'unclassified'}; "
-        f"{security.asset_class}; quoted in {security.currency}; "
-        f"priced by {security.pricing_mode}.",
-        f"- Holding: {_quantity(position.quantity)} units at an average "
-        f"{_eur(avg) if avg is not None else 'unknown'} each, "
-        f"{_eur(position.cost_basis_eur)} invested including fees.",
-    ]
-    if holding.value_eur is None:
-        lines.append(
-            f"- Value: {_UNPRICED}. Nothing can price it right now, so it is "
-            f"excluded from the {_eur(total)} portfolio total and has no "
-            f"weight. Do not report it as zero."
-        )
-    else:
-        lines.append(
-            f"- Value: {_eur(holding.value_eur)}, "
-            f"{_pct(holding.unrealised_return_pct or 0.0, signed=True)} "
-            f"unrealised ({_eur(holding.unrealised_pnl_eur or 0.0)}), "
-            f"{_pct(weight or 0.0)} of the portfolio."
-        )
-        lines.append(f"- Priced: {_priced_label(holding)}.")
-    if position.realised_pnl_eur:
-        lines.append(
-            f"- Already realised on earlier sells: {_eur(position.realised_pnl_eur)}."
-        )
-    lines.append(
-        f"- Portfolio context: {_eur(total)} total including {_eur(cash)} cash."
+        rows=tuple(holding_row(row, total) for row in rows),
     )
-    relevant = [gap for gap in gaps if gap.startswith(security.ticker)]
-    if relevant:
-        lines.append(f"- Pricing problems: {'; '.join(relevant)}.")
-    return "\n".join(lines)
 
 
 def _concentration_report(db_path: Path, arguments: dict) -> ToolResult:
     """Render grouped weights with the configured limits alongside."""
+    from chat_render import concentration_table
     from config import CONCENTRATION_ALERT_PCT, MAX_POSITION_WEIGHT_PCT
     from portfolio import cash_eur, concentration, holdings, total_value
 
@@ -693,43 +647,19 @@ def _concentration_report(db_path: Path, arguments: dict) -> ToolResult:
         return ToolResult(
             text=f"Nothing to group by {group_by}: no holding can be valued."
         )
-    unpriced = [row.position.security.ticker for row in rows if row.value_eur is None]
 
-    table = _table(
-        ["Group", "Value", "Weight", "Over limit"],
-        [
-            [
-                group.label,
-                _eur(group.value_eur),
-                _pct(group.weight_pct),
-                "yes" if group.over_limit else "no",
-            ]
-            for group in groups
-        ],
-    )
-    lines = [
-        f"Weights by {group_by}, against a {_eur(total)} total that includes "
-        f"{_eur(cash)} cash.",
-        "",
-        table,
-        "",
-        f"Limits: one position may not exceed "
-        f"{_pct(MAX_POSITION_WEIGHT_PCT)} of the portfolio, and a group above "
-        f"{_pct(CONCENTRATION_ALERT_PCT)} raises a concentration alert.",
-    ]
-    if group_by == "theme":
-        lines.append(
-            "Theme weights may sum past 100%: a security carries several "
-            "themes, and splitting its value between them would understate "
-            "every one of them."
-        )
-    if unpriced:
-        lines.append(
-            f"Excluded from every weight because nothing can price them: "
-            f"{', '.join(unpriced)}."
-        )
     return ToolResult(
-        text="\n".join(lines),
+        text=concentration_table(
+            groups,
+            group_by=group_by,
+            total=total,
+            cash=cash,
+            unpriced=[
+                row.position.security.ticker for row in rows if row.value_eur is None
+            ],
+            max_weight_pct=MAX_POSITION_WEIGHT_PCT,
+            alert_pct=CONCENTRATION_ALERT_PCT,
+        ),
         rows=tuple(
             {
                 "label": group.label,
@@ -740,3 +670,78 @@ def _concentration_report(db_path: Path, arguments: dict) -> ToolResult:
             for group in groups
         ),
     )
+
+
+def _propose_cash_flow(db_path: Path, arguments: dict) -> ToolResult:
+    """Build a cash-flow proposal for the owner to confirm.
+
+    Reads the current balance on the read-only connection and writes nothing:
+    the proposal travels back to the caller, which is what persists it.
+    """
+    from proposals import cash_flow
+
+    conn = _open_read_only(db_path)
+    try:
+        proposal = cash_flow(
+            conn,
+            kind=str(arguments.get("kind") or ""),
+            amount_eur=arguments.get("amount_eur"),
+            new_balance_eur=arguments.get("new_balance_eur"),
+            day=arguments.get("day"),
+            note=arguments.get("note"),
+        )
+    finally:
+        conn.close()
+    return _proposed(proposal)
+
+
+def _propose_context_note(arguments: dict) -> ToolResult:
+    """Build a note-append proposal for the owner to confirm."""
+    from proposals import context_note
+
+    proposal = context_note(
+        file=str(arguments.get("file") or ""),
+        text=str(arguments.get("text") or ""),
+        day=arguments.get("day"),
+    )
+    return _proposed(proposal)
+
+
+def _proposed(proposal) -> ToolResult:  # type: ignore[no-untyped-def]
+    """Render a built proposal for the model.
+
+    The wording is firm about what has *not* happened. A model told only
+    "proposed" will cheerfully report back that the contribution is recorded,
+    and the owner then stops looking for the button.
+    """
+    return ToolResult(
+        text=(
+            f"Put up for confirmation — nothing is recorded yet. The owner will "
+            f"see this and two buttons:\n\n{proposal.summary}\n\n"
+            f"Tell them you have put it up to confirm. Do not say it is done, "
+            f"and do not ask them to confirm in words: the buttons do that."
+        ),
+        proposal=proposal,
+    )
+
+
+def _propose_trade(db_path: Path, arguments: dict) -> ToolResult:
+    """Build a trade proposal for the owner to confirm."""
+    from proposals import trade
+
+    conn = _open_read_only(db_path)
+    try:
+        proposal = trade(
+            conn,
+            ticker=str(arguments.get("ticker") or ""),
+            side=str(arguments.get("side") or ""),
+            quantity=arguments.get("quantity"),
+            amount_eur=arguments.get("amount_eur"),
+            price_native=arguments.get("price_native"),
+            fee_eur=arguments.get("fee_eur") or 0.0,
+            day=arguments.get("day"),
+            note=arguments.get("note"),
+        )
+    finally:
+        conn.close()
+    return _proposed(proposal)

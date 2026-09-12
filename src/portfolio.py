@@ -9,6 +9,7 @@ figure anyway.
 Public API:
     positions      -- net quantity and cost basis per security
     cash_eur       -- uninvested cash implied by the ledger
+    fx_to_eur      -- latest EUR-per-unit rate for a currency
     holdings       -- positions valued at the best available price
     total_value    -- portfolio value including cash
     concentration  -- grouped weights by security, sector or theme
@@ -149,8 +150,13 @@ def _unit_values_from_snapshot(
     return unit_values, snapshot["snapshot_date"], snapshot["source"]
 
 
-def _fx_to_eur(conn: sqlite3.Connection, currency: str) -> float | None:
-    """Return the latest EUR-per-unit rate for *currency*, or None if unknown."""
+def fx_to_eur(conn: sqlite3.Connection, currency: str) -> float | None:
+    """Return the latest EUR-per-unit rate for *currency*, or None if unknown.
+
+    Public because converting a native price into EUR is not only valuation's
+    problem: a trade recorded at a price per share needs the same rate, and two
+    implementations of it would drift.
+    """
     if currency == "EUR":
         return 1.0
     row = conn.execute(
@@ -192,7 +198,7 @@ def holdings(conn: sqlite3.Connection, *, account_id: int = 1) -> list[Holding]:
 
         price_row = prices.get(security_id)
         if price_row is not None:
-            rate = _fx_to_eur(conn, price_row["currency"])
+            rate = fx_to_eur(conn, price_row["currency"])
             if rate is not None:
                 result.append(
                     Holding(

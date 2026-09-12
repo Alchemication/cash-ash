@@ -102,6 +102,9 @@ class ChatAnswer:
         llm_call_id: The final call's row in ``llm_call``.
         degraded: True when a guard fired — the answer stands, but the loop did
             not finish the way it was supposed to.
+        proposals: Writes the model asked for, validated but not applied. The
+            caller persists them and puts confirmation buttons on them; nothing
+            here has changed anything.
     """
 
     text: str
@@ -110,6 +113,7 @@ class ChatAnswer:
     tools_called: tuple[str, ...] = field(default_factory=tuple)
     llm_call_id: int | None = None
     degraded: bool = False
+    proposals: tuple = field(default_factory=tuple)
 
 
 class ConversationBuffer:
@@ -213,6 +217,7 @@ def answer(  # noqa: PLR0912, PLR0915 - the guards are the point
     db_path: Path,
     history: list[dict[str, str]],
     trace_id: int | None = None,
+    can_write: bool = True,
 ) -> ChatAnswer:
     """Run one chat turn and return the reply to send.
 
@@ -223,6 +228,9 @@ def answer(  # noqa: PLR0912, PLR0915 - the guards are the point
         history: The conversation so far, ending with the person's question.
         trace_id: Existing ``llm_trace`` row to attach calls to, or None to
             open one.
+        can_write: Whether the proposing tools are offered at all. False leaves
+            the model unable to ask for a change even if it wants to, which is
+            how a read-only context — an eval measuring an answer — stays one.
 
     Returns:
         The answer, and what it took to get there.
@@ -232,7 +240,7 @@ def answer(  # noqa: PLR0912, PLR0915 - the guards are the point
         ChatToolError: If the database cannot be read, which is not something
             the conversation can work around.
     """
-    from chat_tools import chat_tools, execute_tool
+    from chat_tools import chat_tools, execute_tool, propose_tools
     from llm import call_llm
     from store_research import create_llm_trace
 
@@ -243,12 +251,13 @@ def answer(  # noqa: PLR0912, PLR0915 - the guards are the point
         {"role": "system", "content": _system_prompt(db_path)},
         *history,
     ]
-    tools = chat_tools()
+    tools = [*chat_tools(), *propose_tools()] if can_write else chat_tools()
 
     seen_calls: set[tuple[str, str]] = set()
     seen_results: set[str] = set()
     gathered: list[str] = []
     called: list[str] = []
+    proposals: list = []
     rows: tuple[dict, ...] = ()
     degraded = False
     iterations = 0
@@ -284,6 +293,7 @@ def answer(  # noqa: PLR0912, PLR0915 - the guards are the point
                 iterations=iterations,
                 tools_called=tuple(called),
                 llm_call_id=result.llm_call_id,
+                proposals=tuple(proposals),
             )
 
         repeats = [
@@ -310,6 +320,8 @@ def answer(  # noqa: PLR0912, PLR0915 - the guards are the point
             outcome = execute_tool(name, arguments, db_path)
             if outcome.rows:
                 rows = outcome.rows
+            if outcome.proposal is not None:
+                proposals.append(outcome.proposal)
             gathered.append(
                 f"### {name} {json.dumps(arguments, default=str)}\n{outcome.text}"
             )
@@ -391,6 +403,7 @@ def answer(  # noqa: PLR0912, PLR0915 - the guards are the point
         tools_called=tuple(called),
         llm_call_id=final.llm_call_id,
         degraded=True,
+        proposals=tuple(proposals),
     )
 
 

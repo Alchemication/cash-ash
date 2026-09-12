@@ -84,6 +84,13 @@ CLI uses, and a holding nothing can price is reported as unpriced rather than as
 zero. It will not tell you what to buy or sell: that comes from the weekly run,
 which has the guardrails.
 
+Ask to see something and it charts it, running its own plotting code in a
+sandboxed process and sending the image.
+
+It can also record a top-up, a withdrawal, a dividend, a fee, a buy or sell in
+something you already hold, or a line in your own notes — but never by itself. It proposes one sentence stating what the
+balance becomes, and a button records it.
+
 Research uses recent news excerpts by default. Add question-linked company
 release or filing excerpts to your profile's `context/evidence.json` to supply
 primary material. Citations must reference supplied IDs and exact excerpts;

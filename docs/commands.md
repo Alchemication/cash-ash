@@ -405,15 +405,35 @@ owner never accepted. A holding recorded as worth zero rather
 than omitted. Each is a defect with no tolerable rate, so each is reported as
 broken or not and the command exits non-zero when any is.
 
+Two cover the chat agent's write path, which is the only place a model's reading
+of a sentence reaches the ledger. A proposal carrying a result must have been
+confirmed — a result on a cancelled or expired one means something applied a
+change the owner declined or never answered. And every cash flow or trade marked
+as coming from chat must have a confirmed proposal behind it, or a write reached
+the book around the buttons. A trade especially: it is wrong in every derived
+number until somebody notices. Neither says whether an answer was any good; that
+has no threshold worth inventing.
+
 Possible percentage forecasts are an advisory observation listing matching
-recommendations, refusals and assessments across all history. The regex can
+recommendations, refusals, assessments and chat answers across all history. The regex can
 match negations or legitimate sourced statistics and miss other phrasings.
 Inspect the named rows; a match alone does not fail `eval`, and no match is not
 proof that model text complies with the probability rule.
 
 **Observations** are numbers with no correct value: how many claims rest on a
 source, how many holdings are held on a thin reason, how often the rules
-refused a proposal, truncation and fallback rates, spend, coverage. Two of them
+refused a proposal, truncation and fallback rates, spend, coverage. For chat:
+questions asked, model calls per question, spend, and how proposed writes ended.
+Two calls a question is the ordinary shape — one to pick a tool, one to answer —
+so a rising figure means the loop is not converging. An expired proposal more
+often means the sentence did not make sense than that the owner changed their
+mind.
+
+A note the agent appended that looks like it restates a figure the ledger holds
+— a weight, a value — is listed for review. Those are wrong within the week,
+because the note is replayed into later research while the ledger moves on. The
+owner's own numbers are legitimate, so this reads the line to you rather than
+failing. Two of them
 are split by prompt version — the sourced share per analyst prompt, and trades
 and REVIEWs per published decision batch per decide prompt, counting proposals
 the rules refused and completed batches with no proposals. Both prompt splits
@@ -527,6 +547,83 @@ then must answer with what it has. It defaults to the flash tier like every
 other stage — `main.py models` shows the route and `main.py llm-log` the cost.
 A turn is two calls and a fraction of a cent.
 
+### Charts
+
+Ask to see something — "chart my weights", "show me the cash over time" — and the
+bot sends an image before the text. The model writes plotly code in a `<chart>`
+block against the rows it already fetched; the block is removed from what you
+read.
+
+The code runs in a **separate process** with no filesystem, network or
+subprocess access, and imports allowlisted to plotly, numpy, math and datetime.
+A process rather than a thread because a thread cannot be killed: a runaway loop
+abandoned on one goes on burning a core and starves every later chart for the
+life of the daemon.
+
+A chart that fails falls back to a plain bar or line drawn from the same rows,
+then to nothing. The answer's text is written to stand without the picture, so
+losing it costs detail and not meaning.
+
+`CHART_EXEC_TIMEOUT_S`, `CHART_WIDTH_PX` and `CHART_HEIGHT_PX` are the knobs.
+
+### Proposed writes
+
+Chat can also record two things, and records neither by itself. Say "topped up
+to €250", "got €1.20 from BRK.B", "took out €50", or "add to my log: bought more
+BRK.B because the float argument still holds", and the bot replies with one
+sentence and two buttons. Nothing changes until the tap.
+
+| Proposal | Becomes |
+| --- | --- |
+| Cash moved | a `cash_flows` row: contribution, withdrawal, dividend or fee |
+| A trade | a `trades` row, in a security already held |
+| A note | one dated line appended to `log.md` or `watchlist.md` |
+
+The sentence always states the **resulting** state — "cash goes €90.00 →
+€250.00" — because "topped up to 250" and "topped up 250" sound alike and differ
+by whatever the balance already was. A misreading is then visible before it is
+recorded rather than afterwards.
+
+Proposals are validated when they are made, not when they are applied: a lower
+target balance cannot be a contribution, a future date is refused, and a
+movement of nothing is refused. What gets applied is the stored proposal, so the
+sentence agreed to and the write that follows are the same thing. Confirming
+twice writes once.
+
+A trade is the most consequential of these, because every derived figure —
+position, cost basis, weights, cash — comes from the ledger. Its summary states
+the position and the cash on both sides: *"Position goes 4 → 6 units; cash goes
+€50.00 → €20.00."* A sell of more than is held is refused rather than capped;
+`positions()` caps an over-sell silently, and a proposal must not lean on that.
+A buy beyond the available cash is **allowed** and flagged — the broker executed
+it, so a negative balance means a deposit is missing from the book, not that the
+trade is wrong.
+
+Say a price per share and it is converted at the latest stored rate, with that
+rate shown before you agree: "bought 2 at 470" on a US listing is 470 dollars,
+and a trade recorded at the wrong FX is a small error that never corrects
+itself. With no rate stored the proposal is refused and points at `sync`.
+
+**Only a security already held.** Something new needs its listing currency and
+feed symbol set deliberately, or nothing can ever price it; there is no path for
+that from chat, and the agent says so instead of guessing. Correcting an
+existing trade is likewise not a chat operation — a wrong correction rewrites
+history and everything derived from it.
+
+A proposal expires after `PROPOSAL_TTL_MINUTES`, because it is arithmetic
+against the balance at the time it was made; the daemon closes unanswered ones
+on its usual sweep. Ask again rather than confirming something stale — the
+figures are re-read.
+
+`strategy.md` and `investor.md` cannot be appended to from chat. They constrain
+every recommendation the weekly run makes, so changing one is an edit to read in
+full, not a line added from a phone. `history.md` is generated.
+
+Notes are held to one line that stands on its own, because they are replayed
+into later research prompts without the conversation that produced them. A note
+must not restate a value, weight or return: the ledger holds those and they will
+have moved by the time the note is read.
+
 **Chat answers what is and what happened. It does not say what to buy or
 sell** — that comes from the weekly run, which has guardrails, sourced
 evidence and thesis review. Asked anyway, it says so and points at `recommend`.
@@ -544,6 +641,9 @@ them is deliberate.
 | `run_sql` | Read-only SQL: history, filtering, counting. Trades, cash flows, prices, recommendations, theses, research runs |
 | `portfolio_snapshot` | The authoritative current state: positions, cost basis, value, return, cash, total |
 | `concentration_report` | Weights by security, sector or theme, with the limits they are judged against |
+| `propose_cash_flow` | Asks to record money that moved. Writes nothing |
+| `propose_trade` | Asks to record a buy or sell in a held security. Writes nothing |
+| `propose_context_note` | Asks to append one line to `log.md` or `watchlist.md`. Writes nothing |
 
 `run_sql` opens the database `mode=ro`, so it cannot write and cannot create
 one. It accepts `SELECT` and `WITH` only, caps rows, truncates an oversized
@@ -555,6 +655,10 @@ described in the prompt, so a migration cannot leave the two disagreeing.
 Results come back as markdown tables and prose, not JSON. Repeating a key on
 every row costs tokens, and `"value_eur": null` leaves the reader to work out
 what it means where "UNPRICED — excluded from the total" says it.
+
+The two `propose_*` tools return a validated proposal rather than applying it,
+which is what keeps every tool here read-only. The daemon persists it to
+`pending_write` and puts the buttons on it, and only the button writes.
 
 **SQL is not allowed to answer a money question.** Cost basis is path-dependent
 and an unpriced holding reports nothing rather than zero, so a hand-written

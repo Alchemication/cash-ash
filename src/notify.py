@@ -7,6 +7,7 @@ conversion is the part that goes wrong, and there is nothing here to convert.
 Public API:
     send_message      -- send one message, chunked and retried
     edit_message      -- rewrite a message already sent
+    send_photo        -- send a PNG with a caption
     send_with_buttons -- send a message carrying an inline keyboard
     answer_callback   -- acknowledge a button press
     escape            -- escape text for Telegram's HTML mode
@@ -23,6 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -306,6 +308,68 @@ def edit_message(*, chat_id: int, message_id: int, text: str) -> None:
     )
     for part in parts[1:]:
         send_message(chat_id=chat_id, text=part, silent=True)
+
+
+def send_photo(*, chat_id: int, image: bytes, caption: str = "") -> int:
+    """Send a PNG, with an optional caption.
+
+    Built by hand rather than with a library because this is the only multipart
+    request CashAsh makes, and a dependency for one function that sends one
+    field is a poor trade. Retried like any other send.
+
+    Args:
+        chat_id: Numeric Telegram user or chat id.
+        image: PNG bytes.
+        caption: Short line under the image, in Telegram's HTML subset.
+
+    Returns:
+        The message id.
+
+    Raises:
+        TelegramError: If the send failed.
+    """
+    token = _require_token()
+    boundary = f"----CashAsh{uuid.uuid4().hex}"
+    fields: list[bytes] = []
+    for name, value in (("chat_id", str(chat_id)), ("caption", caption)):
+        if not value:
+            continue
+        fields.append(
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+            f"{value}\r\n".encode()
+        )
+    if caption:
+        fields.append(
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="parse_mode"\r\n\r\n'
+            f"HTML\r\n".encode()
+        )
+    fields.append(
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="photo"; filename="chart.png"\r\n'
+        f"Content-Type: image/png\r\n\r\n".encode()
+    )
+    body = b"".join(fields) + image + f"\r\n--{boundary}--\r\n".encode()
+
+    url = _API.format(token=token, method="sendPhoto")
+    request = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    try:
+        with urllib.request.urlopen(
+            request, timeout=TELEGRAM_TIMEOUT_S * 2
+        ) as response:
+            parsed = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise TelegramError(_explain("sendPhoto", _error_detail(exc))) from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise TelegramError(f"sendPhoto failed: {exc}") from exc
+    if not parsed.get("ok"):
+        raise TelegramError(_explain("sendPhoto", str(parsed.get("description"))))
+    return int(parsed.get("result", {}).get("message_id", 0))
 
 
 def answer_callback(*, callback_id: str, text: str | None = None) -> None:

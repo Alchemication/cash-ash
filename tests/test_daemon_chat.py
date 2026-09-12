@@ -136,6 +136,115 @@ class TestPlaceholder:
         assert telegram["sent"] == ["Working…", "Cash is €4.15."]
 
 
+class TestCharts:
+    """A chart arrives as its own message; the prose never depends on it."""
+
+    @pytest.fixture
+    def photos(self, monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
+        """Record photos instead of sending them."""
+        import notify as notify_module
+
+        sent: list[tuple[int, str]] = []
+        monkeypatch.setattr(
+            notify_module,
+            "send_photo",
+            lambda *, chat_id, image, caption="": (
+                sent.append((len(image), caption)) or 7
+            ),
+        )
+        return sent
+
+    @pytest.fixture
+    def drawn(self, monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
+        """Render a fake PNG without starting a process."""
+        import charts as charts_module
+
+        calls: list[str] = []
+
+        def fake_render(code, *, rows=()):  # type: ignore[no-untyped-def]
+            calls.append(code)
+            return b"\x89PNG-pretend"
+
+        monkeypatch.setattr(charts_module, "render_chart", fake_render)
+        return calls
+
+    def test_a_chart_is_sent_and_removed_from_the_text(
+        self, profile, telegram, db_open, photos, drawn, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _answers(
+            monkeypatch,
+            'Weights below 20%.\n\n<chart title="Weights">\nfig = 1\n</chart>',
+        )
+        chat_plumbing.run_chat_turn(profile, "chart my weights")
+        assert photos == [(len(b"\x89PNG-pretend"), "<b>Weights</b>")]
+        assert telegram["edited"][0][1] == "Weights below 20%."
+
+    def test_a_failed_chart_still_sends_the_prose(
+        self, profile, telegram, db_open, photos, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The prompt forbids prose that depends on the picture, so losing the
+        # picture must cost detail and not meaning.
+        import charts as charts_module
+
+        monkeypatch.setattr(charts_module, "render_chart", lambda *a, **k: None)
+        monkeypatch.setattr(charts_module, "rows_chart", lambda *a, **k: None)
+        _answers(monkeypatch, "BRK.B leads.\n\n<chart>\nfig = 1\n</chart>")
+        chat_plumbing.run_chat_turn(profile, "chart my weights")
+        assert photos == []
+        assert telegram["edited"][0][1] == "BRK.B leads."
+        assert "<chart>" not in telegram["edited"][0][1]
+
+    def test_a_failed_chart_falls_back_to_the_rows(
+        self, profile, telegram, db_open, photos, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import charts as charts_module
+
+        monkeypatch.setattr(charts_module, "render_chart", lambda *a, **k: None)
+        monkeypatch.setattr(charts_module, "rows_chart", lambda *a, **k: b"fallback")
+        _answers(
+            monkeypatch,
+            "Weights.\n\n<chart>\nfig = 1\n</chart>",
+            rows=({"ticker": "BRK.B", "weight_pct": 19.4},),
+        )
+        chat_plumbing.run_chat_turn(profile, "chart my weights")
+        assert photos == [(len(b"fallback"), "")]
+
+    def test_a_chart_nobody_asked_for_is_not_sent(
+        self, profile, telegram, db_open, photos, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Rows are present, but the question wanted a number.
+        _answers(
+            monkeypatch,
+            "You hold €4.15 in cash.",
+            rows=({"ticker": "BRK.B", "weight_pct": 19.4},),
+        )
+        chat_plumbing.run_chat_turn(profile, "how much cash do I have")
+        assert photos == []
+
+    def test_a_requested_chart_the_model_forgot_is_drawn_from_the_rows(
+        self, profile, telegram, db_open, photos, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import charts as charts_module
+
+        monkeypatch.setattr(charts_module, "rows_chart", lambda *a, **k: b"fallback")
+        _answers(
+            monkeypatch,
+            "BRK.B is 19.4%.",
+            rows=({"ticker": "BRK.B", "weight_pct": 19.4},),
+        )
+        chat_plumbing.run_chat_turn(profile, "show me my weights")
+        assert photos == [(len(b"fallback"), "")]
+
+    def test_the_conversation_remembers_the_prose_not_the_chart_code(
+        self, profile, telegram, db_open, photos, drawn, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Chart code resent on every later turn would cost tokens forever.
+        _answers(monkeypatch, "Weights.\n\n<chart>\nfig = 1\n</chart>")
+        chat_plumbing.run_chat_turn(profile, "chart my weights")
+        remembered = chat_plumbing.conversation_for("adam").messages()[-1]["content"]
+        assert remembered == "Weights."
+
+
 class TestConversation:
     """Follow-up questions need the turns before them."""
 
@@ -180,6 +289,201 @@ class TestConversation:
         chat_plumbing.conversation_for("adam").add("user", "hello")
         chat_plumbing.reset_conversation("adam")
         assert len(chat_plumbing.conversation_for("adam")) == 0
+
+
+class TestProposalButtons:
+    """A proposed write is persisted, then offered, then applied on a tap."""
+
+    @pytest.fixture
+    def real_db(self, tmp_path: Path):  # type: ignore[no-untyped-def]
+        """A migrated database with cash, and a profile pointing at it."""
+        import sqlite3
+
+        from db.migrations import apply_migrations
+        from models import Account, CashFlow
+        from store import ensure_account, insert_cash_flow
+
+        path = tmp_path / "portfolio.db"
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
+        apply_migrations(conn)
+        ensure_account(
+            conn,
+            Account(
+                name="revolut", broker="Revolut", currency="EUR", sync_mode="manual"
+            ),
+        )
+        insert_cash_flow(
+            conn,
+            CashFlow(flow_date="2026-01-01", kind="CONTRIBUTION", amount_eur=90.0),
+        )
+        conn.commit()
+        conn.close()
+
+        class RealProfile:
+            name = "adam"
+            telegram_id = 111
+            db = path
+            context = tmp_path / "context"
+
+        return RealProfile()
+
+    @pytest.fixture
+    def buttons(self, monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
+        """Record button messages instead of sending them."""
+        import notify as notify_module
+
+        sent: list[tuple[str, list]] = []
+        monkeypatch.setattr(
+            notify_module,
+            "send_with_buttons",
+            lambda *, chat_id, text, buttons: sent.append((text, buttons)) or 9,
+        )
+        return sent
+
+    def test_a_proposal_is_stored_and_offered_with_two_buttons(
+        self, real_db, telegram, buttons, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from chat import ChatAnswer
+        from proposals import cash_flow
+        from store import open_existing_db
+
+        with open_existing_db(real_db.db) as conn:
+            proposal = cash_flow(conn, kind="CONTRIBUTION", new_balance_eur=250.0)
+
+        import chat as chat_module
+
+        monkeypatch.setattr(
+            chat_module,
+            "answer",
+            lambda *a, **k: ChatAnswer(
+                text="Put that up to confirm.", proposals=(proposal,)
+            ),
+        )
+        chat_plumbing.run_chat_turn(real_db, "topped up to 250")
+
+        text, rows = buttons[0]
+        assert "€90.00 → €250.00" in text
+        assert [label for label, _ in rows[0]] == ["Confirm", "Cancel"]
+        with open_existing_db(real_db.db) as conn:
+            stored = conn.execute(
+                "SELECT id, resolved_at FROM pending_write"
+            ).fetchall()
+        assert len(stored) == 1
+        assert stored[0]["resolved_at"] is None
+        # Stored, but not applied: the tap is what applies it.
+        from portfolio import cash_eur
+
+        with open_existing_db(real_db.db) as conn:
+            assert cash_eur(conn, account_id=1) == pytest.approx(90.0)
+
+    def test_confirming_applies_it(self, real_db, buttons) -> None:
+        from portfolio import cash_eur
+        from proposals import cash_flow, save
+        from store import open_existing_db
+
+        with open_existing_db(real_db.db) as conn:
+            proposal_id = save(
+                conn, cash_flow(conn, kind="CONTRIBUTION", new_balance_eur=250.0)
+            )
+        message = chat_plumbing.resolve_proposal(real_db, proposal_id, "ok")
+        assert "€250.00" in message
+        with open_existing_db(real_db.db) as conn:
+            assert cash_eur(conn, account_id=1) == pytest.approx(250.0)
+
+    def test_cancelling_applies_nothing(self, real_db, buttons) -> None:
+        from portfolio import cash_eur
+        from proposals import cash_flow, save
+        from store import open_existing_db
+
+        with open_existing_db(real_db.db) as conn:
+            proposal_id = save(
+                conn, cash_flow(conn, kind="CONTRIBUTION", amount_eur=10.0)
+            )
+        assert "Nothing was recorded" in chat_plumbing.resolve_proposal(
+            real_db, proposal_id, "no"
+        )
+        with open_existing_db(real_db.db) as conn:
+            assert cash_eur(conn, account_id=1) == pytest.approx(90.0)
+
+    def test_a_note_reaches_the_profile_s_context_directory(
+        self, real_db, buttons
+    ) -> None:
+        from proposals import context_note, save
+        from store import open_existing_db
+
+        with open_existing_db(real_db.db) as conn:
+            proposal_id = save(conn, context_note(file="log", text="float holds"))
+        chat_plumbing.resolve_proposal(real_db, proposal_id, "ok")
+        assert "float holds" in (real_db.context / "log.md").read_text()
+
+    def test_a_confirmed_trade_moves_the_position(self, real_db, buttons) -> None:
+        from models import Security, Trade
+        from portfolio import positions
+        from proposals import save, trade
+        from store import insert_trade, open_existing_db, upsert_security
+
+        with open_existing_db(real_db.db) as conn:
+            security_id = upsert_security(
+                conn,
+                Security(
+                    ticker="TEST", name="Test Corp", currency="EUR", feed_symbol="TEST"
+                ),
+            )
+            insert_trade(
+                conn,
+                Trade(
+                    security_id=security_id,
+                    trade_date="2026-01-02",
+                    side="BUY",
+                    quantity=2.0,
+                    amount_eur=20.0,
+                ),
+            )
+            proposal_id = save(
+                conn,
+                trade(conn, ticker="TEST", side="BUY", quantity=1.0, amount_eur=10.0),
+            )
+        message = chat_plumbing.resolve_proposal(real_db, proposal_id, "ok")
+        assert "Now holding 3 units" in message
+        with open_existing_db(real_db.db) as conn:
+            (position,) = positions(conn, account_id=1)
+        assert position.quantity == pytest.approx(3.0)
+
+    def test_an_unknown_proposal_says_so_without_raising(
+        self, real_db, buttons
+    ) -> None:
+        # The toast has to say something; a traceback would show as silence.
+        assert "gone" in chat_plumbing.resolve_proposal(real_db, 9999, "ok")
+
+    def test_buttons_failing_to_send_leaves_the_proposal_recoverable(
+        self, real_db, telegram, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Stored first on purpose: a button naming a row that was never written
+        # is worse than a row whose buttons can be re-offered.
+        import notify as notify_module
+        from chat import ChatAnswer
+        from notify import TelegramError
+        from proposals import cash_flow
+        from store import open_existing_db
+
+        monkeypatch.setattr(
+            notify_module,
+            "send_with_buttons",
+            lambda **kw: (_ for _ in ()).throw(TelegramError("too long")),
+        )
+        with open_existing_db(real_db.db) as conn:
+            proposal = cash_flow(conn, kind="CONTRIBUTION", amount_eur=10.0)
+        import chat as chat_module
+
+        monkeypatch.setattr(
+            chat_module,
+            "answer",
+            lambda *a, **k: ChatAnswer(text="ok", proposals=(proposal,)),
+        )
+        chat_plumbing.run_chat_turn(real_db, "added 10")
+        with open_existing_db(real_db.db) as conn:
+            assert conn.execute("SELECT COUNT(*) FROM pending_write").fetchone()[0] == 1
 
 
 class TestBacklog:

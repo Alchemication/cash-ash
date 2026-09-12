@@ -270,6 +270,47 @@ class TestOffsetHandling:
             run_daemon(stop_after=3)
 
 
+class TestProposalCallbacks:
+    """Confirming a proposed write goes through its own anchored payload."""
+
+    @pytest.mark.parametrize("decision", ["ok", "no"])
+    def test_a_proposal_payload_is_routed(
+        self, roster, spy, monkeypatch: pytest.MonkeyPatch, decision: str
+    ) -> None:
+        seen: list[tuple] = []
+        monkeypatch.setattr(
+            "daemon_chat.resolve_proposal",
+            lambda profile, proposal_id, choice: (
+                seen.append((profile.name, proposal_id, choice)) or "done"
+            ),
+        )
+        result = handle_update(_callback(111, f"pw:42:{decision}"))
+        assert result.kind == "proposal"
+        assert seen == [("adam", 42, decision)]
+        assert spy["answers"][0]["text"] == "done"
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            "pw:42:maybe",
+            "pw:abc:ok",
+            "pw:42",
+            "pw:42:ok;DROP TABLE pending_write",
+            "pw:-1:ok",
+        ],
+    )
+    def test_a_malformed_proposal_payload_is_refused(
+        self, roster, spy, data: str
+    ) -> None:
+        # The id reaches a write, so it is matched against a fixed shape.
+        assert handle_update(_callback(111, data)).kind == "bad_callback"
+
+    def test_a_proposal_tap_from_a_stranger_is_ignored(self, roster, spy) -> None:
+        result = handle_update(_callback(999, "pw:42:ok"))
+        assert result.kind == "ignored"
+        assert spy["answers"] == []
+
+
 class TestUpdateShapes:
     """Telegram sends many kinds of update; most are not ours."""
 

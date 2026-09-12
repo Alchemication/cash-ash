@@ -17,6 +17,7 @@ answer with "Working…", which is how zdrowskit lost replies.
 
 Public API:
     submit_chat_turn  -- queue one question for a profile
+    resolve_proposal  -- confirm or cancel a proposed write
     run_chat_turn     -- answer one question, placeholder to reply
     conversation_for  -- that profile's running conversation
     shutdown          -- stop the workers, for tests and a clean exit
@@ -160,12 +161,114 @@ def run_chat_turn(profile, text: str) -> None:  # type: ignore[no-untyped-def]
         ",".join(result.tools_called) or "none",
         " (degraded)" if result.degraded else "",
     )
+    prose = _send_charts(profile, result, asked=text)
     conversation.add("user", text)
-    conversation.add("assistant", result.text)
+    conversation.add("assistant", prose)
     # Escaped, not trusted: the answer carries figures and tickers read out of
     # the database, and an ampersand in a company name is enough for Telegram to
     # reject the whole message as broken HTML.
-    _replace(profile, message_id, escape(result.text))
+    _replace(profile, message_id, escape(prose))
+    if result.proposals:
+        _offer(profile, result.proposals)
+
+
+def _send_charts(profile, result, *, asked: str) -> str:  # type: ignore[no-untyped-def]
+    """Send any charts the answer carried and return the prose without them.
+
+    The text is returned stripped whatever happens, including when every chart
+    fails: the prompt forbids an answer that depends on the picture, so prose
+    with a missing figure still reads, where a leftover ``<chart>`` block does
+    not.
+
+    Args:
+        profile: Who to send to.
+        result: The finished chat turn.
+        asked: The question, for deciding whether an unasked-for chart is wanted.
+
+    Returns:
+        The answer with chart blocks removed.
+    """
+    from charts import (
+        extract_charts,
+        render_chart,
+        rows_chart,
+        strip_charts,
+        wants_a_chart,
+    )
+    from notify import escape
+
+    blocks = extract_charts(result.text)
+    if not blocks:
+        # The model described a trend and drew nothing. One plain chart off the
+        # rows it already fetched is usually what was wanted.
+        if result.rows and wants_a_chart(asked):
+            _send_one(profile, rows_chart(result.rows), caption="")
+        return result.text
+
+    for index, block in enumerate(blocks, start=1):
+        image = render_chart(block.code, rows=result.rows)
+        if image is None and result.rows:
+            logger.warning(
+                "Chart %d (%s) did not render; falling back to the rows",
+                index,
+                block.title or "untitled",
+            )
+            image = rows_chart(result.rows, title=block.title)
+        caption = f"<b>{escape(block.title)}</b>" if block.title else ""
+        _send_one(profile, image, caption=caption)
+    return strip_charts(result.text)
+
+
+def _send_one(profile, image: bytes | None, *, caption: str) -> None:  # type: ignore[no-untyped-def]
+    """Send one rendered chart, or quietly carry on without it."""
+    from notify import TelegramError, send_photo
+
+    if image is None:
+        return
+    try:
+        send_photo(chat_id=profile.telegram_id, image=image, caption=caption)
+    except TelegramError:
+        logger.exception("Could not send a chart to %s", profile.name)
+
+
+def _offer(profile, proposals: tuple) -> None:  # type: ignore[no-untyped-def]
+    """Persist each proposed write and put confirmation buttons on it.
+
+    Sent as its own message rather than appended to the answer, so the thing
+    being agreed to is not mixed in with prose about something else. Persisting
+    comes first: a proposal whose buttons failed to send is recoverable, where a
+    button referring to a row that was never written is not.
+
+    Args:
+        profile: Whose proposals these are.
+        proposals: Validated ``proposals.Proposal`` objects.
+    """
+    from notify import TelegramError, escape, send_with_buttons
+    from proposals import save
+    from store import open_existing_db
+
+    for proposal in proposals:
+        try:
+            with open_existing_db(profile.db) as conn:
+                proposal_id = save(conn, proposal)
+        except Exception:  # noqa: BLE001 - one proposal must not lose the others
+            logger.exception("Could not store a proposal for %s", profile.name)
+            continue
+        try:
+            send_with_buttons(
+                chat_id=profile.telegram_id,
+                text=escape(proposal.summary),
+                buttons=[
+                    [
+                        ("Confirm", f"pw:{proposal_id}:ok"),
+                        ("Cancel", f"pw:{proposal_id}:no"),
+                    ]
+                ],
+            )
+        except (TelegramError, ValueError):
+            logger.exception(
+                "Proposal %d is stored but its buttons did not send", proposal_id
+            )
 
 
 def _replace(profile, message_id: int, text: str) -> None:  # type: ignore[no-untyped-def]
@@ -194,3 +297,29 @@ def shutdown(wait: bool = True) -> None:
         _pending.clear()
     for worker in workers:
         worker.shutdown(wait=wait)
+
+
+def resolve_proposal(profile, proposal_id: int, decision: str) -> str:  # type: ignore[no-untyped-def]
+    """Confirm or cancel a proposed write.
+
+    Args:
+        profile: Whose proposal it is.
+        proposal_id: Which proposal.
+        decision: ``ok`` to apply it, ``no`` to drop it.
+
+    Returns:
+        A short line for the button's toast.
+    """
+    from proposals import ProposalError, cancel, confirm
+    from store import open_existing_db
+
+    try:
+        with open_existing_db(profile.db) as conn:
+            if decision == "ok":
+                return confirm(conn, proposal_id, context_dir=profile.context)
+            return cancel(conn, proposal_id)
+    except ProposalError as exc:
+        return str(exc)
+    except Exception:  # noqa: BLE001 - the toast must say something
+        logger.exception("Could not resolve proposal %d", proposal_id)
+        return "Could not record that. It is in the log; nothing was changed."
