@@ -21,9 +21,10 @@ it in as many words.
 - Every command is `uv run python main.py ...` from the repo root. Never plain `python`.
 - **Default to inspect mode.** Run nothing that calls a model or writes a row
   until the owner explicitly asks for a live pass.
-- **Never run `main.py weekly`, `decide`, `executed`, `cash`, or
+- **Never run `main.py weekly`, `daemon`, `decide`, `executed`, `cash`, or
   `thesis accept|reject|bootstrap`.** Not with permission, not on request —
-  point at the command and let the owner run it.
+  point at the command and let the owner run it. `daemon` starts the Telegram
+  listener; `weekly` runs the whole portfolio and can send to the phone.
 - **Never run `research` or `recommend` without `--no-store`.** Those are the
   owner's to run when they want a result kept. With `--no-store` the same code
   runs against a discarded copy of the database, so a stored run is always one
@@ -36,6 +37,9 @@ it in as many words.
   pipeline; a second unlogged one beside it destroys that.
 - Model output is not authority. A `thesis_status` is one model's read of a
   handful of news blurbs. Never restate a model's confidence as a probability.
+- The Telegram chat agent is a separate reader, not part of this pipeline. Its
+  calls sit in the same `llm_call` log under the `chat` feature. Never quote
+  one as a pipeline finding, and never let its answer stand in for a stage.
 - Read `references/pipeline.md` before explaining why a stage did what it did,
   and `references/inspect.md` for the queries.
 
@@ -79,6 +83,11 @@ What the holding is worth, its weight, whether prices are stale (`holdings`
 prints its own warning with the threshold), and when it was last researched.
 `process` prints the live limits — quote those, never a constant read out of
 `src/config.py`.
+
+Also check `pending_write` for an unresolved proposal naming this ticker — a
+trade the chat agent proposed and the owner has not yet tapped. It changes the
+position the moment they do, so it changes every weight and guardrail verdict
+below. `references/inspect.md` has the query.
 
 ### 2 — The baseline
 
@@ -148,6 +157,11 @@ uv run python main.py llm-log --trace N     # every call in one operation
 uv run python main.py llm-log --id N        # prompts, reasoning, response, cost
 uv run python main.py models                # the route each stage takes
 ```
+
+The log also carries the chat agent's calls, which are far more frequent than
+the weekly run's. Always narrow to the run you are reading — `--trace N` for one
+operation, or `--feature plan|analyst|decision` — rather than reading the tail
+of `llm-log` and assuming it is the pipeline.
 
 The full prompt is stored. When the owner asks why a stage concluded something,
 this is the answer — read what it was given, not what it should have been.

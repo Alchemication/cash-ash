@@ -114,6 +114,43 @@ FROM decision_refusal WHERE ticker = 'TICK' ORDER BY id DESC LIMIT 10;
 `rationale` is what the model argued; `refusal` is why the rules said no.
 Refusals are kept precisely so this comparison is possible.
 
+## A write the owner has not yet confirmed
+
+The chat agent cannot write. It builds a proposal, the owner taps a button, and
+the write happens then. An unresolved one naming this ticker is a position
+change waiting to happen:
+
+```sql
+SELECT id, kind, summary, proposed_at, expires_at, resolution
+FROM pending_write
+WHERE resolved_at IS NULL
+ORDER BY id DESC;
+```
+
+`payload_json` holds what would actually be written. A `trade` there changes the
+position, and so every weight and guardrail verdict, the moment it is confirmed.
+
+## Views, for what happened to a holding
+
+Migration 014 added read-only views the chat agent queries. They are the easiest
+way to answer "what did I actually do with this ticker":
+
+```sql
+SELECT trade_date, side, quantity, price_native, amount_eur, fee_eur, note
+FROM v_trades WHERE ticker = 'TICK' ORDER BY trade_date;
+
+SELECT entry_date, kind, ticker, delta_eur
+FROM v_cash_ledger WHERE ticker = 'TICK' ORDER BY entry_date;
+
+SELECT price_date, close_native, currency, source
+FROM v_latest_price WHERE ticker = 'TICK';
+```
+
+`v_latest_price` is a stored close in native currency, not a valuation — a
+security with no price is simply absent from it. Never convert to EUR in SQL;
+`main.py holdings` owns that, because an unpriceable holding must report unknown
+rather than zero.
+
 ## The week's summary as the decision stage wrote it
 
 ```sql
@@ -130,6 +167,10 @@ uv run python main.py llm-log --id N
 uv run python main.py llm-log --feature analyst --limit 10
 uv run python main.py llm-log --errors
 ```
+
+The log mixes the weekly run with the Telegram chat agent, which calls far more
+often. Filter by trace or feature; never read the tail and assume it is the
+pipeline.
 
 For a cost total across a run:
 

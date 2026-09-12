@@ -10,6 +10,10 @@ Everything else is deterministic. All stages run at temperature 0 except the
 planner at 0.2, all on the flash tier unless a route was overridden
 (`main.py models`).
 
+`chat` is routable too and appears in the same log, but it is not in this run —
+it answers questions on demand in Telegram, reads through tools, and cannot
+write or recommend a trade. Nothing it says is a stage output.
+
 | Stage | Kind | Sees | Produces |
 |---|---|---|---|
 | sync | deterministic | held securities | closes, FX, events, estimates |
@@ -145,4 +149,5 @@ Anything the CLI does not expose is a read-only query away — see `inspect.md`
 for the path resolution and one query per stage. Useful tables:
 `research_run`, `research_assessment` (questions, answers, coverage, frozen
 evidence package), `evidence`, `thesis`, `recommendation`, `decision_refusal`,
-`decision_batch`, `llm_call`, `triage_result`.
+`decision_batch`, `llm_call`, `triage_result`, and `pending_write` for a change
+the chat agent proposed that the owner has not yet confirmed.
