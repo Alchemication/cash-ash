@@ -19,6 +19,7 @@ Public API:
     load_prefs      -- stored overrides
     set_route       -- persist an override
     clear_route     -- drop an override, returning the feature to its default
+    parse_overrides -- read one-run routing from a command-line argument
 
 Example:
     from model_prefs import resolve_route
@@ -277,3 +278,43 @@ def clear_route(feature: str, path: Path | None = None) -> ModelRoute:
     routes.pop(feature, None)
     _write(routes, resolved)
     return default_route(feature)
+
+
+def parse_overrides(value: str) -> dict[str, str]:
+    """Parse ``feature=model`` pairs into a mapping for a single run.
+
+    Separate from :func:`set_route` because these are never written down. A
+    comparison run on a different model is an experiment, and an experiment that
+    quietly persists is one the next run inherits without knowing it did.
+
+    Args:
+        value: Comma-separated ``feature=model`` pairs, e.g.
+            ``analyst=zai/glm-4.7``.
+
+    Returns:
+        Model by feature.
+
+    Raises:
+        ValueError: If a pair is malformed or names an unroutable feature.
+    """
+    overrides: dict[str, str] = {}
+    for pair in value.split(","):
+        entry = pair.strip()
+        if not entry:
+            continue
+        feature, separator, model = entry.partition("=")
+        feature, model = feature.strip(), model.strip()
+        if not separator or not feature or not model:
+            raise ValueError(
+                f"Model override {entry!r} is not 'feature=model'. Example: "
+                f"--model analyst={PRO_MODEL}."
+            )
+        if feature not in FEATURE_PURPOSE:
+            known = ", ".join(FEATURES)
+            raise ValueError(
+                f"Unknown feature {feature!r} in --model. Routable features: {known}."
+            )
+        overrides[feature] = model
+    if not overrides:
+        raise ValueError("--model needs at least one 'feature=model' pair.")
+    return overrides

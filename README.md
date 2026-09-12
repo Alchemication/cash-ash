@@ -154,4 +154,12 @@ uv run pytest
 uv run --group site python marketing/build.py   # build the public site into _site/
 ```
 
+A Claude Code skill in `.claude/skills/research-ticker/` walks a single
+holding through the pipeline one stage at a time, stopping after each so you can
+see what went in, what came out and which step a model touched. It is read-only
+by default: it reconstructs a run that already happened from what the database
+recorded, costing nothing and writing nothing. When you want to watch a stage
+run rather than read one that already ran, it uses `--no-store`, which calls the
+models for real against a discarded copy of the database.
+
 Conventions: [CLAUDE.md](CLAUDE.md) (identical to `AGENTS.md`).

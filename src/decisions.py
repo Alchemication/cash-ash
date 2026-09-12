@@ -101,6 +101,7 @@ def run_decision(
     account_id: int = 1,
     today: date | None = None,
     blocked_reason: str | None = None,
+    model_overrides: dict[str, str] | None = None,
 ) -> tuple[int, list[dict], str]:
     """Propose recommendations, then enforce the deterministic rules on them.
 
@@ -118,6 +119,9 @@ def run_decision(
         profile: Profile supplying the contribution figure.
         account_id: Account to decide for.
         today: Reference date, for tests.
+        blocked_reason: Why trading is unavailable, stated to the model.
+        model_overrides: Model per feature for this run only, as returned by
+            ``model_prefs.parse_overrides``. Nothing is persisted.
 
     Returns:
         ``(research run id, stored recommendations, summary)``.
@@ -190,6 +194,7 @@ def run_decision(
         prompt_version=DECIDE_PROMPT_VERSION,
         max_tokens=DECISION_MAX_TOKENS,
         trace_id=trace_id,
+        model=(model_overrides or {}).get("decision"),
     )
     payload = extract_json(result.text)
 

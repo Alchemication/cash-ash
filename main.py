@@ -206,6 +206,19 @@ def build_parser() -> argparse.ArgumentParser:
             help="Explicit database path, overriding --profile",
         )
 
+    def _add_sandbox(subparser: argparse.ArgumentParser) -> None:
+        subparser.add_argument(
+            "--no-store",
+            action="store_true",
+            help="Run the models for real, keep only the call log",
+        )
+        subparser.add_argument(
+            "--model",
+            metavar="FEATURE=MODEL",
+            default=None,
+            help="Route one run differently; requires --no-store",
+        )
+
     p_profile = sub.add_parser("profile", help="Create and list profiles")
     profile_sub = p_profile.add_subparsers(dest="profile_cmd", required=True)
     p_profile_add = profile_sub.add_parser("add", help="Create a profile")
@@ -375,10 +388,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Local JSON excerpts matched to research questions",
     )
+    _add_sandbox(p_research)
     _add_db(p_research)
     p_research.set_defaults(func=cmd_research)
 
     p_recommend = sub.add_parser("recommend", help="Propose actions for the week")
+    _add_sandbox(p_recommend)
     _add_db(p_recommend)
     p_recommend.set_defaults(func=cmd_recommend)
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from contextlib import ExitStack
 from datetime import date
 
 from profiles import resolve_cli_profile
@@ -26,19 +27,58 @@ def cmd_recommend(args: argparse.Namespace) -> None:
     """Propose actions for the week, with the deterministic rules applied.
 
     Raises:
-        ValueError: If there is nothing to decide on, or output is unusable.
+        ValueError: If there is nothing to decide on, a routing override is
+            invalid, or output is unusable.
         ProfileConfigError: If the profile or its database is missing.
     """
+    from sandbox import run_routing, sandboxed
+
+    profile, db_path = resolve_cli_profile(args.profile, db=args.db)
+    no_store = getattr(args, "no_store", False)
+    overrides = run_routing(getattr(args, "model", None), no_store=no_store)
+
+    with ExitStack() as stack:
+        conn = (
+            stack.enter_context(sandboxed(db_path))
+            if no_store
+            else open_existing_db(db_path)
+        )
+        _recommend(conn, profile=profile, no_store=no_store, overrides=overrides)
+
+
+def _recommend(  # type: ignore[no-untyped-def]
+    conn,
+    *,
+    profile,
+    no_store: bool,
+    overrides: dict[str, str] | None,
+) -> None:
+    """Render one decision run. Split out so the connection choice stays readable."""
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
 
     from decisions import build_guardrail_context, run_decision
+    from sandbox import sandbox_cost
 
     console = Console()
-    profile, db_path = resolve_cli_profile(args.profile, db=args.db)
-    conn = open_existing_db(db_path)
     context = build_guardrail_context(conn, profile=profile)
+
+    if no_store:
+        routed = (
+            "; ".join(f"{feature} on {model}" for feature, model in overrides.items())
+            if overrides
+            else "the configured routing"
+        )
+        console.print(
+            Panel(
+                f"Running for real on {routed}. The model is called and billed, "
+                f"and the call log is kept. No recommendation is written, and "
+                f"nothing you have yet to approve or reject is superseded.",
+                title="no-store run",
+                border_style="magenta",
+            )
+        )
 
     console.print(
         f"Capital available: [bold]EUR {context.available_capital_eur:,.2f}[/bold] "
@@ -46,7 +86,9 @@ def cmd_recommend(args: argparse.Namespace) -> None:
         f"Future monthly plan: EUR {context.monthly_contribution_eur:,.2f}; not funded.\n"
     )
 
-    run_id, recommendations, summary = run_decision(conn, profile=profile)
+    run_id, recommendations, summary = run_decision(
+        conn, profile=profile, model_overrides=overrides
+    )
 
     live = [item for item in recommendations if not item["refused"]]
     refused = [item for item in recommendations if item["refused"]]
@@ -97,7 +139,19 @@ def cmd_recommend(args: argparse.Namespace) -> None:
 
     if summary:
         console.print(Panel(summary, title="the week", border_style="cyan"))
-    if live:
+    if no_store:
+        trace = conn.execute(
+            "SELECT trace_id FROM research_run WHERE id = ?", (run_id,)
+        ).fetchone()
+        calls, spent = sandbox_cost(
+            conn, trace_id=None if trace is None else trace["trace_id"]
+        )
+        console.print(
+            f"\n[magenta]Nothing was stored.[/magenta] No recommendation exists "
+            f"to decide on, and nothing pending was superseded. {calls} model "
+            f"call(s) cost ${spent:.4f} and are in [cyan]main.py llm-log[/cyan]."
+        )
+    elif live:
         console.print(
             "Nothing has been bought or sold. Record what you decide with "
             "[cyan]main.py decide ID approve|reject|later[/cyan]."

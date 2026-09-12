@@ -57,6 +57,8 @@ uv run python main.py thesis show NKE
 uv run python main.py thesis list
 uv run python main.py triage --dry-run        # show the input, send nothing
 uv run python main.py research AMD            # deep pass on one holding
+uv run python main.py research AMD --no-store # run it for real, keep nothing
+uv run python main.py recommend --no-store    # the same, for the decision stage
 uv run python main.py decide 3 approve --note "agreed, buying Monday"
 uv run python main.py decide 3 reject
 uv run python main.py report --telegram       # send it to your phone
@@ -242,6 +244,38 @@ review and accept.
 `broken` means a condition you wrote down has actually occurred — not that the
 news was bad or the price fell. The prompt is explicit that an absence of
 evidence is reported as `unchanged` rather than turned into a verdict.
+
+## Watching a stage without changing anything
+
+`--no-store` runs `research` or `recommend` exactly as the weekly cycle does —
+the same prompts, the same models, the same billing — against a copy of the
+database that is discarded when the command ends. Nothing is written except the
+model-call log, which is kept because the money was spent either way and
+`llm-log` is where that is accounted for. The log survives a run that fails
+partway, which is when it matters most.
+
+```bash
+uv run python main.py research AMD --no-store
+uv run python main.py recommend --no-store
+```
+
+It exists because observing these two stages otherwise changes them. A research
+pass writes a run, its evidence and an assessment; `recommend` supersedes every
+recommendation you have not yet approved or rejected. Both are right for the
+weekly cycle and wrong for working out what the machinery is doing.
+
+`--model` routes one `--no-store` run differently, so the same stage can be run
+on another model and the two compared in `llm-log`:
+
+```bash
+uv run python main.py research AMD --no-store --model analyst=zai/glm-4.7
+uv run python main.py research AMD --no-store --model plan=zai/glm-4.7,analyst=zai/glm-4.7
+```
+
+Features are the stages `main.py models` lists. It is refused without
+`--no-store`: a stored result must always match the routing table, or that table
+stops explaining how a recorded result was produced. Use `models set` to change
+a real route.
 
 ## Recommendations
 

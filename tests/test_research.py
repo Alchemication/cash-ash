@@ -498,3 +498,55 @@ class TestBudgets:
         monkeypatch.setattr(research_module, "call_llm", fake)
         research_security(seeded, ticker="AAA", source=_Source())
         assert budgets == [THESIS_MAX_TOKENS, ANALYST_MAX_TOKENS]
+
+
+class TestOneRunRouting:
+    """A --no-store override reaches the calls it names, and only those."""
+
+    def _capture(self, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | None]]:
+        """Record (feature, model) per call and script plan then analysis."""
+        seen: list[tuple[str, str | None]] = []
+        queue = [_plan(), _analysis()]
+
+        def fake(conn, *, messages, **kwargs):  # type: ignore[no-untyped-def]
+            seen.append((str(kwargs.get("feature")), kwargs.get("model")))
+            return LLMResult(
+                text=queue.pop(0) if queue else _analysis(),
+                model="fake",
+                requested_model="fake",
+                llm_call_id=1,
+            )
+
+        monkeypatch.setattr(research_module, "call_llm", fake)
+        return seen
+
+    def test_each_stage_is_routed_independently(
+        self, seeded: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen = self._capture(monkeypatch)
+        research_security(
+            seeded,
+            ticker="AAA",
+            source=_Source(),
+            model_overrides={"plan": "one/model", "analyst": "two/model"},
+        )
+        assert seen == [("plan", "one/model"), ("analyst", "two/model")]
+
+    def test_an_unnamed_stage_keeps_its_configured_route(
+        self, seeded: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen = self._capture(monkeypatch)
+        research_security(
+            seeded,
+            ticker="AAA",
+            source=_Source(),
+            model_overrides={"analyst": "two/model"},
+        )
+        assert seen == [("plan", None), ("analyst", "two/model")]
+
+    def test_no_override_routes_nothing(
+        self, seeded: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen = self._capture(monkeypatch)
+        research_security(seeded, ticker="AAA", source=_Source())
+        assert seen == [("plan", None), ("analyst", None)]

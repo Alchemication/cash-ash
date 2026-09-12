@@ -277,6 +277,26 @@ class TestAtomicDecisions:
         assert "Keep funds available for housing." in seen[-1]
         assert "Keep funds available for tuition." not in seen[-1]
 
+    def test_a_one_run_model_override_reaches_the_call(
+        self, book: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        routed: list[object] = []
+
+        def reply(
+            conn: sqlite3.Connection, *, messages: list[dict], **kwargs: object
+        ) -> LLMResult:
+            routed.append(kwargs.get("model"))
+            return LLMResult(
+                text=json.dumps({"recommendations": []}),
+                model="test",
+                requested_model="test",
+            )
+
+        monkeypatch.setattr(decisions, "call_llm", reply)
+        run_decision(book, today=TODAY, model_overrides={"decision": "other/model"})
+        run_decision(book, today=TODAY)
+        assert routed == ["other/model", None]
+
     @pytest.mark.parametrize(
         "content", [None, "  ", "<!-- cash-ash:template -->\nExample restriction"]
     )

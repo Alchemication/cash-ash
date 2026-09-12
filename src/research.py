@@ -661,6 +661,7 @@ def _plan_research(
     trigger: str,
     trace_id: int,
     run_date: str,
+    model: str | None = None,
 ) -> tuple[list[str], tuple[str, ...]]:
     """Choose this week's questions for one holding."""
     lines = [
@@ -691,6 +692,7 @@ def _plan_research(
         prompt_version=PLAN_PROMPT_VERSION,
         max_tokens=THESIS_MAX_TOKENS,
         trace_id=trace_id,
+        model=model,
     )
     payload = extract_json(result.text)
     questions = [
@@ -710,6 +712,7 @@ def research_security(
     today: date | None = None,
     source: EvidenceSource | None = None,
     evidence_file: Path | None = None,
+    model_overrides: dict[str, str] | None = None,
 ) -> ResearchResult:
     """Run one deep research pass and propose — never apply — a thesis update.
 
@@ -724,6 +727,9 @@ def research_security(
         account_id: Account the holding belongs to.
         today: Reference date, for tests.
         source: Evidence source; defaults to the configured one.
+        evidence_file: Local dated excerpts matched to the planned questions.
+        model_overrides: Model per feature for this run only, as returned by
+            ``model_prefs.parse_overrides``. Nothing is persisted.
 
     Returns:
         What the pass concluded.
@@ -767,6 +773,7 @@ def research_security(
         note=f"Deep pass on {security.ticker}: {trigger}",
     )
 
+    routing = model_overrides or {}
     questions, not_this_week = _plan_research(
         conn,
         security=security,
@@ -774,6 +781,7 @@ def research_security(
         trigger=trigger,
         trace_id=trace_id,
         run_date=run_date,
+        model=routing.get("plan"),
     )
     if not questions:
         raise ValueError(f"The planner produced no questions for {security.ticker}.")
@@ -828,6 +836,7 @@ def research_security(
         prompt_version=ANALYST_PROMPT_VERSION,
         max_tokens=ANALYST_MAX_TOKENS,
         trace_id=trace_id,
+        model=routing.get("analyst"),
     )
     payload = extract_json(result.text)
 
