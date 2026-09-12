@@ -221,12 +221,16 @@ def _chat_reply(profile, text: str) -> str:  # type: ignore[no-untyped-def]
 
         rows = holdings(conn, account_id=1)
         cash = cash_eur(conn, account_id=1)
-        from quality import valuation_gaps
+        from quality import valuation_summary
 
-        gaps = valuation_gaps(conn, rows, date.today())
         lines = [f"<b>€{total_value(rows, cash=cash):,.2f}</b>", ""]
-        if gaps:
-            lines.append(escape("; ".join(gaps)))
+        # Grouped rather than one clause per holding: a sync a week behind
+        # produces two of those for every line in the book, and a wall of
+        # identical text is read as noise rather than as the one fact behind it.
+        for note in valuation_summary(conn, rows, date.today()):
+            lines.append(escape(note))
+        if len(lines) > 2:
+            lines.append("")
         for row in sorted(rows, key=lambda r: -(r.value_eur or 0)):
             value = f"€{row.value_eur:,.2f}" if row.value_eur is not None else "—"
             change = (

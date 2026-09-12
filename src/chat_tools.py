@@ -578,7 +578,7 @@ def _portfolio_snapshot(db_path: Path, arguments: dict) -> ToolResult:
     """Render the canonical portfolio state, with unpriced holdings named."""
     from chat_render import holding_row, holdings_table, one_holding
     from portfolio import cash_eur, holdings, total_value
-    from quality import valuation_gaps
+    from quality import valuation_gaps, valuation_summary
 
     ticker = str(arguments.get("ticker") or "").strip().upper()
 
@@ -586,7 +586,10 @@ def _portfolio_snapshot(db_path: Path, arguments: dict) -> ToolResult:
     try:
         rows = holdings(conn, account_id=1)
         cash = cash_eur(conn, account_id=1)
+        # Per holding for one security, grouped for the whole book: the same
+        # problems, at the size the reader can use.
         gaps = valuation_gaps(conn, rows, date.today())
+        notes = valuation_summary(conn, rows, date.today())
     finally:
         conn.close()
 
@@ -617,7 +620,7 @@ def _portfolio_snapshot(db_path: Path, arguments: dict) -> ToolResult:
             rows,
             total=total,
             cash=cash,
-            gaps=gaps,
+            pricing_notes=notes,
             as_of=date.today().isoformat(),
         ),
         rows=tuple(holding_row(row, total) for row in rows),

@@ -202,7 +202,7 @@ def holdings_table(
     *,
     total: float,
     cash: float,
-    gaps: list[str],
+    pricing_notes: list[str],
     as_of: str,
 ) -> str:
     """Render the whole portfolio as a table with its totals spelled out.
@@ -211,11 +211,14 @@ def holdings_table(
         rows: Valued holdings, already ordered.
         total: Portfolio value including cash.
         cash: Uninvested EUR.
-        gaps: Pricing problems, from ``quality.valuation_gaps``.
+        pricing_notes: Grouped valuation problems, from
+            ``quality.valuation_summary``. Grouped rather than per holding
+            because a sync a week behind otherwise produces two clauses for
+            every line in the book, and the model reads that as noise.
         as_of: ISO date the figures are for.
 
     Returns:
-        Markdown: one line of context, the table, then cash and total.
+        Markdown: one line of context, the table, then cash, total and caveats.
     """
     unpriced = [row.position.security.ticker for row in rows if row.value_eur is None]
     priced = len(rows) - len(unpriced)
@@ -229,11 +232,16 @@ def holdings_table(
         f"Total: {eur(total)} — cash plus {priced} priced "
         f"holding{'s' if priced != 1 else ''}.",
     ]
-    lines.extend(unpriced_warning(unpriced, gaps))
+    lines.extend(unpriced_warning(unpriced))
+    if pricing_notes:
+        # Stated even when everything has a value: a price five days old still
+        # produces a number, and a number nobody flagged as old is the way a
+        # review quietly reviews last month.
+        lines.extend(["", "Valuation caveats: " + " ".join(pricing_notes)])
     return "\n".join(lines)
 
 
-def unpriced_warning(unpriced: list[str], gaps: list[str]) -> list[str]:
+def unpriced_warning(unpriced: list[str]) -> list[str]:
     """State what could not be priced, and what that does to the total."""
     if not unpriced:
         return []
@@ -243,7 +251,6 @@ def unpriced_warning(unpriced: list[str], gaps: list[str]) -> list[str]:
         f"every weight above, so the total is a floor and not what the "
         f"portfolio is worth. Never treat an unpriced holding as zero — say it "
         f"cannot be valued.",
-        f"Why: {'; '.join(gaps)}." if gaps else "",
     ]
 
 

@@ -139,24 +139,33 @@ class TestWeight:
 class TestHoldingsTable:
     """The portfolio as the model sees it."""
 
-    def _rendered(self, rows: list[Holding], gaps: list[str] | None = None) -> str:
+    def _rendered(self, rows: list[Holding], notes: list[str] | None = None) -> str:
         return holdings_table(
             rows,
             total=400.0,
             cash=300.0,
-            gaps=gaps or [],
+            pricing_notes=notes or [],
             as_of="2026-09-12",
         )
 
     def test_an_unpriced_holding_is_marked_and_explained(self) -> None:
         rendered = self._rendered(
             [_holding(), _holding(ticker="DARK", value=None)],
-            gaps=["DARK: unpriced"],
+            notes=["Cannot be priced: DARK."],
         )
         assert f"| {UNPRICED} |" in rendered
         assert "UNPRICED: DARK" in rendered
         assert "the total is a floor" in rendered
-        assert "Why: DARK: unpriced." in rendered
+        assert "Cannot be priced: DARK." in rendered
+
+    def test_a_stale_price_is_flagged_even_though_it_has_a_value(self) -> None:
+        # A five-day-old price still produces a number, and a number nobody
+        # flagged as old is how a review quietly reviews last month.
+        rendered = self._rendered(
+            [_holding()], notes=["Every price is stale (oldest 2026-09-07, 5 days)."]
+        )
+        assert "Valuation caveats:" in rendered
+        assert "Every price is stale" in rendered
 
     def test_a_fully_priced_portfolio_carries_no_warning(self) -> None:
         rendered = self._rendered([_holding()])
