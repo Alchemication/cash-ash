@@ -19,7 +19,14 @@ _BOT_COMMANDS = [
     ("pending", "Recommendations awaiting your decision"),
     ("thesis", "Compare owner thesis and proposed changes"),
     ("evidence", "Dated findings and source excerpts"),
+    ("reset", "Forget the current conversation"),
 ]
+"""The menu Telegram offers. Deliberately short.
+
+Only the commands worth a menu entry are listed. Everything else is asked in
+plain words — a menu of twenty commands is the thing the chat agent exists to
+replace.
+"""
 
 
 def _plain(html: str) -> str:

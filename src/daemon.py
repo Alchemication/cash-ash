@@ -1,8 +1,13 @@
 """The background process: listens for replies, and runs the week when due.
 
-One process with two threads, following zdrowskit. A scheduler wakes
-periodically and asks whether this week's run has happened; the Telegram poller
-waits on updates. One launchd job, one log, one thing that can be broken.
+One process, a scheduler thread and a Telegram poller, following zdrowskit. The
+scheduler wakes periodically and asks whether this week's run has happened; the
+poller waits on updates. One launchd job, one log, one thing that can be broken.
+
+A question in plain words is answered by the chat agent, which takes seconds and
+therefore runs on a per-profile worker thread rather than on the poller — see
+``daemon_chat``. A slash command is answered inline, because it only reads the
+database.
 
 The scheduler asks a question about *state* — has a run been recorded for this
 ISO week? — rather than watching for a moment to pass. A machine asleep at the
@@ -10,10 +15,11 @@ scheduled hour therefore runs on waking, instead of skipping the week, which is
 the failure that has already cost this project one overnight run.
 
 Every update is routed by the sender's numeric Telegram id to a profile in the
-roster. An update from an id that is not in the roster is ignored in silence —
-not answered, not acknowledged — because the bot's username is discoverable and
-a stranger who finds it must not be able to read anyone's portfolio or learn
-that the account exists.
+roster, and only from a private chat whose id is that same sender. An update
+failing either test is ignored in silence — not answered, not acknowledged —
+because the bot's username is discoverable and a stranger who finds it must not
+be able to read anyone's portfolio or learn that the account exists. The private
+chat test is what stops a holding being read out into a group.
 
 Public API:
     run_daemon      -- run the scheduler and, if configured, the listener
@@ -47,6 +53,7 @@ from config import (
     WEEKLY_RUN_HOUR,
     WEEKLY_RUN_WEEKDAY,
 )
+from daemon_chat import submit_chat_turn
 from notify import TelegramError, answer_callback, get_updates, send_message
 
 logger = logging.getLogger(__name__)
@@ -93,6 +100,11 @@ def _profile_for(telegram_id: int):  # type: ignore[no-untyped-def]
     """Return the enabled profile owning *telegram_id*, or None."""
     from profiles import ProfileConfigError, load_profiles
 
+    if telegram_id <= 0:
+        # Telegram ids are positive. A zero arrives from an update with no
+        # sender at all — a channel post, an anonymous admin — and must never
+        # be able to match a roster entry by default.
+        return None
     try:
         profiles = load_profiles()
     except ProfileConfigError as exc:
@@ -102,6 +114,44 @@ def _profile_for(telegram_id: int):  # type: ignore[no-untyped-def]
         if profile.telegram_id == telegram_id and profile.enabled:
             return profile
     return None
+
+
+def _sender_id(sender: object) -> int:
+    """Return the numeric id of an update's sender, or 0 when there is none."""
+    if not isinstance(sender, dict):
+        return 0
+    raw = sender.get("id")
+    return raw if isinstance(raw, int) and not isinstance(raw, bool) else 0
+
+
+def _authorised_profile(sender: object, message: object):  # type: ignore[no-untyped-def]
+    """Return the profile allowed to act on an update, or None.
+
+    Three conditions, all required. The sender's id must be on the roster and
+    enabled. The chat must be private, so the bot never answers into a group
+    where people who are not on the roster can read it. And the chat id must
+    equal the sender id, which is what makes the first two checks about the
+    same person: in a private one-to-one chat the two are always the same
+    number, so any update where they differ is not the conversation it claims
+    to be.
+
+    Args:
+        sender: The update's ``from`` object.
+        message: The message the update concerns. For a callback this is the
+            message the button is attached to, not the button press.
+
+    Returns:
+        The owning profile, or None when any condition fails.
+    """
+    sender_id = _sender_id(sender)
+    if sender_id == 0 or not isinstance(message, dict):
+        return None
+    chat = message.get("chat")
+    if not isinstance(chat, dict) or chat.get("type") != "private":
+        return None
+    if chat.get("id") != sender_id:
+        return None
+    return _profile_for(sender_id)
 
 
 def _record_decision(profile, recommendation_id: int, decision: str) -> str:  # type: ignore[no-untyped-def]
@@ -186,7 +236,17 @@ def _chat_reply(profile, text: str) -> str:  # type: ignore[no-untyped-def]
             f"{item['action']} {item['ticker'] or ''} — {escape(item['rationale'])}"
             for item in parts.actionable
         )
-    return "Use /review, /holdings, /pending, /evidence TICKER or /thesis TICKER."
+    if command == "reset":
+        from daemon_chat import reset_conversation
+
+        reset_conversation(profile.name)
+        return "Forgotten. The next question starts a new conversation."
+    return (
+        "Commands: /review, /holdings, /pending, /evidence TICKER, "
+        "/thesis TICKER, /reset. Anything else, just ask in plain words — "
+        '"what did I pay for BRK.B", "how much cash", "when did I last '
+        'add money".'
+    )
 
 
 def handle_update(update: dict) -> Handled:
@@ -200,13 +260,15 @@ def handle_update(update: dict) -> Handled:
     """
     callback = update.get("callback_query")
     if isinstance(callback, dict):
-        sender = int(callback.get("from", {}).get("id", 0))
-        profile = _profile_for(sender)
+        profile = _authorised_profile(callback.get("from"), callback.get("message"))
         if profile is None:
             # Silence rather than a refusal: answering would confirm the bot is
             # live and tell a stranger their id is simply not on the list.
-            logger.warning("Ignoring callback from unknown Telegram id %s", sender)
-            return Handled(kind="ignored", detail="unknown sender")
+            logger.warning(
+                "Ignoring callback from unauthorised Telegram id %s",
+                _sender_id(callback.get("from")),
+            )
+            return Handled(kind="ignored", detail="unauthorised sender")
 
         match = _CALLBACK.match(str(callback.get("data", "")))
         if match is None:
@@ -238,14 +300,22 @@ def handle_update(update: dict) -> Handled:
 
     message = update.get("message")
     if isinstance(message, dict):
-        sender = int(message.get("from", {}).get("id", 0))
-        profile = _profile_for(sender)
+        profile = _authorised_profile(message.get("from"), message)
         if profile is None:
-            logger.warning("Ignoring message from unknown Telegram id %s", sender)
-            return Handled(kind="ignored", detail="unknown sender")
+            logger.warning(
+                "Ignoring message from unauthorised Telegram id %s",
+                _sender_id(message.get("from")),
+            )
+            return Handled(kind="ignored", detail="unauthorised sender")
         text = str(message.get("text", "")).strip()
         if not text:
             return Handled(kind="empty", profile=profile.name)
+        if not text.startswith("/"):
+            # A question, not a command. Queued on the profile's own thread: a
+            # turn takes seconds, and the poller cannot wait for it without
+            # stalling every other update behind it.
+            outcome = submit_chat_turn(profile, text)
+            return Handled(kind=outcome, profile=profile.name, detail="question")
         send_message(chat_id=profile.telegram_id, text=_chat_reply(profile, text))
         return Handled(kind="reply", profile=profile.name, detail=text.split()[0])
 

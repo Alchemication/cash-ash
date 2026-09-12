@@ -47,12 +47,15 @@ FEATURE_PURPOSE: dict[str, str] = {
     "synthesis": "Reconciles the analysts into a thesis update",
     "decision": "Applies portfolio rules to produce recommendations",
     "explain": "Expands jargon into plain language on request",
+    "chat": "Answers questions about the portfolio, with tools, in Telegram",
 }
 """Every routable stage, with what it is for.
 
 Ordered as the weekly run executes them, which is also roughly the order of
 increasing consequence: a bad triage wastes a little money, a bad decision
-stage produces a recommendation.
+stage produces a recommendation. ``chat`` sits outside that run — it is asked
+for on demand, many times a week, which is exactly why it defaults cheap like
+everything else.
 """
 
 FEATURES: tuple[str, ...] = tuple(FEATURE_PURPOSE)
@@ -80,6 +83,9 @@ _DEFAULT_TEMPERATURE: dict[str, float] = {
     "triage": 0.0,
     "plan": 0.2,
     "explain": 0.3,
+    # Conversation, not analysis: a little warmth reads better than a report,
+    # and the figures come from tools rather than from sampling.
+    "chat": 0.3,
 }
 
 

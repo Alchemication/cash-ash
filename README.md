@@ -77,6 +77,13 @@ In Telegram: `/review`, `/pending`, `/evidence TEST`, `/thesis TEST`,
 `/accept TEST 2`, `/reject TEST 2`. Recommendation buttons open evidence and
 thesis details; review questions use acknowledgement instead of trade approval.
 
+Anything not starting with `/` is a question, answered by a model that reads the
+book through tools — "what did I pay for TEST", "how much cash", "when did I
+last add money". Every euro figure it quotes comes from the same derivation the
+CLI uses, and a holding nothing can price is reported as unpriced rather than as
+zero. It will not tell you what to buy or sell: that comes from the weekly run,
+which has the guardrails.
+
 Research uses recent news excerpts by default. Add question-linked company
 release or filing excerpts to your profile's `context/evidence.json` to supply
 primary material. Citations must reference supplied IDs and exact excerpts;

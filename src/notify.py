@@ -6,6 +6,7 @@ conversion is the part that goes wrong, and there is nothing here to convert.
 
 Public API:
     send_message      -- send one message, chunked and retried
+    edit_message      -- rewrite a message already sent
     send_with_buttons -- send a message carrying an inline keyboard
     answer_callback   -- acknowledge a button press
     escape            -- escape text for Telegram's HTML mode
@@ -273,6 +274,38 @@ def send_with_buttons(
         },
     )
     return int(result.get("message_id", 0))
+
+
+def edit_message(*, chat_id: int, message_id: int, text: str) -> None:
+    """Replace the text of a message already sent.
+
+    Used to turn a "working on it" placeholder into the answer, so a slow reply
+    occupies one message rather than two. Text too long to fit is split: the
+    first part replaces the placeholder and the rest follows as new messages,
+    because Telegram refuses an oversized edit outright and losing the answer
+    would be worse than losing the single-message tidiness.
+
+    Args:
+        chat_id: Numeric Telegram user or chat id.
+        message_id: The message to rewrite.
+        text: Replacement body in Telegram's HTML subset.
+
+    Raises:
+        TelegramError: If the edit failed.
+    """
+    parts = chunk(text)
+    _call(
+        "editMessageText",
+        {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": parts[0],
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        },
+    )
+    for part in parts[1:]:
+        send_message(chat_id=chat_id, text=part, silent=True)
 
 
 def answer_callback(*, callback_id: str, text: str | None = None) -> None:

@@ -52,15 +52,36 @@ def spy(monkeypatch: pytest.MonkeyPatch):
     return calls
 
 
-def _callback(sender: int, data: str) -> dict:
+def _chat(chat_id: int, kind: str = "private") -> dict:
+    return {"id": chat_id, "type": kind}
+
+
+def _callback(
+    sender: int, data: str, *, chat: dict | None = None, message: dict | None = None
+) -> dict:
+    if message is None:
+        message = {"message_id": 7, "chat": chat or _chat(sender)}
     return {
         "update_id": 1,
-        "callback_query": {"id": "cb1", "from": {"id": sender}, "data": data},
+        "callback_query": {
+            "id": "cb1",
+            "from": {"id": sender},
+            "data": data,
+            "message": message,
+        },
     }
 
 
-def _message(sender: int, text: str) -> dict:
-    return {"update_id": 2, "message": {"from": {"id": sender}, "text": text}}
+def _message(sender: int, text: str, *, chat: dict | None = None) -> dict:
+    return {
+        "update_id": 2,
+        "message": {
+            "message_id": 8,
+            "from": {"id": sender},
+            "chat": chat or _chat(sender),
+            "text": text,
+        },
+    }
 
 
 class TestAccessControl:
@@ -82,6 +103,44 @@ class TestAccessControl:
         result = handle_update(_message(222, "/holdings"))
         assert result.kind == "ignored"
         assert spy["messages"] == []
+
+    @pytest.mark.parametrize("kind", ["group", "supergroup", "channel"])
+    def test_a_group_gets_nothing_even_from_a_known_id(
+        self, roster, spy, kind: str
+    ) -> None:
+        # The holder of a roster id can be in a group with people who are not.
+        # Answering there would read their portfolio out to all of them.
+        result = handle_update(_message(111, "/holdings", chat=_chat(-100, kind)))
+        assert result.kind == "ignored"
+        assert spy["messages"] == []
+
+    def test_a_chat_id_that_is_not_the_sender_is_refused(self, roster, spy) -> None:
+        # In a private one-to-one chat the two are the same number, so an
+        # update where they differ is not the conversation it claims to be.
+        result = handle_update(_message(111, "/holdings", chat=_chat(999)))
+        assert result.kind == "ignored"
+        assert spy["messages"] == []
+
+    def test_a_callback_in_a_group_is_not_acknowledged(self, roster, spy) -> None:
+        result = handle_update(
+            _callback(111, "rec:1:approve", chat=_chat(-100, "supergroup"))
+        )
+        assert result.kind == "ignored"
+        assert spy["answers"] == []
+
+    def test_an_update_with_no_sender_matches_nothing(self, roster, spy) -> None:
+        # A channel post carries no 'from'. Read as id 0, it must not route.
+        result = handle_update(
+            {"update_id": 3, "message": {"chat": _chat(0), "text": "/holdings"}}
+        )
+        assert result.kind == "ignored"
+        assert spy["messages"] == []
+
+    def test_a_callback_with_no_message_is_refused(self, roster, spy) -> None:
+        update = _callback(111, "rec:1:approve")
+        del update["callback_query"]["message"]
+        assert handle_update(update).kind == "ignored"
+        assert spy["answers"] == []
 
 
 class TestCallbackParsing:

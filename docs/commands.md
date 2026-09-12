@@ -483,6 +483,86 @@ malformed markup fails identically every time, so retrying only delays the
 error. A message carrying buttons is never split, because the buttons would end
 up detached from what they act on.
 
+## Query views
+
+`db schema` prints five views alongside the tables. They exist so SQL against
+the ledger does not have to rebuild the ledger's arithmetic:
+
+| View | Holds |
+| --- | --- |
+| `v_trades` | trades with the ticker, name, currency and sector spelled out |
+| `v_cash_flows` | cash flows, unchanged |
+| `v_cash_ledger` | every EUR movement in one signed column: a buy costs its fee, a sell returns net of it |
+| `v_cash_balance` | one balance per account, absent for an account that has never moved money |
+| `v_latest_price` | the newest stored close per security, in native currency |
+
+`cash_eur` reads `v_cash_balance` rather than recomputing the same sum in
+Python, so there is one definition of cash and not two.
+
+Position cost basis is deliberately **not** a view. Average cost releases basis
+in proportion to the units held at that trade, which is path-dependent; it stays
+in `portfolio.positions`. `v_latest_price` is likewise not a valuation — it is
+native currency and says nothing about an unpriced security, because converting
+a price and reporting a missing one as `None` is what `holdings` is for.
+
+## Chat
+
+Anything sent to the bot that does not start with `/` is a question, answered by
+a model with tools. Ask in plain words — "what did I pay for BRK.B", "how much
+cash", "when did I last add money", "which holdings have I never sold any of".
+
+`/reset` forgets the conversation. The last twenty messages are kept in memory
+for follow-up questions and are lost when the daemon restarts; the portfolio
+itself is read from tools every turn, never remembered, because it changes and
+a buffer does not.
+
+A question is answered on the profile's own worker thread rather than on the
+polling loop, so a turn taking several seconds does not stall button presses
+behind it. Two questions may wait; a third is refused with a message rather than
+queued, because queueing only makes the asker's own reply later. The bot sends
+"Working…" immediately and rewrites that message with the answer.
+
+The model may call tools up to `CHAT_MAX_TOOL_ITERATIONS` times in one turn,
+then must answer with what it has. It defaults to the flash tier like every
+other stage — `main.py models` shows the route and `main.py llm-log` the cost.
+A turn is two calls and a fraction of a cent.
+
+**Chat answers what is and what happened. It does not say what to buy or
+sell** — that comes from the weekly run, which has guardrails, sourced
+evidence and thesis review. Asked anyway, it says so and points at `recommend`.
+It states no probabilities, confidences or price targets, and does not judge the
+portfolio diversified or risky: it reports weights against the configured limits
+and leaves the judgement to the owner.
+
+## Chat tools
+
+The chat agent reaches the database through three tools, and the split between
+them is deliberate.
+
+| Tool | For |
+| --- | --- |
+| `run_sql` | Read-only SQL: history, filtering, counting. Trades, cash flows, prices, recommendations, theses, research runs |
+| `portfolio_snapshot` | The authoritative current state: positions, cost basis, value, return, cash, total |
+| `concentration_report` | Weights by security, sector or theme, with the limits they are judged against |
+
+`run_sql` opens the database `mode=ro`, so it cannot write and cannot create
+one. It accepts `SELECT` and `WITH` only, caps rows, truncates an oversized
+cell, and abandons a query that runs too long — the knobs are
+`CASH_ASH_CHAT_SQL_ROW_LIMIT` and `CASH_ASH_CHAT_SQL_TIMEOUT_S`. The schema it
+writes against is read from the live database on every turn rather than
+described in the prompt, so a migration cannot leave the two disagreeing.
+
+Results come back as markdown tables and prose, not JSON. Repeating a key on
+every row costs tokens, and `"value_eur": null` leaves the reader to work out
+what it means where "UNPRICED — excluded from the total" says it.
+
+**SQL is not allowed to answer a money question.** Cost basis is path-dependent
+and an unpriced holding reports nothing rather than zero, so a hand-written
+`SUM(quantity * price)` would produce a plausible wrong figure. Every euro
+amount, weight and return comes from `portfolio_snapshot` or
+`concentration_report`, which return what the rest of CashAsh computes. Both say
+which holdings they could not price and that the total excludes them.
+
 ## The listener
 
 Sending needs no daemon. Receiving does, because Telegram delivers updates by
@@ -498,11 +578,19 @@ listener survive the machine sleeping — a connection dropped while asleep kill
 the poll, and without it the daemon would stay dead until noticed by hand. A
 crash loop is throttled rather than relaunched as fast as launchd can manage.
 
-Every update is routed by the sender's numeric Telegram id to a profile in the
-roster. **An update from an id not in the roster is ignored in silence** — not
-answered, not acknowledged. The bot's username is discoverable, and replying
-would confirm the bot is live and tell a stranger their id is merely not on the
-list. A disabled profile is treated the same way.
+Every update must pass three tests before anything happens: the sender's
+numeric Telegram id is in the roster and enabled, the chat is **private**, and
+the chat id equals the sender id. **An update failing any of them is ignored in
+silence** — not answered, not acknowledged. The bot's username is discoverable,
+and replying would confirm the bot is live and tell a stranger their id is
+merely not on the list. A disabled profile is treated the same way.
+
+The private-chat test is what stops a holding being read out into a group: the
+holder of a roster id can be in one with people who are not. In a private
+one-to-one chat the chat id and the sender id are the same number, so an update
+where they differ is not the conversation it claims to be. A roster
+`telegram_id` must be positive, because an update with no sender at all — a
+channel post, an anonymous admin — reads as id 0.
 
 Button payloads are matched against a fixed anchored pattern rather than
 parsed. `callback_data` arrives from the network and is the one piece of

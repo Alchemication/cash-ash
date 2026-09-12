@@ -88,12 +88,17 @@ class TestLoadProfiles:
         with pytest.raises(ProfileConfigError, match="at least one"):
             load_profiles(path)
 
-    def test_non_integer_telegram_id_is_rejected(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("value", ['"me"', "true", "0", "-1"])
+    def test_an_unusable_telegram_id_is_rejected(
+        self, tmp_path: Path, value: str
+    ) -> None:
+        # Zero specifically: the daemon reads a sender-less update as id 0, so
+        # a roster entry of 0 would match every update that has no sender.
         path = _roster(
             tmp_path / "profiles.toml",
-            '[profiles.adam]\ntelegram_id = "me"\noperator = true\n',
+            f"[profiles.adam]\ntelegram_id = {value}\noperator = true\n",
         )
-        with pytest.raises(ProfileConfigError, match="must be an integer"):
+        with pytest.raises(ProfileConfigError, match="positive integer"):
             load_profiles(path)
 
     def test_duplicate_telegram_id_is_rejected(self, tmp_path: Path) -> None:

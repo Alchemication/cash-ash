@@ -31,7 +31,6 @@ from models import ConcentrationRow, Holding, Position, Security
 from store import (
     latest_prices,
     latest_snapshot,
-    load_cash_flows,
     load_securities,
     load_trades,
 )
@@ -102,6 +101,10 @@ def positions(
 def cash_eur(conn: sqlite3.Connection, *, account_id: int | None = None) -> float:
     """Return uninvested cash implied by cash flows and trades.
 
+    Read from ``v_cash_balance`` rather than recomputed here, so the chat
+    agent's SQL and this function cannot disagree about what cash means. The
+    view omits an account that has never moved money, hence the coalesce.
+
     Args:
         conn: Open database connection.
         account_id: Restrict to one account, or None for all.
@@ -109,15 +112,12 @@ def cash_eur(conn: sqlite3.Connection, *, account_id: int | None = None) -> floa
     Returns:
         EUR cash balance. Contributions and sells add, buys and fees subtract.
     """
-    balance = sum(
-        flow.amount_eur for flow in load_cash_flows(conn, account_id=account_id)
-    )
-    for trade in load_trades(conn, account_id=account_id):
-        if trade.side == "BUY":
-            balance -= trade.amount_eur + trade.fee_eur
-        else:
-            balance += trade.amount_eur - trade.fee_eur
-    return balance
+    sql = "SELECT COALESCE(SUM(cash_eur), 0.0) FROM v_cash_balance"
+    params: tuple = ()
+    if account_id is not None:
+        sql += " WHERE account_id = ?"
+        params = (account_id,)
+    return float(conn.execute(sql, params).fetchone()[0])
 
 
 def _unit_values_from_snapshot(

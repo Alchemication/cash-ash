@@ -87,6 +87,12 @@ class LLMResult:
         finish_reason: Why generation stopped.
         attempts: How many attempts were needed.
         llm_call_id: Row id in ``llm_call``, for ``llm-log --id``.
+        tool_calls: Tools the model asked to call, in provider shape. Empty
+            when it answered instead, which is what ends a tool loop.
+        raw_message: The assistant message exactly as the provider returned it,
+            for appending back into ``messages``. A tool loop has to show the
+            model its own call alongside the result, or the next turn has no
+            record of what it asked for.
     """
 
     text: str
@@ -100,6 +106,8 @@ class LLMResult:
     finish_reason: str | None = None
     attempts: int = 1
     llm_call_id: int | None = None
+    tool_calls: tuple[Any, ...] = ()
+    raw_message: dict | None = None
 
 
 def _is_transient(exc: Exception) -> bool:
@@ -139,6 +147,26 @@ def _extract(response: Any) -> tuple[str, str | None, str | None]:
     return content, reasoning, _field(choice, "finish_reason")
 
 
+def _extract_tool_calls(response: Any) -> tuple[tuple[Any, ...], dict | None]:
+    """Return the tool calls a response asked for, and the message carrying them.
+
+    The message is converted to a plain dict because it goes back into
+    ``messages`` on the next iteration, and a provider object that survived one
+    round-trip intact has no obligation to survive the next.
+
+    Returns:
+        ``(tool calls, assistant message as a dict)``. Both empty when the model
+        answered rather than calling anything.
+    """
+    message = response.choices[0].message
+    calls = _field(message, "tool_calls") or ()
+    if not calls:
+        return (), None
+    dumped = getattr(message, "model_dump", None)
+    raw = dumped() if callable(dumped) else dict(message)
+    return tuple(calls), raw
+
+
 def _was_truncated(finish_reason: str | None) -> bool:
     """Return True when the reply was cut off by the output budget.
 
@@ -169,6 +197,7 @@ def call_llm(
     prompt_version: str | None = None,
     trace_id: int | None = None,
     response_format: dict | None = None,
+    tools: list[dict] | None = None,
     timeout: float = LLM_TIMEOUT_S,
 ) -> LLMResult:
     """Call a model, retrying transient failures, and log the outcome.
@@ -193,6 +222,10 @@ def call_llm(
         prompt_version: Identifier of the prompt used, stored for evaluation.
         trace_id: Groups this call with others in the same operation.
         response_format: Structured-output request, passed through.
+        tools: Tool definitions the model may call. When it calls one, the
+            result carries ``tool_calls`` and ``raw_message`` and its ``text``
+            is usually empty, which is the caller's signal to run the tool and
+            ask again rather than to treat the turn as answered.
         timeout: Per-request timeout in seconds.
 
     Returns:
@@ -253,6 +286,8 @@ def call_llm(
                 kwargs["temperature"] = temperature
             if response_format is not None:
                 kwargs["response_format"] = response_format
+            if tools:
+                kwargs["tools"] = tools
 
             started = time.monotonic()
             try:
@@ -344,6 +379,7 @@ def call_llm(
                     ) from last_error
                 break
 
+            tool_calls, raw_message = _extract_tool_calls(response)
             return LLMResult(
                 text=content,
                 reasoning=reasoning,
@@ -356,6 +392,8 @@ def call_llm(
                 finish_reason=finish_reason,
                 attempts=attempt,
                 llm_call_id=call_id,
+                tool_calls=tool_calls,
+                raw_message=raw_message,
             )
 
         if candidate != candidates[-1]:

@@ -45,6 +45,18 @@ defaults dict.
 Natural-language LLM prompts live in `src/prompts/`; keep tool schemas beside
 tool code.
 
+**The chat agent may read, never write, and never advise.** `run_sql` is a
+`mode=ro` connection and must stay one. SQL must not compute money: cost basis
+is path-dependent and an unpriceable holding reports `None`, so every euro
+figure, weight and return comes from `portfolio_snapshot` or
+`concentration_report`, which call `portfolio.py`. Buy and sell recommendations
+come from the weekly run with its guardrails — chat points at it and does not
+answer itself, and never states a probability, confidence or price target.
+
+Tool results reach the model as markdown, not JSON: JSON repeats a key per row
+and leaves `"value_eur": null` to be interpreted. Structured rows travel beside
+the text in `ToolResult` for code that has to compute on them.
+
 Work on `main` and push straight to it — no feature branches, no PRs. Single
 developer for now. Still commit only when asked, and only with lint and tests
 green.
@@ -163,6 +175,9 @@ Layers, bottom up:
 - `src/models.py` — plain dataclasses, no persistence
 - `src/portfolio.py` — derived positions, valuation, concentration
 - `src/seed.py` — the 2026-09-02 Revolut snapshot and its cost-basis derivation
+- `src/chat_tools.py` — the agent's read-only tools and their rendering
+- `src/chat.py` — the chat tool loop and its guards
+- `src/daemon_chat.py` — running a chat turn off the polling thread
 - `src/commands.py`, `src/cmd_*.py` — CLI handlers and rendering
 - `marketing/` — the public site: `build.py`, the landing page under `site/`,
   and the source imagery; not imported by the app

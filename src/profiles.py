@@ -205,10 +205,17 @@ def load_profiles(path: Path = PROFILES_FILE) -> dict[str, Profile]:
             raise ProfileConfigError(f"profiles.{name} must be a TOML table.")
 
         telegram_id = values.get("telegram_id")
-        if not isinstance(telegram_id, int) or isinstance(telegram_id, bool):
+        if (
+            not isinstance(telegram_id, int)
+            or isinstance(telegram_id, bool)
+            or telegram_id <= 0
+        ):
+            # Positive specifically: the daemon reads a missing sender as id 0,
+            # so a roster entry of 0 would match every update that has no
+            # sender at all.
             raise ProfileConfigError(
-                f"profiles.{name}.telegram_id must be an integer. Message "
-                f"@userinfobot on Telegram to find it."
+                f"profiles.{name}.telegram_id must be a positive integer. "
+                f"Message @userinfobot on Telegram to find it."
             )
         if telegram_id in telegram_ids:
             raise ProfileConfigError(

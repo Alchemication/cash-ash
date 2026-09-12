@@ -508,3 +508,55 @@ TRIAGE_HORIZON_DAYS: int = 21
 
 TRIAGE_LOOKBACK_DAYS: int = 14
 """Two weeks tolerates one missed review when collecting recent events."""
+
+
+# ---------------------------------------------------------------------------
+# Chat
+# ---------------------------------------------------------------------------
+
+CHAT_SQL_ROW_LIMIT: int = _env_int("CASH_ASH_CHAT_SQL_ROW_LIMIT", 200)
+"""Hard cap on rows one chat query may return.
+
+Two hundred is generous for a book of fourteen positions — it is the whole
+trade ledger several times over — while still being well inside what fits in a
+model's context beside the rest of the prompt. A query that wants more is
+asking the wrong question and should aggregate instead.
+"""
+
+CHAT_SQL_DEFAULT_ROWS: int = 50
+"""Rows returned when a chat query names no limit of its own.
+
+Low enough that an exploratory ``SELECT *`` costs little, and the model can ask
+for more once it knows what it is looking at.
+"""
+
+CHAT_SQL_TIMEOUT_S: float = _env_float("CASH_ASH_CHAT_SQL_TIMEOUT_S", 5.0)
+"""Seconds a single chat query may run before it is abandoned.
+
+The database is a few thousand rows on local disk, so anything slower than this
+is a cartesian join rather than honest work, and the person is waiting on it.
+"""
+
+CHAT_MAX_TOOL_ITERATIONS: int = 6
+"""How many times one chat turn may call tools before it must answer.
+
+Enough for a real drill-down — look at the portfolio, query the trades behind
+one holding, check a price, then answer — plus a retry when a query comes back
+empty or malformed. Beyond that the loop is not converging, and every extra
+iteration resends the whole conversation at the cost of a fresh call.
+"""
+
+CHAT_MAX_TOKENS: int = _env_int("CASH_ASH_CHAT_MAX_TOKENS", 2000)
+"""Output budget for one chat reply.
+
+A Telegram message is read on a phone, so a long answer is a worse answer. This
+is deliberately below the weekly stages' budgets: those produce documents, this
+produces a paragraph.
+"""
+
+CHAT_CONVERSATION_MESSAGES: int = 20
+"""Turns of conversation kept in memory for follow-up questions.
+
+Ten exchanges is more than any real follow-up chain reaches, and the cost of
+keeping them is paid on every call — the whole buffer is resent each time.
+"""
