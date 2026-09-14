@@ -217,9 +217,22 @@ def _chat_reply(profile, text: str) -> str:  # type: ignore[no-untyped-def]
             STARTING_MESSAGE,
             submit_broker_refresh,
         )
+        from revolut_navigation import month_period
 
-        queued = submit_broker_refresh(profile) == "queued"
-        return STARTING_MESSAGE if queued else ALREADY_RUNNING
+        argument = text.strip().split()[1:]
+        start = end = None
+        if argument:
+            # Checked here rather than on the worker: a typo should answer at
+            # once, not after "Starting…" and a browser launch.
+            try:
+                start, end = month_period(argument[0])
+            except ValueError as exc:
+                return escape(str(exc))
+        if submit_broker_refresh(profile, start=start, end=end) != "queued":
+            return ALREADY_RUNNING
+        if start is None:
+            return STARTING_MESSAGE
+        return f"{STARTING_MESSAGE} Period: {start} to {end}."
 
     conn = open_existing_db(profile.db)
 

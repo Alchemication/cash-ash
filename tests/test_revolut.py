@@ -648,6 +648,47 @@ class TestRequestedPeriod:
         assert not whole_month(date(2024, 2, 1), date(2024, 2, 28))
 
 
+class TestMonthPeriod:
+    """`/refresh last` has to name a whole month; partials would overlap."""
+
+    def test_last_and_named_months(self) -> None:
+        from revolut_navigation import month_period
+
+        today = date(2026, 9, 14)
+        assert month_period("last", today=today) == (
+            date(2026, 8, 1),
+            date(2026, 8, 31),
+        )
+        assert month_period("2026-02", today=today) == (
+            date(2026, 2, 1),
+            date(2026, 2, 28),
+        )
+        assert month_period("LAST", today=today)[0] == date(2026, 8, 1)
+
+    def test_january_rolls_back_a_year(self) -> None:
+        from revolut_navigation import month_period
+
+        assert month_period("last", today=date(2026, 1, 9)) == (
+            date(2025, 12, 1),
+            date(2025, 12, 31),
+        )
+
+    def test_leap_february_is_whole(self) -> None:
+        from revolut_navigation import month_period, whole_month
+
+        start, end = month_period("2024-02", today=date(2026, 9, 14))
+        assert end == date(2024, 2, 29) and whole_month(start, end)
+
+    @pytest.mark.parametrize(
+        "token", ["yesterday", "2026-13", "2026-8", "08-2026", "", "2026-12"]
+    )
+    def test_unusable_tokens_are_refused(self, token: str) -> None:
+        from revolut_navigation import month_period
+
+        with pytest.raises(ValueError):
+            month_period(token, today=date(2026, 9, 14))
+
+
 class TestConsentBanner:
     """A banner over the profile menu ate the first click of a live refresh."""
 

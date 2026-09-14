@@ -8,7 +8,7 @@ from __future__ import annotations
 import calendar
 import logging
 import re
-from datetime import date
+from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
 from config import REVOLUT_CALENDAR_MAX_STEPS
@@ -38,6 +38,44 @@ def requested_period(start: date | None, end: date | None) -> tuple[date, date]:
             "Custom ranges cannot end in the future; use a complete calendar month for a partial current-month statement."
         )
     return start, end
+
+
+def month_period(token: str, *, today: date | None = None) -> tuple[date, date]:
+    """Resolve a month token to one whole calendar month.
+
+    Whole months are what the statement screen selects with its Month mode, and
+    complete months do not overlap — which is what duplicate detection needs
+    once transaction import exists. A partial range is deliberately not offered
+    here: it is the thing that would make two statements double-count.
+
+    Args:
+        token: ``last`` for the previous calendar month, or ``YYYY-MM``.
+        today: Reference date, injectable for tests.
+
+    Returns:
+        The first and last day of that month.
+
+    Raises:
+        ValueError: If the token is not a month, or has not started yet.
+    """
+    now = today or date.today()
+    text = token.strip().lower()
+    if text == "last":
+        first = (now.replace(day=1) - timedelta(days=1)).replace(day=1)
+    else:
+        match = re.fullmatch(r"(\d{4})-(\d{2})", text)
+        if match is None:
+            raise ValueError(
+                f"{token!r} is not a month. Send /refresh for this month, "
+                f"/refresh last for the previous one, or /refresh YYYY-MM."
+            )
+        year, month = int(match.group(1)), int(match.group(2))
+        if not 1 <= month <= 12:
+            raise ValueError(f"{token!r} is not a month; months run 01 to 12.")
+        first = date(year, month, 1)
+    if first > now:
+        raise ValueError(f"{token!r} has not started yet.")
+    return first, first.replace(day=calendar.monthrange(first.year, first.month)[1])
 
 
 def whole_month(start: date, end: date) -> bool:

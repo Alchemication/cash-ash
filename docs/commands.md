@@ -153,6 +153,13 @@ Nothing schedules a broker refresh: start one when you know something happened,
 by sending **`/refresh`** to the bot, or by tapping **Run now** on the proposal
 that `revolut refresh` sends. Both run in the daemon, one at a time per profile.
 
+`/refresh` covers the current calendar month, which mid-month is a partial
+statement. `/refresh last` takes the previous complete month — the one worth
+archiving once a month, because complete months cannot overlap and so cannot
+double-count when transaction import is built — and `/refresh 2026-08` takes a
+named month. Only whole months are offered; a month that has not started yet,
+or a token that is not a month, is refused straight away without opening Chrome.
+
 It opens Chrome, and if the session has expired it relays the login QR to
 Telegram as a link — sent only in reply to a refresh you started — for you to
 approve on the phone. A passcode screen is stepped past with its own "Not you?"

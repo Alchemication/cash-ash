@@ -215,12 +215,42 @@ class TestRefreshCallback:
         monkeypatch.setattr(
             daemon_refresh,
             "submit_broker_refresh",
-            lambda profile: submitted.append(profile.name) or "queued",
+            lambda profile, **period: submitted.append(profile.name) or "queued",
         )
         result = handle_update(_message(111, "/refresh"))
         assert result.kind == "reply"
         assert submitted == ["adam"]
         assert spy["messages"][0]["text"] == daemon_refresh.STARTING_MESSAGE
+
+    def test_slash_refresh_accepts_a_month(
+        self, roster, spy, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from datetime import date
+
+        import daemon_refresh
+
+        captured: dict = {}
+
+        def fake(profile, *, start=None, end=None):
+            captured.update(start=start, end=end)
+            return "queued"
+
+        monkeypatch.setattr(daemon_refresh, "submit_broker_refresh", fake)
+        handle_update(_message(111, "/refresh 2026-08"))
+        assert captured == {"start": date(2026, 8, 1), "end": date(2026, 8, 31)}
+        assert "2026-08-01 to 2026-08-31" in spy["messages"][0]["text"]
+
+    def test_a_bad_month_answers_without_opening_chrome(
+        self, roster, spy, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import daemon_refresh
+
+        def refuse(*a: object, **k: object):
+            raise AssertionError("must not queue a refresh for a bad month")
+
+        monkeypatch.setattr(daemon_refresh, "submit_broker_refresh", refuse)
+        handle_update(_message(111, "/refresh yesterday"))
+        assert "not a month" in spy["messages"][0]["text"]
 
     def test_a_tampered_refresh_payload_is_unrecognised(self, roster, spy) -> None:
         result = handle_update(_callback(111, "refresh:run;rm -rf"))
