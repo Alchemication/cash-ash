@@ -186,6 +186,21 @@ def _record_decision(profile, recommendation_id: int, decision: str) -> str:  # 
         return str(exc)
 
 
+HELP_TEXT = (
+    "Commands: /review, /holdings, /pending, /refresh, /evidence TICKER, "
+    "/thesis TICKER, /reset. Anything else, just ask in plain words — "
+    '"what did I pay for BRK.B", "how much cash", "when did I last '
+    'add money".'
+)
+"""What an unrecognised command is answered with.
+
+A module constant so the menu registered with Telegram
+(``cmd_report._BOT_COMMANDS``) can be tested against it. Updating one list and
+not the other is exactly how ``/refresh`` shipped working but absent from the
+menu.
+"""
+
+
 def _chat_reply(profile, text: str) -> str:  # type: ignore[no-untyped-def]
     """Answer one of the bot's slash commands."""
     from report import weekly_report
@@ -273,12 +288,7 @@ def _chat_reply(profile, text: str) -> str:  # type: ignore[no-untyped-def]
 
         reset_conversation(profile.name)
         return "Forgotten. The next question starts a new conversation."
-    return (
-        "Commands: /review, /holdings, /pending, /refresh, /evidence TICKER, "
-        "/thesis TICKER, /reset. Anything else, just ask in plain words — "
-        '"what did I pay for BRK.B", "how much cash", "when did I last '
-        'add money".'
-    )
+    return HELP_TEXT
 
 
 def handle_update(update: dict) -> Handled:

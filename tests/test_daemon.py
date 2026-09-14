@@ -227,6 +227,27 @@ class TestRefreshCallback:
         assert result.kind == "bad_callback"
 
 
+class TestCommandMenu:
+    """The Telegram menu and the in-chat help must not drift apart."""
+
+    def test_every_registered_command_is_advertised(self) -> None:
+        # /refresh worked but was missing from the menu, because adding a
+        # command means updating two lists and only one was touched.
+        import re
+
+        from cmd_report import _BOT_COMMANDS
+        from daemon import HELP_TEXT
+
+        registered = {name for name, _ in _BOT_COMMANDS}
+        advertised = set(re.findall(r"/(\w+)", HELP_TEXT))
+        assert registered <= advertised, registered - advertised
+
+    def test_refresh_is_offered_in_the_menu(self) -> None:
+        from cmd_report import _BOT_COMMANDS
+
+        assert "refresh" in {name for name, _ in _BOT_COMMANDS}
+
+
 class TestOffsetHandling:
     """A stuck offset means nothing after it is ever seen again."""
 

@@ -17,6 +17,7 @@ _BOT_COMMANDS = [
     ("holdings", "Current positions and value"),
     ("review", "This week's portfolio review"),
     ("pending", "Recommendations awaiting your decision"),
+    ("refresh", "Download and reconcile the latest broker statement"),
     ("thesis", "Compare owner thesis and proposed changes"),
     ("evidence", "Dated findings and source excerpts"),
     ("reset", "Forget the current conversation"),
