@@ -174,6 +174,59 @@ class TestCallbackParsing:
         assert result.detail == decision
 
 
+class TestRefreshCallback:
+    """The broker-refresh buttons route to the refresh worker, not a write."""
+
+    def test_run_queues_a_refresh(
+        self, roster, spy, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import daemon_refresh
+
+        submitted: list = []
+        monkeypatch.setattr(
+            daemon_refresh,
+            "submit_broker_refresh",
+            lambda profile: submitted.append(profile.name) or "queued",
+        )
+        result = handle_update(_callback(111, "refresh:run"))
+        assert result.kind == "refresh" and result.detail == "queued"
+        assert submitted == ["adam"]
+        assert spy["answers"][0]["text"] == daemon_refresh.STARTING_MESSAGE
+
+    def test_a_second_run_says_one_is_already_going(
+        self, roster, spy, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import daemon_refresh
+
+        monkeypatch.setattr(
+            daemon_refresh, "submit_broker_refresh", lambda profile: "busy"
+        )
+        result = handle_update(_callback(111, "refresh:run"))
+        assert result.detail == "busy"
+        assert spy["answers"][0]["text"] == daemon_refresh.ALREADY_RUNNING
+
+    def test_slash_refresh_starts_one_from_the_phone(
+        self, roster, spy, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The only trigger that needs no Mac: nothing schedules a refresh.
+        import daemon_refresh
+
+        submitted: list = []
+        monkeypatch.setattr(
+            daemon_refresh,
+            "submit_broker_refresh",
+            lambda profile: submitted.append(profile.name) or "queued",
+        )
+        result = handle_update(_message(111, "/refresh"))
+        assert result.kind == "reply"
+        assert submitted == ["adam"]
+        assert spy["messages"][0]["text"] == daemon_refresh.STARTING_MESSAGE
+
+    def test_a_tampered_refresh_payload_is_unrecognised(self, roster, spy) -> None:
+        result = handle_update(_callback(111, "refresh:run;rm -rf"))
+        assert result.kind == "bad_callback"
+
+
 class TestOffsetHandling:
     """A stuck offset means nothing after it is ever seen again."""
 

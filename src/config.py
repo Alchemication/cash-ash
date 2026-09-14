@@ -73,6 +73,36 @@ silently blending the two — which is exactly what the broker's own percentage
 does, and why it cannot be used as an input to a decision.
 """
 
+REVOLUT_QUANTITY_TOLERANCE: str = "0.00000001"
+"""One unit of the PDF's eight-decimal share precision absorbs ledger float dust."""
+
+REVOLUT_SEED_QUANTITY_DECIMALS: int = 2
+"""Decimals the seed's broker screenshot shows. It truncates, never rounds: every
+seeded quantity equalled its statement quantity cut to this many places, so only
+a difference of exactly that shape is corrected as a seed error."""
+
+REVOLUT_MONEY_TOLERANCE: str = "0.01"
+"""One native-currency cent allows displayed statement totals to round."""
+
+REVOLUT_BROWSER_TIMEOUT_MS: int = 30000
+"""Allow a document screen thirty seconds to respond before manual recovery."""
+
+REVOLUT_DOWNLOAD_TIMEOUT_MS: int = 120000
+"""Allow two minutes for Revolut to generate an on-demand statement PDF."""
+
+REVOLUT_CALENDAR_MAX_STEPS: int = 120
+"""Bound calendar navigation to ten years of month steps if the UI changes."""
+
+REVOLUT_SIGN_IN_TIMEOUT_S: int = 90
+"""How long a relayed sign-in waits for phone approval after the QR is sent.
+Revolut's own approval prompt lasts about sixty seconds; this leaves a margin
+for the notification to arrive and the person to reach for the phone. On expiry
+the run reports that sign-in is still needed rather than hanging."""
+
+REVOLUT_SIGN_IN_POLL_S: float = 1.5
+"""Seconds between screen checks while driving the login. Fast enough to catch
+the QR screen and the return to the portfolio, slow enough not to busy-spin."""
+
 SEED_RECONCILIATION_TOLERANCE_EUR: float = _env_float(
     "CASH_ASH_SEED_RECONCILIATION_TOLERANCE_EUR", 1.0
 )

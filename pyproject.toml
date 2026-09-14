@@ -5,6 +5,7 @@ description = "AI-assisted research and decision support for a small personal st
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "pypdf==6.18.1",
     "litellm>=1.100.0",
     "python-dotenv==1.0.1",
     "rich==14.3.3",
@@ -17,6 +18,13 @@ dependencies = [
 ]
 
 [dependency-groups]
+browser = [
+    # Decodes the login QR from a page screenshot so a scheduled sign-in can
+    # relay it to Telegram; only ever used for that, never to build a QR.
+    "pillow==12.3.0",
+    "playwright==1.62.0",
+    "zxing-cpp==3.1.1",
+]
 dev = [
     "pytest==9.0.2",
     "pytest-cov==7.0.0",

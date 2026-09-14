@@ -1,0 +1,36 @@
+# Synthetic snapshot with figures chosen so the derivation lands on round
+# numbers: each position cost exactly EUR 100, so the book is EUR 300 of cost
+# against EUR 350 of value. Deliberately not real holdings.
+
+date = "2026-01-15"
+source = "testbroker"
+cash_eur = 5.00
+reported_total_eur = 355.00
+
+[[position]]
+ticker = "AAA"
+name = "Alpha Industries"
+quantity = 2.0
+value_eur = 110.00
+reported_return_pct = 10.00
+sector = "Industrials"
+themes = ["alpha", "shared"]
+
+[[position]]
+ticker = "BBB"
+name = "Beta Systems"
+quantity = 1.0
+value_eur = 90.00
+reported_return_pct = -10.00
+sector = "Information Technology"
+themes = ["shared"]
+feed_symbol = "BBB-X"
+
+[[position]]
+ticker = "CCC"
+name = "Gamma Holdings"
+quantity = 4.0
+value_eur = 150.00
+reported_return_pct = 50.00
+sector = "Financials"
+themes = ["gamma"]

@@ -1,0 +1,40 @@
+Account Statement
+Generated on the 12 Sep 2026
+Period  01 Sep 2026 - 30 Sep 2026
+USD Account summary
+Starting  Ending
+Positions Value  US$30  US$40
+Cash value*  US$2  US$3
+Total  US$32  US$43
+*Cash value is uninvested cash
+USD Portfolio breakdown
+Symbol  Company  ISIN  Quantity  Price  Value  % of Portfolio
+TEST  Invented Test Company  US0000000001  2.00000000  US$20  US$40  93.02%
+Positions Value  US$40  93.02%
+Cash value  US$3  6.98%
+Total  US$43
+USD Transactions
+Date  Symbol  Type  Quantity  Price  Side  Value  Fees  Commission
+11 Sep 2026 12:00:00 GMT  TEST  Dividend  US$1  US$0  US$0
+Account Statement
+Generated on the 12 Sep 2026
+11 Sep 2026 13:00:00 GMT  TEST  Market  1  US$20  Buy  US$20  US$0  US$0
+Glossary
+Transactions
+A chronological list of activity.
+Account Statement
+Generated on the 12 Sep 2026
+Period  01 Sep 2026 - 30 Sep 2026
+EUR Account summary
+Starting  Ending
+Positions Value  €0  €0
+Cash value*  €0  €0
+Total  €0  €0
+EUR Portfolio breakdown
+Symbol  Company  ISIN  Quantity  Price  Value  % of Portfolio
+Positions Value  €0  0%
+Cash value  €0  0%
+Total  €0
+EUR Transactions
+Date  Symbol  Type  Quantity  Price  Side  Value  Fees  Commission
+Glossary

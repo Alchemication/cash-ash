@@ -13,8 +13,10 @@ wheels/
 .env
 
 # Real broker snapshot. Belongs in $CASH_ASH_HOME, never here, but ignore
-# it in the project root too in case a copy lands during setup.
-seed_snapshot.toml
+# it in the project root too in case a copy lands during setup. Anchored: an
+# unanchored pattern also matched tests/fixtures/seed_snapshot.toml, silently
+# excluding the synthetic fixture test_seed.py reads and breaking a fresh clone.
+/seed_snapshot.toml
 *.db
 *.db-wal
 *.db-shm

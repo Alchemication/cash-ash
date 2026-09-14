@@ -73,7 +73,7 @@ Approval reserves capital; execution is a separate `main.py executed` command
 that records the actual broker fill and updates the trade ledger. Snoozed items
 return when due, with a daemon reminder. No command places a broker order.
 
-In Telegram: `/review`, `/pending`, `/evidence TEST`, `/thesis TEST`,
+In Telegram: `/review`, `/pending`, `/refresh`, `/evidence TEST`, `/thesis TEST`,
 `/accept TEST 2`, `/reject TEST 2`. Recommendation buttons open evidence and
 thesis details; review questions use acknowledgement instead of trade approval.
 
@@ -134,6 +134,19 @@ Three rules follow from that, and everything else depends on them:
 
 ## Profiles
 
+Revolut PDF statements can be archived and compared with the trade-derived
+book using `main.py revolut ingest PDF --profile NAME`. The report keeps native
+currency sections and generation/period dates separate; it does not import
+transactions or replace holdings. `revolut correct-seed PDF` fixes seeded
+quantities the broker screenshot truncated, after showing each change and asking
+to confirm; cost basis and cash do not move. An on-demand Chrome downloader supports
+manual sign-in and automatic document navigation. Sending `/refresh` in Telegram
+runs that download from your phone: a sign-in link relayed for phone approval,
+then a reconciled result. Nothing schedules it — you start one when you have
+bought or sold. Inactivity can log the session
+out; the Mac must be logged in for Chrome to open. See [statement commands](docs/commands.md#revolut-statements)
+for explicit session reuse and the current verification limits.
+
 One profile is one person: their own database, broker snapshot, context files
 and Telegram id. A household shares one bot — the token is infrastructure in
 `.env`, and the roster's numeric `telegram_id` is what the bot routes messages
@@ -146,11 +159,12 @@ by, so nobody needs their own BotFather registration.
     portfolio.db
     seed_snapshot.toml          your holdings, never committed
     context/                    investor.md, strategy.md, log.md, watchlist.md
+    revolut/                    private PDF evidence, downloads, browser session
 ```
 
 Every portfolio command takes `--profile NAME`; omitting it means the operator
-profile. `--db PATH` bypasses the roster entirely and exists for experimental
-databases.
+profile. Commands exposing `--db PATH` bypass the roster for experimental
+databases; Revolut commands require a profile to own the private archive.
 
 ## Configuration
 

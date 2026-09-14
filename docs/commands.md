@@ -85,10 +85,134 @@ A single Telegram bot serves everyone. The token is shared infrastructure in
 `.env`; the per-person part is the numeric `telegram_id` in the roster, which
 the bot routes incoming messages by.
 
-`--db PATH` overrides the database on any command and bypasses the roster
+`--db PATH` overrides the database on commands exposing that option and bypasses the roster
 entirely — it exists for experimental databases. Only `init` creates a
 database; everything else fails with a message pointing at it, so a typo in a
 path or a profile name cannot silently produce an empty portfolio.
+
+## Revolut statements
+
+```bash
+uv run python main.py revolut ingest /private/path/account.pdf --profile NAME
+uv run python main.py revolut reconcile /private/path/account.pdf --profile NAME
+uv run python main.py revolut correct-seed /private/path/account.pdf --profile NAME
+uv run python main.py revolut refresh --profile NAME
+uv run python main.py revolut settings
+uv run --group browser python main.py revolut download --profile NAME
+uv run --group browser python main.py revolut download --profile NAME \
+  --reuse-session "$CASH_ASH_HOME/revolut-probe/browser-profile" \
+  --start 2026-09-01 --end 2026-09-30
+```
+
+`ingest` validates an English, text-based account statement PDF, archives its
+original bytes and parsed evidence, then prints JSON with a quantity comparison.
+`reconcile` prints the same comparison without archiving. Both require an
+initialized profile database. Neither writes trades, cash flows, securities, FX
+or pricing snapshots. Normal database migrations still apply when opening it.
+
+The source model preserves separate USD, EUR and GBP sections, holdings with
+ISINs, native prices and values, starting/ending balances, and transaction
+timestamps, description text, values, fees and commissions. Transaction details
+remain source text; they are not interpreted as executable trade records.
+Unknown layouts, missing tables, duplicate holdings and inconsistent totals
+are refused. Scanned/encrypted PDFs and other currencies are unsupported.
+
+Period start, period end and generation date remain distinct. A statement
+generated before its period ends is explicitly partial. `valuation_at` is
+unknown: neither the printed period end nor generation day establishes a market
+price timestamp. Reconciliation compares against **current** trade-derived
+positions, not a reconstruction at either date. Symbol/currency identity is
+provisional because the ledger has no ISIN field. Differences in quantities,
+holdings missing from either side, and unknown valuation time remain visible.
+Cash/value reconciliation to EUR is not performed using current FX rates.
+
+`correct-seed` fixes one known defect: the broker screenshot that seeds the book
+truncates quantities, while its EUR values cover the full holding. It archives
+the statement, then lists each synthetic opening trade whose quantity equals the
+statement's cut to `REVOLUT_SEED_QUANTITY_DECIMALS`, with the native value the
+truncation left out. After you confirm (or with `--yes`) it raises those trade
+quantities and the seed snapshot's matching rows, and appends a note citing the
+statement hash. Amounts and cash flows do not change, so cost basis and cash stay
+put. Anything else is skipped with a reason: a holding with real trades, a
+difference that is not a truncation, a statement ending before the seed date, or
+a holding on only one side. Those are recorded as trades, not seed corrections.
+A second run finds nothing to correct.
+
+Evidence lives under `$CASH_ASH_HOME/profiles/<name>/revolut/`:
+
+- `statements/<sha256>/statement.pdf` and `extracted-v1.json`: source bytes and
+  decimal-preserving evidence. Identical PDFs reuse the same archive.
+- `downloads/`: browser downloads, including rejected files for inspection.
+- `browser-profile/`: the default dedicated Chrome session for this person.
+
+These are private source artifacts, not accounting tables. They preserve the
+document's native amounts; money in the portfolio database remains EUR.
+Repository destinations, including symlinks into the checkout, are refused.
+
+Nothing schedules a broker refresh: start one when you know something happened,
+by sending **`/refresh`** to the bot, or by tapping **Run now** on the proposal
+that `revolut refresh` sends. Both run in the daemon, one at a time per profile.
+
+It opens Chrome, and if the session has expired it relays the login QR to
+Telegram as a link — sent only in reply to a refresh you started — for you to
+approve on the phone. A passcode screen is stepped past with its own "Not you?"
+link, so no passcode is entered or stored. It then downloads the current month's
+statement, archives it and reconciles, and reports the result: how many rows
+differ, or that sign-in needs you at the Mac, or that the link was not approved
+in time. Nothing is written to trades, cash flows or prices. It needs a
+`TELEGRAM_BOT_TOKEN` and a running daemon (`main.py daemon`), and the Mac must
+be logged in for Chrome to open. This is broker-statement refresh only; market
+prices and FX are the separate `sync` command and need no Revolut sign-in.
+
+`download` requires installed Google Chrome and the optional `browser` dependency
+group. It opens `https://invest.revolut.com` with Chromium sandboxing enabled.
+By default it uses the selected profile's dedicated session. `--reuse-session`
+explicitly opens an existing browser-profile directory in place; it neither
+copies it nor remembers an external session choice for later calls. Use only
+the selected person's session and close the probe or other Chrome process using
+that directory first. Downloaded evidence always belongs to the selected profile.
+
+Complete authentication directly in Chrome when requested. The observed
+reauthentication flow was: enter the six-digit code in the browser, scan its QR
+code with the phone, then confirm in the Revolut app within the displayed
+60-second approval window. The browser then returned to the portfolio. That
+window is an approval deadline, not the browser session lifetime.
+A saved browser profile does not guarantee an authenticated session: an overnight inactivity logout was
+observed, and the exact timeout remains unknown. CashAsh does not enter credentials,
+keep the session alive, or bypass authentication. If sign-in is needed, it asks
+for a terminal acknowledgement after you finish. An authenticated session proceeds
+without that prompt. Treat downloading as an attended, on-demand workflow.
+
+The command operates the verified English controls:
+avatar → Documents → Brokerage account → Account statement → PDF → month/custom
+date range → Get statement. With no dates, it requests the current calendar month.
+Supply both `--start` and `--end` to select and validate another period. Whole
+calendar months use Month mode; other ranges use Custom and cannot end in the
+future. `--manual-navigation` leaves those controls to you while still capturing
+and validating the requested PDF. There is no scheduled job.
+
+Revolut may return a PDF preview instead of a browser download. CashAsh saves the
+PDF from the signed storage URL observed in the export response or preview tab,
+then validates and archives it, prints reconciliation and closes Chrome. It does
+not call a guessed export endpoint. Signed URLs are not logged or persisted.
+
+Verification: extraction was checked against a real English PDF and synthetic
+multi-page fixtures. Authenticated navigation, month/custom date controls, the
+export response shape and retrieval of an actual preview PDF were checked live.
+The combined downloader completed live monthly and same-month custom-range
+exports, PDF validation, private archiving and reconciliation. Calendar paging
+across months/years has not been verified live. A newly downloaded PDF can still
+carry an earlier generation date; the archive preserves the broker's printed
+date rather than substituting the download date.
+
+`main.py revolut settings` prints `REVOLUT_QUANTITY_TOLERANCE`,
+`REVOLUT_SEED_QUANTITY_DECIMALS`, `REVOLUT_MONEY_TOLERANCE`,
+`REVOLUT_BROWSER_TIMEOUT_MS`, `REVOLUT_DOWNLOAD_TIMEOUT_MS`,
+`REVOLUT_CALENDAR_MAX_STEPS`, `REVOLUT_SIGN_IN_TIMEOUT_S`,
+and `REVOLUT_SIGN_IN_POLL_S`. Their values and
+rationale live in `src/config.py`. The download timeout starts after automatic
+navigation or, in manual mode, after authentication. On timeout, retry the
+command; use `--manual-navigation` if the site's controls have changed.
 
 ## Context files
 

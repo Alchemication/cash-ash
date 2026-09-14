@@ -4,6 +4,7 @@ Subcommands:
     profile        Create and list profiles — one per person.
     init           Create the database and seed it from a broker snapshot file.
     sync           Fetch prices, FX rates, known dates and consensus estimates.
+    revolut        Ingest/reconcile PDF evidence or download through Chrome.
     events         List known upcoming events for your holdings.
     thesis         Bootstrap, list and inspect why each position is held.
     triage         Rank every holding by what deserves attention this week.
@@ -143,6 +144,7 @@ from cmd_daemon import cmd_daemon  # noqa: E402
 from cmd_eval import cmd_eval  # noqa: E402
 from cmd_db import cmd_db  # noqa: E402
 from cmd_llm_log import cmd_llm_log  # noqa: E402
+from cmd_revolut import cmd_revolut  # noqa: E402
 from cmd_models import cmd_models  # noqa: E402
 from cmd_thesis import cmd_thesis  # noqa: E402
 from cmd_workflow import cmd_cash, cmd_executed, cmd_process
@@ -259,6 +261,49 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_db(p_init)
     p_init.set_defaults(func=cmd_init)
+
+    p_revolut = sub.add_parser(
+        "revolut", help="Revolut PDF evidence and reconciliation"
+    )
+    revolut_sub = p_revolut.add_subparsers(dest="revolut_cmd", required=True)
+    for action in (
+        "ingest",
+        "reconcile",
+        "correct-seed",
+        "refresh",
+        "download",
+        "settings",
+    ):
+        command = revolut_sub.add_parser(action)
+        command.set_defaults(func=cmd_revolut)
+        if action == "settings":
+            continue
+        command.add_argument("--profile", default=None)
+        if action == "refresh":
+            # Sends the Telegram Run-now / Snooze proposal; the daemon does the rest.
+            continue
+        if action in {"ingest", "reconcile", "correct-seed"}:
+            command.add_argument("pdf", help="English account statement PDF path")
+            if action == "correct-seed":
+                command.add_argument(
+                    "--yes",
+                    action="store_true",
+                    help="Apply the shown corrections without the confirmation prompt",
+                )
+        else:
+            command.add_argument(
+                "--reuse-session",
+                default=None,
+                metavar="PATH",
+                help="Explicitly reuse an existing Chrome browser-profile; close it first",
+            )
+            command.add_argument("--start", default=None, metavar="YYYY-MM-DD")
+            command.add_argument("--end", default=None, metavar="YYYY-MM-DD")
+            command.add_argument(
+                "--manual-navigation",
+                action="store_true",
+                help="Operate the document screens yourself if the English UI changes",
+            )
 
     p_sync = sub.add_parser("sync", help="Fetch current prices and FX rates")
     p_sync.add_argument(

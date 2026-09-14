@@ -76,6 +76,12 @@ proposal, identified by this id — never anything carried in the payload, so a
 tampered callback can at most confirm something the owner was already shown.
 """
 
+_REFRESH_CALLBACK = re.compile(r"^refresh:run$")
+"""The broker-refresh button's payload. Carries no id: a refresh reads nothing
+from the payload, and the browser session it drives is the profile's own — a
+tampered payload can at most start a refresh the owner could start themselves
+with /refresh."""
+
 
 @dataclass(frozen=True)
 class Handled:
@@ -186,6 +192,20 @@ def _chat_reply(profile, text: str) -> str:  # type: ignore[no-untyped-def]
     from store import open_existing_db
 
     command = text.strip().split()[0].lstrip("/").split("@")[0].lower()
+
+    if command == "refresh":
+        # Answered before the database is opened: a refresh reads nothing from
+        # it, and nothing schedules one — this is how the owner starts one from
+        # the phone, knowing they have just bought or sold.
+        from daemon_refresh import (
+            ALREADY_RUNNING,
+            STARTING_MESSAGE,
+            submit_broker_refresh,
+        )
+
+        queued = submit_broker_refresh(profile) == "queued"
+        return STARTING_MESSAGE if queued else ALREADY_RUNNING
+
     conn = open_existing_db(profile.db)
 
     if command in {"evidence", "thesis", "accept", "reject"}:
@@ -254,7 +274,7 @@ def _chat_reply(profile, text: str) -> str:  # type: ignore[no-untyped-def]
         reset_conversation(profile.name)
         return "Forgotten. The next question starts a new conversation."
     return (
-        "Commands: /review, /holdings, /pending, /evidence TICKER, "
+        "Commands: /review, /holdings, /pending, /refresh, /evidence TICKER, "
         "/thesis TICKER, /reset. Anything else, just ask in plain words — "
         '"what did I pay for BRK.B", "how much cash", "when did I last '
         'add money".'
@@ -294,6 +314,20 @@ def handle_update(update: dict) -> Handled:
             return Handled(
                 kind="proposal", profile=profile.name, detail=proposal.group(2)
             )
+
+        if _REFRESH_CALLBACK.match(data) is not None:
+            from daemon_refresh import (
+                ALREADY_RUNNING,
+                STARTING_MESSAGE,
+                submit_broker_refresh,
+            )
+
+            outcome = submit_broker_refresh(profile)
+            answer_callback(
+                callback_id=callback["id"],
+                text=STARTING_MESSAGE if outcome == "queued" else ALREADY_RUNNING,
+            )
+            return Handled(kind="refresh", profile=profile.name, detail=outcome)
 
         match = _CALLBACK.match(data)
         if match is None:

@@ -11,9 +11,17 @@ mechanical citation checks establish membership and exact quotes only.
 
 ## Workflow depth
 
-Broker transaction import, reconciliation and multiple partial fills. Execution
+Broker transaction import, historical/ISIN/cash reconciliation and multiple partial fills. Execution
 currently records one fill per approved recommendation. A guided thesis editor
 and investment-attractiveness worksheet could make assumptions easier to revisit.
+
+Transaction import needs broker fill identifiers, actual EUR consideration and
+fees/FX, and a deliberate replacement boundary for synthetic opening trades.
+Overlapping statements must not double-count existing fills or cash flows.
+
+Statement dividends are archived as evidence but never recorded. Turning one
+into an owner-confirmed `DIVIDEND` cash flow needs the EUR amount at the rate on
+the payment date, which is not the rate stored today.
 
 ## Process evaluations
 

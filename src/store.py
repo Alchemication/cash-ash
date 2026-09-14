@@ -13,6 +13,7 @@ Public API:
     load_securities    -- all securities, keyed by ticker
     insert_trade       -- record one buy or sell
     load_trades        -- trades in ledger order
+    correct_seed_quantities -- fix truncated synthetic opening quantities
     insert_cash_flow   -- record money in or out
     load_cash_flows    -- cash flows in ledger order
     save_prices        -- upsert closing prices
@@ -274,6 +275,64 @@ def insert_trade(conn: sqlite3.Connection, trade: Trade) -> int:
             ),
         )
     return int(cursor.lastrowid)
+
+
+def correct_seed_quantities(
+    conn: sqlite3.Connection, corrections: list[tuple[int, float, float, str]]
+) -> None:
+    """Replace synthetic opening quantities and their seed snapshot rows.
+
+    All or nothing. A trade that is no longer synthetic or no longer holds the
+    expected quantity aborts the batch, so corrections computed against an older
+    ledger cannot land on a newer one. The snapshot rows matched are those of
+    the trade's security, date and old quantity; their EUR values stay.
+
+    Args:
+        conn: Open database connection.
+        corrections: ``(trade_id, expected_quantity, quantity, note)``; the
+            note is appended to the trade's existing one.
+
+    Raises:
+        ValueError: If any trade changed since the corrections were computed.
+    """
+    with conn:
+        for trade_id, expected, quantity, note in corrections:
+            row = conn.execute(
+                """
+                SELECT account_id, security_id, trade_date FROM trades
+                WHERE id = ? AND is_synthetic = 1 AND quantity = ?
+                """,
+                (trade_id, expected),
+            ).fetchone()
+            if row is None:
+                raise ValueError(
+                    f"Trade {trade_id} changed since the correction was computed; "
+                    f"run the command again."
+                )
+            conn.execute(
+                """
+                UPDATE trades SET quantity = ?, note = COALESCE(note || ' ', '') || ?
+                WHERE id = ?
+                """,
+                (quantity, note, trade_id),
+            )
+            conn.execute(
+                """
+                UPDATE snapshot_positions SET quantity = ?
+                WHERE security_id = ? AND quantity = ?
+                  AND snapshot_id IN (
+                      SELECT id FROM portfolio_snapshots
+                      WHERE account_id = ? AND snapshot_date = ?
+                  )
+                """,
+                (
+                    quantity,
+                    row["security_id"],
+                    expected,
+                    row["account_id"],
+                    row["trade_date"],
+                ),
+            )
 
 
 def load_trades(
