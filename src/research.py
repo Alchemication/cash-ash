@@ -353,25 +353,74 @@ def _price_move(conn: sqlite3.Connection, security_id: int) -> str | None:
     return f"{change:+.1f}% between {previous['price_date']} and {newest['price_date']}"
 
 
-def _estimate_change(conn: sqlite3.Connection, security_id: int) -> str | None:
-    """Describe how analyst expectations moved, if there are two observations."""
+def _estimate_change(
+    conn: sqlite3.Connection,
+    security_id: int,
+    *,
+    window_days: int = TRIAGE_LOOKBACK_DAYS,
+) -> str | None:
+    """Describe how analyst expectations moved across the recent window.
+
+    Comparing only the last two observations turns a feed that jumps one day
+    and returns the next into a large one-day revision, and triage will then
+    send research chasing the cause of a cut that never happened. The whole
+    path since the window opened is described instead, with a reversal named.
+
+    Args:
+        conn: Open database connection.
+        security_id: Security whose consensus to describe.
+        window_days: How far before the newest observation the comparison
+            starts. The last observation at or before that date is the
+            baseline, so sparse history still yields a comparison.
+
+    Returns:
+        A one-line description, or None when there is nothing to compare.
+    """
     rows = conn.execute(
         """
-        SELECT observed_date, eps_avg, revenue_avg FROM consensus_estimates
+        SELECT observed_date, eps_avg FROM consensus_estimates
         WHERE security_id = ? AND eps_avg IS NOT NULL
-        ORDER BY observed_date DESC LIMIT 2
+        ORDER BY observed_date
         """,
         (security_id,),
     ).fetchall()
     if len(rows) < 2:
         return None
-    newest, previous = rows[0], rows[1]
-    if not previous["eps_avg"]:
+    start = (
+        date.fromisoformat(rows[-1]["observed_date"]) - timedelta(days=window_days)
+    ).isoformat()
+    baseline = max(
+        (i for i, row in enumerate(rows) if row["observed_date"] <= start), default=0
+    )
+    path: list[tuple[str, float]] = []
+    for row in rows[baseline:]:
+        if not path or row["eps_avg"] != path[-1][1]:
+            path.append((row["observed_date"], row["eps_avg"]))
+    since = path[0][0]
+    if len(path) == 1:
+        return f"EPS estimate unchanged since {since}"
+    if any(not value for _, value in path[:-1]):
         return None
-    change = (newest["eps_avg"] / previous["eps_avg"] - 1) * 100
-    direction = "raised" if change > 0 else "cut" if change < 0 else "unchanged"
+
+    def verb(change: float) -> str:
+        return "raised" if change > 0 else "cut" if change < 0 else "unchanged"
+
+    net = (path[-1][1] / path[0][1] - 1) * 100
+    if len(path) == 2:
+        return f"EPS estimate {verb(net)} {abs(net):.1f}% since {since}"
+    moves = [
+        (when, (value / previous - 1) * 100)
+        for (_, previous), (when, value) in zip(path, path[1:])
+    ]
+    steps = ", ".join(
+        f"{verb(change)} {abs(change):.1f}% on {when}" for when, change in moves
+    )
+    if all(change > 0 for _, change in moves) or all(change < 0 for _, change in moves):
+        return f"EPS estimate {verb(net)} {abs(net):.1f}% since {since} ({steps})"
     return (
-        f"EPS estimate {direction} {abs(change):.1f}% since {previous['observed_date']}"
+        f"EPS estimate net {verb(net)} {abs(net):.1f}% since {since}, but it reversed "
+        f"along the way ({steps}); a move that reverses within days may be feed "
+        f"noise rather than an analyst revision"
     )
 
 
@@ -460,7 +509,9 @@ def triage_inputs(
                 open_questions=thesis.open_questions if thesis else (),
                 upcoming=tuple(upcoming_by_security.get(security.id, ())),
                 recent=tuple(recent_by_security.get(security.id, ())),
-                estimate_change=_estimate_change(conn, security.id),
+                estimate_change=_estimate_change(
+                    conn, security.id, window_days=lookback_days
+                ),
                 sell_permitted=sell_permitted_by_ticker.get(security.ticker),
             )
         )
@@ -872,23 +923,24 @@ def research_security(
         status = "deteriorating"
     new_questions = _string_list(payload.get("new_open_questions"))
     proposed_summary = payload.get("proposed_summary") if sourced else None
+    revised_summary = (
+        proposed_summary.strip()
+        if isinstance(proposed_summary, str)
+        and proposed_summary.strip()
+        and proposed_summary.strip() != thesis.summary.strip()
+        else None
+    )
     proposed_version = None
 
-    if (
-        status != "unchanged"
-        or new_questions
-        or triggered
-        or (isinstance(proposed_summary, str) and proposed_summary.strip())
-    ):
+    # New open questions alone are not a revision. They stay on the
+    # assessment, which the decision stage reads, rather than asking the owner
+    # to approve a thesis whose reason did not change.
+    if status != "unchanged" or triggered or revised_summary:
         proposed = _propose_thesis(
             conn,
             thesis=thesis,
             status=status,
-            summary=(
-                proposed_summary.strip()
-                if isinstance(proposed_summary, str) and proposed_summary.strip()
-                else thesis.summary
-            ),
+            summary=revised_summary or thesis.summary,
             reason=str(payload.get("status_reason", "")).strip(),
             new_questions=new_questions,
             run_id=run_id,

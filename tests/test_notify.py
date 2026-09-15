@@ -232,13 +232,35 @@ class TestWeeklyReport:
         parts = weekly_report(seeded, today=self.TODAY)
         assert "€355.00" in parts.body
 
-    def test_weak_theses_are_reported_as_standing_not_new(
+    def test_missing_and_absent_reasons_are_standing_not_new(
         self, seeded: sqlite3.Connection
     ) -> None:
-        parts = weekly_report(seeded, today=self.TODAY)
-        assert "Standing, not new" in parts.body
-        assert "BBB" in parts.body
-        assert "AAA" not in parts.body.split("Standing, not new")[1]
+        standing = weekly_report(seeded, today=self.TODAY).body.split(
+            "Standing, not new"
+        )[1]
+        assert "No thesis recorded: CCC" in standing
+        assert "No reason beyond wanting to own it: BBB" in standing
+        assert "AAA" not in standing
+
+    def test_a_weak_reason_is_not_called_absent(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        # A weak reason that was written down once read as "held without a
+        # reason you have written down", which is a different finding.
+        save_thesis(
+            seeded,
+            Thesis(
+                security_id=3,
+                summary="Someone else bought it",
+                source="user",
+                conviction="weak",
+            ),
+        )
+        standing = weekly_report(seeded, today=self.TODAY).body.split(
+            "Standing, not new"
+        )[1]
+        assert "A reason, but not tied to the business or its price: CCC" in standing
+        assert "No thesis recorded" not in standing
 
     def test_pending_recommendations_become_actionable(
         self, seeded: sqlite3.Connection

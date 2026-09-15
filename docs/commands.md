@@ -288,6 +288,11 @@ what consensus is today and never what it was last month, so a revision is only
 detectable by comparing today's figure against one already stored. The series
 cannot be backfilled, which is why recording starts before anything reads it.
 
+Triage describes the path since `TRIAGE_LOOKBACK_DAYS` (in `src/config.py`)
+before the newest observation, ignoring repeated readings. A move that reverses
+inside that window is named as a reversal rather than reported as a revision,
+because a figure that jumps and returns is more likely feed noise.
+
 ## Theses
 
 A thesis records why a position is held, and — the part that makes it useful —
@@ -620,8 +625,9 @@ Missing holding prices suppress aggregate return; stale prices and FX are named.
 The first report after an upgrade has no verified cycle history until `weekly`
 runs. Opening an existing database applies the workflow migration automatically.
 
-Holdings with no real reason behind them are reported separately, under
-"standing, not new". They are not this week's finding and never will be, and
+Current holdings whose reason is missing or weak are reported separately, under
+"standing, not new", one line each for no thesis recorded, conviction `none`
+and conviction `weak`. They are not this week's finding and never will be, and
 repeating them as though they were would be the generic-summary habit the whole
 design avoids.
 
@@ -872,7 +878,9 @@ new questions. Reusing a previous plan is not currently supported.
 Evidence packages are stored with a content hash alongside completed assessments,
 including unchanged assessments and open questions. These dated assessments feed
 the decision stage separately from the active thesis. A proposed thesis is never
-adopted automatically.
+adopted automatically. Research proposes a revision only when the thesis status
+changes, a breaking condition is triggered or the summary itself is revised;
+new open questions stay on the assessment.
 
 News aggregation is the default. For question-specific primary material, put a
 JSON list in `context/evidence.json` under your profile, or pass

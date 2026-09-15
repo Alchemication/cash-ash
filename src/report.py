@@ -204,13 +204,21 @@ def weekly_report(
                 f"• {escape(r['ticker'] or '')} {r['action']}: {escape(r['refusal'])}"
                 for r in refused
             ]
-    concerns = _standing_concerns(conn)
+    concerns = _standing_concerns(
+        conn,
+        held={
+            row.position.security.id: row.position.security.ticker
+            for row in rows
+            if row.position.security.id is not None
+        },
+    )
     if concerns:
         lines += ["", "<b>Standing, not new</b>"]
-        lines.append(
-            f"<i>{escape(', '.join(concerns))} — held without a reason you have "
-            f"written down. No research will settle that; only you can.</i>"
-        )
+        lines += [
+            f"<i>{escape(label)}: {escape(', '.join(tickers))}</i>"
+            for label, tickers in concerns
+        ]
+        lines.append("<i>No research will settle these; only you can.</i>")
 
     lines += [
         "",
@@ -260,25 +268,44 @@ def _pending_recommendations(conn, *, today: date) -> list[dict]:  # type: ignor
     ]
 
 
-def _standing_concerns(conn) -> list[str]:  # type: ignore[no-untyped-def]
-    """Return tickers held on a thesis with no real reason behind it.
+_CONCERN_LABELS: tuple[tuple[str, str], ...] = (
+    ("missing", "No thesis recorded"),
+    ("none", "No reason beyond wanting to own it"),
+    ("weak", "A reason, but not tied to the business or its price"),
+)
+
+
+def _standing_concerns(
+    conn,  # type: ignore[no-untyped-def]
+    *,
+    held: dict[int, str],
+) -> list[tuple[str, list[str]]]:
+    """Group current holdings whose reason is missing or weak.
 
     Reported separately from the week's actions because they are not news and
     never will be. Repeating them as if they were this week's finding would be
-    the generic-summary habit the whole design avoids.
+    the generic-summary habit the whole design avoids. A weak reason and an
+    absent one are different findings, so each gets its own line.
+
+    Args:
+        conn: Open database connection.
+        held: Ticker by security id for every current holding.
+
+    Returns:
+        ``(label, tickers)`` per non-empty group, most severe first.
     """
-    return [
-        row["ticker"]
+    conviction = {
+        row["security_id"]: row["conviction"]
         for row in conn.execute(
-            """
-            SELECT s.ticker
-            FROM thesis t
-            JOIN securities s ON s.id = t.security_id
-            WHERE t.status = 'active' AND t.conviction IN ('none', 'weak')
-            ORDER BY
-                CASE t.conviction WHEN 'none' THEN 0 ELSE 1 END,
-                s.ticker
-            LIMIT 8
-            """
+            "SELECT security_id, conviction FROM thesis WHERE status = 'active'"
         )
-    ]
+    }
+    groups = {
+        key: sorted(
+            ticker
+            for security_id, ticker in held.items()
+            if conviction.get(security_id, "missing") == key
+        )
+        for key, _ in _CONCERN_LABELS
+    }
+    return [(label, groups[key]) for key, label in _CONCERN_LABELS if groups[key]]

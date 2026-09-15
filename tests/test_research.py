@@ -324,6 +324,58 @@ class TestProposalOnly:
         assert result.proposed_version is None
         assert len(thesis_history(seeded, security_id=1)) == 1
 
+    def test_new_open_questions_alone_propose_nothing(
+        self, seeded: sqlite3.Connection, fake_llm
+    ) -> None:
+        # A proposal that restates the thesis word for word plus one appended
+        # question asks the owner to approve something that did not change.
+        fake_llm(
+            _plan(),
+            _analysis(
+                answers=[TestProvenance()._claim()],
+                new_open_questions=["who decides now"],
+            ),
+        )
+        result = research_security(
+            seeded,
+            ticker="AAA",
+            source=_Source(
+                [
+                    EvidenceItem(
+                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                    )
+                ]
+            ),
+        )
+        assert result.proposed_version is None
+        row = seeded.execute(
+            "SELECT open_questions_json FROM research_assessment"
+        ).fetchone()
+        assert json.loads(row["open_questions_json"]) == ["who decides now"]
+
+    def test_a_restated_summary_proposes_nothing(
+        self, seeded: sqlite3.Connection, fake_llm
+    ) -> None:
+        fake_llm(
+            _plan(),
+            _analysis(
+                answers=[TestProvenance()._claim()],
+                proposed_summary=" I like the product ",
+            ),
+        )
+        result = research_security(
+            seeded,
+            ticker="AAA",
+            source=_Source(
+                [
+                    EvidenceItem(
+                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                    )
+                ]
+            ),
+        )
+        assert result.proposed_version is None
+
     def test_broken_creates_a_proposal(
         self, seeded: sqlite3.Connection, fake_llm
     ) -> None:

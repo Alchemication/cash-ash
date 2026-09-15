@@ -537,7 +537,7 @@ TRIAGE_HORIZON_DAYS: int = 21
 """Three weeks captures upcoming reporting dates without a distant-event backlog."""
 
 TRIAGE_LOOKBACK_DAYS: int = 14
-"""Two weeks tolerates one missed review when collecting recent events."""
+"""Two weeks tolerates one missed review when collecting recent events and estimate moves."""
 
 
 # ---------------------------------------------------------------------------

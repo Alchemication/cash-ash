@@ -171,6 +171,58 @@ class TestTriageInputs:
         assert entry.estimate_change is not None
         assert "cut" in entry.estimate_change
 
+    def _revision(
+        self, conn: sqlite3.Connection, *readings: tuple[str, float]
+    ) -> str | None:
+        from models import ConsensusEstimate
+        from store import save_consensus
+
+        save_consensus(
+            conn,
+            [
+                ConsensusEstimate(
+                    security_id=1, observed_date=when, source="fake", eps_avg=eps
+                )
+                for when, eps in readings
+            ],
+        )
+        entry = next(e for e in triage_inputs(conn, today=TODAY) if e.ticker == "AAA")
+        return entry.estimate_change
+
+    def test_a_reversal_is_not_reported_as_a_cut(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        # A feed that jumped and returned read as a 10.9% one-day cut when only
+        # the last two readings were compared, and research chased its cause.
+        change = self._revision(
+            seeded, ("2026-08-31", 2.0), ("2026-09-05", 2.2), ("2026-09-06", 1.98)
+        )
+        assert change is not None
+        assert "net cut 1.0% since 2026-08-31" in change
+        assert "reversed" in change
+
+    def test_steady_moves_are_not_called_a_reversal(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        change = self._revision(
+            seeded, ("2026-08-31", 2.0), ("2026-09-03", 1.9), ("2026-09-06", 1.8)
+        )
+        assert change is not None
+        assert change.startswith("EPS estimate cut 10.0% since 2026-08-31")
+        assert "reversed" not in change
+
+    def test_a_repeated_reading_is_not_a_move(self, seeded: sqlite3.Connection) -> None:
+        change = self._revision(
+            seeded, ("2026-08-31", 2.0), ("2026-09-01", 2.0), ("2026-09-06", 1.8)
+        )
+        assert change == "EPS estimate cut 10.0% since 2026-08-31"
+
+    def test_a_baseline_before_the_window_is_kept(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        change = self._revision(seeded, ("2026-07-01", 2.0), ("2026-09-06", 1.8))
+        assert change == "EPS estimate cut 10.0% since 2026-07-01"
+
     def test_upcoming_and_recent_events_are_split(
         self, seeded: sqlite3.Connection
     ) -> None:
