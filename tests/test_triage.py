@@ -428,9 +428,14 @@ class TestSellEligibility:
         assert entry.sell_permitted is False
         assert "NOT permitted" in entry.render()
 
-    def test_an_oversized_position_is_sellable_whatever_the_thesis(
-        self, seeded: sqlite3.Connection
+    def test_an_oversized_position_new_money_cannot_dilute_is_sellable(
+        self, seeded: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        import config
+
+        # 150 of 355 is 79 over the cap; with 10 a month, new money cannot
+        # dilute that within three months, so trimming for size is permitted.
+        monkeypatch.setattr(config, "DEFAULT_MONTHLY_CONTRIBUTION_EUR", 10.0)
         from store import save_fx_rate
 
         save_fx_rate(
@@ -504,6 +509,7 @@ class TestSellEligibility:
         seen = fake_llm('{"recommendations": [], "summary": "quiet"}')
         run_decision(seeded, today=TODAY)
         assert "selling: NOT permitted" in seen[0]
+        assert "adding: NOT permitted" in seen[0]
 
 
 class TestTriageBudget:

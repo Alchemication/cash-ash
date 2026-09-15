@@ -180,6 +180,46 @@ is still the binding constraint; this only stops a single week from committing
 several months ahead.
 """
 
+MIN_TRADE_EUR: float = _env_float("CASH_ASH_MIN_TRADE_EUR", 50.0)
+"""Smallest trade worth recommending.
+
+A holding priced in a foreign currency pays a conversion on every trade, and
+possibly a commission, and those costs are a far larger share of EUR 20 than of
+a typical purchase. Fifty keeps them a small fraction while still letting a
+month's default contribution split across two holdings.
+A trade the limits shrink below this is refused rather than recommended as a
+token amount. An EXIT is exempt: closing a small holding sells what is there.
+"""
+
+BUY_COOLING_OFF_DAYS: int = _env_int("CASH_ASH_BUY_COOLING_OFF_DAYS", 2)
+"""Days after a buy is proposed before it can be approved.
+
+Proposed on Sunday, approvable on Tuesday. The strategy rules out buying
+something because it is being talked about; at a monthly-contribution pace a
+two-day wait costs nothing and lets that kind of enthusiasm cool.
+"""
+
+SELL_COOLING_OFF_DAYS: int = _env_int("CASH_ASH_SELL_COOLING_OFF_DAYS", 3)
+"""Days after a sale is proposed before it can be approved.
+
+The strategy asks that no sell happens the day it is recommended, and that the
+owner still agrees "a few days" later. Three rather than a week: recommendations
+expire after ``RECOMMENDATION_EXPIRY_DAYS`` and the next weekly run replaces the
+unanswered ones, so a seven-day wait could never be met. Must stay below that
+expiry.
+"""
+
+TRIM_CONTRIBUTION_MONTHS: float = _env_float("CASH_ASH_TRIM_CONTRIBUTION_MONTHS", 3.0)
+"""Months of new money that must be unable to dilute a position before a trim.
+
+The strategy says contributions do the rebalancing: money directed elsewhere
+shrinks an oversized position's weight without a sale, which is cheaper and
+harder to get wrong. A trim for size is permitted only when the excess above
+the position cap is larger than this many monthly contributions. Three is a
+judgement, not a derivation: long enough that trims stay rare, short enough that
+a position far over its cap is not left there for a year.
+"""
+
 CONCENTRATION_ALERT_PCT: float = _env_float("CASH_ASH_CONCENTRATION_ALERT_PCT", 40.0)
 """Theme or sector weight that gets reported as a concentration warning.
 
@@ -194,6 +234,41 @@ RECOMMENDATION_EXPIRY_DAYS: int = _env_int("CASH_ASH_RECOMMENDATION_EXPIRY_DAYS"
 A weekly cadence means the next review supersedes the last one. Approving a
 stale BUY executes research that has already been replaced, at a price that has
 already moved.
+"""
+
+RECOMMENDATION_HEADLINE_MAX_CHARS: int = 140
+"""Longest headline a recommendation shows before its details.
+
+About two lines on a phone held upright, which is what a list of decisions can
+spend per item before it stops being scannable. A longer headline from the
+model is cut at a word boundary rather than refused: failing the decision stage
+over one long sentence would cost the week its recommendations.
+"""
+
+RECOMMENDATION_WHY_MAX_WORDS: int = 80
+"""Word budget the decide prompt gives each rationale.
+
+The rationale sits collapsed under the headline and is opened only by someone
+who wants the reasoning. Eighty words holds what changed, why it matters and a
+dated source; before the budget, single rationales ran past three hundred words
+and repeated each other. Stated to the model rather than enforced by cutting,
+which would end a claim mid-sentence.
+"""
+
+REPORT_STAGE_BRIEF_MAX_CHARS: int = 28
+"""Longest stage outcome shown in the report's stage flow.
+
+The flow is a monospace block, and a phone held upright shows about forty-five
+characters of it; the mark, stage name and time take the first eighteen. Only
+cycles recorded before stages carried their own short outcome are cut to this.
+"""
+
+REPORT_COMPARISON_DAYS: int = 7
+"""How far back the report's "since" facts compare.
+
+A week, matching the review cadence, so each fact answers what changed since
+the last review rather than since an arbitrary date. The value change is read
+from the newest snapshot at least this old.
 """
 
 

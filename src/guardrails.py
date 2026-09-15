@@ -4,7 +4,9 @@ These run in code, after the model has proposed, and they are the reason an
 LLM is allowed near a portfolio decision at all. A prompt asking a model to
 respect a position limit is a request; this is not.
 
-Two kinds of rule live here. Portfolio limits — position weight, trade size,
+The owner's definitions of a good buy and a good sell live in
+``buy_sell_rules`` and are applied here, alongside the arithmetic. Two kinds of
+rule meet in this module. Portfolio limits — position weight, trade size,
 capital available — are arithmetic, and a proposal that breaches one is clamped
 or refused. The owner's own sell discipline is the second kind, and it is the
 more important: their written strategy says price alone is never a reason to
@@ -32,25 +34,20 @@ import logging
 import math
 from dataclasses import dataclass, field
 
+from buy_sell_rules import buy_checks, sell_path, theme_headroom
 from config import (
+    CONCENTRATION_ALERT_PCT,
     LARGE_POSITION_WEIGHT_PCT,
     MAX_NEW_TRADE_EUR,
     MAX_POSITION_WEIGHT_PCT,
     MAX_WEEKLY_ALLOCATION_EUR,
+    MIN_TRADE_EUR,
 )
 
 logger = logging.getLogger(__name__)
 
 BUY_ACTIONS = frozenset({"BUY", "ADD"})
 SELL_ACTIONS = frozenset({"TRIM", "EXIT"})
-
-_THESIS_SUPPORTS_SELLING = frozenset({"deteriorating", "broken"})
-"""Thesis states that can justify selling.
-
-From the owner's written strategy: they sell when the reason they bought stops
-being true, and never because a price moved. A thesis that is unexamined,
-unchanged or improving cannot support an EXIT, however bad the chart looks.
-"""
 
 
 @dataclass(frozen=True)
@@ -68,6 +65,10 @@ class GuardrailContext:
     weekly_committed_eur: float = 0.0
     blocked_reason: str | None = None
     pending_tickers: frozenset[str] = frozenset()
+    conviction_by_ticker: dict[str, str] = field(default_factory=dict)
+    themes_by_ticker: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    theme_values_eur: dict[str, float] = field(default_factory=dict)
+    valuation_checked: frozenset[str] = frozenset()
 
     @property
     def available_capital_eur(self) -> float:
@@ -165,53 +166,37 @@ def check_proposal(
     if action in SELL_ACTIONS and ticker:
         status = context.thesis_status_by_ticker.get(ticker, "unexamined")
         weight = context.weights_by_ticker.get(ticker, 0.0)
-        oversized = weight > MAX_POSITION_WEIGHT_PCT
         checks.append(f"thesis status is {status}")
         checks.append(
             f"weight {weight:.1f}% against {MAX_POSITION_WEIGHT_PCT:.0f}% cap"
         )
 
-        if status not in _THESIS_SUPPORTS_SELLING and not oversized:
+        path = sell_path(ticker, context)
+        if path is None:
             return Verdict(
                 action=action,
                 amount_eur=None,
                 refused=True,
                 refusal=(
-                    f"{action} refused: the thesis is '{status}', not deteriorating "
-                    f"or broken, and the position is within its weight cap. The "
-                    f"strategy says price alone is never a reason to sell."
+                    f"{action} refused: no sell path applies. The reason has not "
+                    f"broken (thesis '{status}'), the holding has not been examined "
+                    f"and found to have no reason, and it is not so far over the "
+                    f"{MAX_POSITION_WEIGHT_PCT:.0f}% cap that new money could not "
+                    f"dilute it. The strategy says price alone is never a reason "
+                    f"to sell."
                 ),
                 checks=tuple(checks),
             )
-        if action == "EXIT" and status == "deteriorating":
+        checks.append(f"sell path: {path.name}")
+        if action == "EXIT" and not path.exit_allowed:
             action = "TRIM"
             amount = min(amount, MAX_NEW_TRADE_EUR)
             adjustments.append(
-                "EXIT reduced to TRIM: thesis deteriorating, not broken."
+                f"EXIT reduced to TRIM: {path.name} justifies trimming, not closing."
             )
-        if status not in _THESIS_SUPPORTS_SELLING and oversized and action == "EXIT":
-            adjustments.append(
-                "EXIT reduced to TRIM: the position is oversized, which justifies "
-                "trimming for size, but the thesis has not broken."
-            )
-            action = "TRIM"
-            amount = min(
-                amount,
-                MAX_NEW_TRADE_EUR,
-                max(
-                    0,
-                    context.values_by_ticker[ticker]
-                    - context.total_value_eur * MAX_POSITION_WEIGHT_PCT / 100,
-                ),
-            )
-        if oversized and status not in _THESIS_SUPPORTS_SELLING:
-            target = (
-                context.values_by_ticker[ticker]
-                - context.total_value_eur * MAX_POSITION_WEIGHT_PCT / 100
-            )
-            if amount > target:
-                amount = target
-                adjustments.append("Trim limited to the amount above the weight cap.")
+        if path.max_eur is not None and amount > path.max_eur:
+            amount = path.max_eur
+            adjustments.append("Trim limited to the amount above the weight cap.")
 
     if action in BUY_ACTIONS:
         available = context.available_capital_eur - context.allocated_this_run_eur
@@ -233,6 +218,16 @@ def check_proposal(
             )
 
         if ticker:
+            rules = buy_checks(ticker, context)
+            checks.extend(rules.passed)
+            if rules.failed:
+                return Verdict(
+                    action=action,
+                    amount_eur=None,
+                    refused=True,
+                    refusal=f"{action} refused: " + "; ".join(rules.failed) + ".",
+                    checks=tuple(checks),
+                )
             weight = context.weights_by_ticker.get(ticker, 0.0)
             checks.append(
                 f"weight {weight:.1f}% against {MAX_POSITION_WEIGHT_PCT:.0f}% cap"
@@ -255,6 +250,14 @@ def check_proposal(
                     f"under the {MAX_POSITION_WEIGHT_PCT:.0f}% cap"
                 )
                 amount = headroom
+            themes_left = theme_headroom(ticker, context)
+            if themes_left is not None and amount > themes_left:
+                adjustments.append(
+                    f"reduced to EUR {themes_left:.2f}, the most that keeps "
+                    f"{ticker}'s themes under the {CONCENTRATION_ALERT_PCT:.0f}% "
+                    f"alert level"
+                )
+                amount = themes_left
 
         for limit, label in (
             (MAX_NEW_TRADE_EUR, "single-trade limit"),
@@ -276,6 +279,22 @@ def check_proposal(
                 ),
                 checks=tuple(checks),
             )
+
+    if (
+        action in BUY_ACTIONS | {"TRIM"}
+        and amount is not None
+        and 0 < amount < MIN_TRADE_EUR
+    ):
+        return Verdict(
+            action=action,
+            amount_eur=None,
+            refused=True,
+            refusal=(
+                f"{action} refused: size — EUR {amount:.2f} is all the limits "
+                f"leave, below the EUR {MIN_TRADE_EUR:.0f} minimum trade."
+            ),
+            checks=tuple(checks),
+        )
 
     return Verdict(
         action=action,

@@ -104,7 +104,21 @@ def _record_response(
             "Approved actions reserve cash. Reject to cancel, or record execution before snoozing another proposal."
         )
     if decision == "approve" and row["action"] in {"BUY", "ADD", "TRIM", "EXIT"}:
+        import config
         from store_workflow import latest_cycle
+
+        wait = (
+            config.BUY_COOLING_OFF_DAYS
+            if row["action"] in {"BUY", "ADD"}
+            else config.SELL_COOLING_OFF_DAYS
+        )
+        ready = date.fromisoformat(row["run_date"]) + timedelta(days=wait)
+        if now < ready:
+            raise ValueError(
+                f"Cooling off: this {row['action']} can be approved from "
+                f"{ready:%a} {ready.day} {ready:%b}. The wait is the point; "
+                f"approve then if you still agree."
+            )
 
         cycle = latest_cycle(conn)
         if (

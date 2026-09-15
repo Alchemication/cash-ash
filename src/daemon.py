@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import json
 import logging
-from review_text import recommendation_buttons
 from notify import escape
 import re
 import threading
@@ -54,7 +53,13 @@ from config import (
     WEEKLY_RUN_WEEKDAY,
 )
 from daemon_chat import submit_chat_turn
-from notify import TelegramError, answer_callback, get_updates, send_message
+from notify import (
+    TelegramError,
+    answer_callback,
+    edit_message,
+    get_updates,
+    send_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -289,11 +294,14 @@ def _chat_reply(profile, text: str) -> str:  # type: ignore[no-untyped-def]
             lines.append(f"{row.position.security.ticker}  {value}{change}")
         return "\n".join(lines)
     if command == "pending":
+        from report import recommendation_headline
+
         parts = weekly_report(conn, profile=profile)
         if not parts.actionable:
             return "Nothing is waiting on you."
         return "\n".join(
-            f"{item['action']} {item['ticker'] or ''} — {escape(item['rationale'])}"
+            f"{item['action']} {item['ticker'] or ''} — "
+            f"{escape(recommendation_headline(item))}"
             for item in parts.actionable
         )
     if command == "reset":
@@ -302,6 +310,47 @@ def _chat_reply(profile, text: str) -> str:  # type: ignore[no-untyped-def]
         reset_conversation(profile.name)
         return "Forgotten. The next question starts a new conversation."
     return HELP_TEXT
+
+
+def _close_card(
+    profile,  # type: ignore[no-untyped-def]
+    message: dict | None,
+    recommendation_id: int,
+    decision: str,
+) -> None:
+    """Rewrite an answered card with its outcome, and without its buttons.
+
+    Only when the decision was actually recorded: a refused one — expired, or
+    replaced by a rerun — keeps its card, and the popup already says why. The
+    chat then shows which cards are still open without scrolling back through
+    popups. A failed edit is logged, never raised; the decision is stored.
+    """
+    from report import decided_card_text, recommendation_item
+    from store import open_existing_db
+
+    chat_id = ((message or {}).get("chat") or {}).get("id")
+    message_id = (message or {}).get("message_id")
+    if chat_id is None or message_id is None:
+        return
+    try:
+        with open_existing_db(profile.db) as conn:
+            latest = conn.execute(
+                "SELECT decision FROM user_decision WHERE recommendation_id = ? "
+                "ORDER BY id DESC LIMIT 1",
+                (recommendation_id,),
+            ).fetchone()
+            item = recommendation_item(conn, recommendation_id)
+        if latest is None or latest[0] != decision or item is None:
+            return
+        edit_message(
+            chat_id=int(chat_id),
+            message_id=int(message_id),
+            text=decided_card_text(item, decision),
+        )
+    except Exception:  # noqa: BLE001 - the decision is already recorded
+        logger.warning(
+            "Could not close the card for %s", recommendation_id, exc_info=True
+        )
 
 
 def handle_update(update: dict) -> Handled:
@@ -378,6 +427,9 @@ def handle_update(update: dict) -> Handled:
             return Handled(kind="reply", profile=profile.name)
         message = _record_decision(profile, int(match.group(1)), match.group(2))
         answer_callback(callback_id=callback["id"], text=message)
+        _close_card(
+            profile, callback.get("message"), int(match.group(1)), match.group(2)
+        )
         return Handled(kind="decision", profile=profile.name, detail=match.group(2))
 
     message = update.get("message")
@@ -499,7 +551,9 @@ def _record_weekly(profile_name: str, *, now: datetime | None = None) -> None:
 
 def _run_weekly_for_profiles(send: bool = True) -> None:
     """Run the weekly cycle for every enabled profile whose turn it is."""
+    from config import TELEGRAM_BOT_TOKEN
     from profiles import ProfileConfigError, load_profiles
+    from report_delivery import LiveProgress
     from store import open_existing_db
     from weekly import run_weekly
 
@@ -513,10 +567,18 @@ def _run_weekly_for_profiles(send: bool = True) -> None:
         if not profile.enabled or not weekly_is_due(profile.name):
             continue
         logger.info("Weekly run starting for %s", profile.name)
+        progress = (
+            LiveProgress(chat_id=profile.telegram_id, run_date=date.today())
+            if send and TELEGRAM_BOT_TOKEN
+            else None
+        )
         try:
-            outcome = run_weekly(open_existing_db(profile.db), profile=profile)
+            outcome = run_weekly(
+                open_existing_db(profile.db), profile=profile, progress=progress
+            )
         except Exception:  # noqa: BLE001 - one profile must not stop the others
             logger.exception("Weekly run failed for %s", profile.name)
+            _abandon_progress(progress)
             continue
 
         # Recorded even when stages failed. The run happened; retrying it every
@@ -524,7 +586,7 @@ def _run_weekly_for_profiles(send: bool = True) -> None:
         # and the report says what went wrong.
         _record_weekly(profile.name)
         if send and outcome.report:
-            _send_weekly(profile, outcome)
+            _send_weekly(profile, progress.message_id if progress else None)
         logger.info(
             "Weekly run finished for %s: %s",
             profile.name,
@@ -532,25 +594,41 @@ def _run_weekly_for_profiles(send: bool = True) -> None:
         )
 
 
-def _send_weekly(profile, outcome) -> None:  # type: ignore[no-untyped-def]
-    """Send a finished run's report, with buttons on anything actionable."""
-    from notify import send_message, send_with_buttons
-    from report import weekly_report
+def _send_weekly(profile, progress_message_id: int | None = None) -> None:  # type: ignore[no-untyped-def]
+    """Send a finished run's summary and a card per decision."""
+    from report_delivery import send_review
     from store import open_existing_db
 
     try:
-        parts = weekly_report(open_existing_db(profile.db), profile=profile)
-        send_message(chat_id=profile.telegram_id, text=parts.body)
-        for item in parts.actionable:
-            ticker = f"{item['ticker']} " if item["ticker"] else ""
-            amount = f" — €{item['amount_eur']:,.2f}" if item["amount_eur"] else ""
-            send_with_buttons(
-                chat_id=profile.telegram_id,
-                text=f"<b>{item['action']}</b> {ticker}{amount}\n{escape(item['rationale'])}",
-                buttons=recommendation_buttons(item),
-            )
+        send_review(
+            open_existing_db(profile.db),
+            profile=profile,
+            progress_message_id=progress_message_id,
+        )
     except Exception:  # noqa: BLE001 - the run itself already succeeded
         logger.exception("Could not send the report for %s", profile.name)
+
+
+def _abandon_progress(progress) -> None:  # type: ignore[no-untyped-def]
+    """Say a watched run stopped, rather than leave it reading "running".
+
+    The week is not recorded when the run raises, so the scheduler tries again
+    at its next check; the message says so.
+    """
+    if progress is None or progress.message_id is None:
+        return
+    try:
+        edit_message(
+            chat_id=progress.chat_id,
+            message_id=progress.message_id,
+            text=(
+                "<b>Weekly review stopped with an error.</b>\n"
+                "It is tried again at the next scheduled check; the daemon log "
+                "has the details."
+            ),
+        )
+    except TelegramError:
+        logger.warning("Could not mark the progress message stopped", exc_info=True)
 
 
 def _scheduler_loop(stop: threading.Event) -> None:

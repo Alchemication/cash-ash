@@ -9,6 +9,7 @@ Public API:
     edit_message      -- rewrite a message already sent
     send_photo        -- send a PNG with a caption
     send_with_buttons -- send a message carrying an inline keyboard
+    delete_message    -- remove a message the bot sent
     answer_callback   -- acknowledge a button press
     escape            -- escape text for Telegram's HTML mode
     TelegramError     -- the send failed and could not be retried
@@ -308,6 +309,22 @@ def edit_message(*, chat_id: int, message_id: int, text: str) -> None:
     )
     for part in parts[1:]:
         send_message(chat_id=chat_id, text=part, silent=True)
+
+
+def delete_message(*, chat_id: int, message_id: int) -> None:
+    """Remove a message the bot sent.
+
+    Used to replace a live progress message with a fresh summary, since an
+    edit never notifies and the summary is the message that should.
+
+    Args:
+        chat_id: Numeric Telegram user or chat id.
+        message_id: The message to remove.
+
+    Raises:
+        TelegramError: If the removal failed.
+    """
+    _call("deleteMessage", {"chat_id": chat_id, "message_id": message_id})
 
 
 def send_photo(*, chat_id: int, image: bytes, caption: str = "") -> int:

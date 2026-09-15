@@ -75,10 +75,8 @@ def evidence_text(conn: sqlite3.Connection, ticker: str) -> str:
 
 
 def recommendation_buttons(item: dict) -> list[list[tuple[str, str]]]:
-    """Use acknowledgement for review questions and explicit approval for trades."""
-    label = (
-        "Acknowledge" if item["action"] in {"REVIEW", "KEEP_CASH"} else "Approve trade"
-    )
+    """Mark review questions Done and require explicit approval for trades."""
+    label = "Done" if item["action"] in {"REVIEW", "KEEP_CASH"} else "Approve trade"
     buttons = [
         [
             (label, f"rec:{item['id']}:approve"),
@@ -94,3 +92,25 @@ def recommendation_buttons(item: dict) -> list[list[tuple[str, str]]]:
             ]
         )
     return buttons
+
+
+def clip_line(text: str, limit: int) -> str:
+    """Collapse whitespace and cut *text* to *limit* characters at a word.
+
+    A cut is marked with an ellipsis, so a shortened line never reads as the
+    whole of what was said.
+
+    Args:
+        text: Text to shorten.
+        limit: Maximum length of the result, ellipsis included.
+
+    Returns:
+        The text on one line, at most *limit* characters.
+    """
+    flat = " ".join(text.split())
+    if len(flat) <= limit:
+        return flat
+    cut = flat[: max(limit - 1, 0)]
+    if " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip(" ,;:-—") + "…"

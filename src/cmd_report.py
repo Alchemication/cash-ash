@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-from review_text import recommendation_buttons
 import re
+from html import unescape
 
-from notify import escape
 from profiles import resolve_cli_profile
 from store import open_existing_db
 
@@ -32,11 +31,14 @@ replace.
 
 def _plain(html: str) -> str:
     """Strip Telegram HTML for terminal display."""
-    return re.sub(r"<[^>]+>", "", html)
+    return unescape(re.sub(r"<[^>]+>", "", html))
 
 
 def cmd_report(args: argparse.Namespace) -> None:
-    """Print the weekly report, or send it to Telegram.
+    """Print the weekly review, or send it to Telegram.
+
+    Printing is the dry run: the same summary and cards, nothing sent and no
+    model called.
 
     Raises:
         TelegramError: If sending was requested and failed.
@@ -45,43 +47,40 @@ def cmd_report(args: argparse.Namespace) -> None:
     from rich.console import Console
     from rich.panel import Panel
 
-    from report import weekly_report
+    from report import card_text, weekly_report
 
     console = Console()
     profile, db_path = resolve_cli_profile(args.profile, db=args.db)
     conn = open_existing_db(db_path)
-    parts = weekly_report(conn, profile=profile)
 
     if not args.telegram:
+        parts = weekly_report(conn, profile=profile)
         console.print(
             Panel(_plain(parts.body), title="Weekly review", border_style="cyan")
         )
-        if parts.actionable:
+        for number, item in enumerate(parts.actionable, 1):
             console.print(
-                f"[dim]{len(parts.actionable)} recommendation(s) would carry "
-                f"action-specific review and snooze buttons.[/dim]"
+                Panel(
+                    _plain(card_text(item)),
+                    title=f"Card {number} of {len(parts.actionable)}",
+                    border_style="yellow",
+                )
             )
         console.print(
-            "[dim]Send it with --telegram once TELEGRAM_BOT_TOKEN is set.[/dim]"
+            "[dim]Dry run: nothing sent. Each card carries Done or Approve trade, "
+            "Reject, Snooze, Evidence and Thesis buttons. Send with --telegram "
+            "once TELEGRAM_BOT_TOKEN is set.[/dim]"
         )
         return
 
-    from notify import send_message, send_with_buttons
+    from report_delivery import send_review
 
     if profile is None:
         raise ValueError("Sending needs a profile; --db alone has no Telegram id.")
 
-    send_message(chat_id=profile.telegram_id, text=parts.body)
-    for item in parts.actionable:
-        ticker = f"{item['ticker']} " if item["ticker"] else ""
-        amount = f" — €{item['amount_eur']:,.2f}" if item["amount_eur"] else ""
-        send_with_buttons(
-            chat_id=profile.telegram_id,
-            text=f"<b>{item['action']}</b> {ticker}{amount}\n{escape(item['rationale'])}",
-            buttons=recommendation_buttons(item),
-        )
+    parts = send_review(conn, profile=profile)
     console.print(
-        f"[green]Sent[/green] to {profile.name} ({len(parts.actionable)} actionable)."
+        f"[green]Sent[/green] to {profile.name} ({len(parts.actionable)} card(s))."
     )
 
 

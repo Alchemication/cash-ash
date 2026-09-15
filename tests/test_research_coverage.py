@@ -112,6 +112,12 @@ class TestSourcedCoverage:
             ),
         )
         _migration("013_coverage_per_question").upgrade(book)
+        import buy_sell_rules
+
+        # Let the price check pass so the coverage gate is what refuses.
+        monkeypatch.setattr(
+            buy_sell_rules, "valuation_evidence", lambda conn: frozenset({"TEST"})
+        )
         model(
             monkeypatch,
             {
@@ -127,7 +133,7 @@ class TestSourcedCoverage:
         )
         _, recommendations, _ = run_decision(book, today=TODAY)
         assert recommendations[0]["refused"]
-        assert "Fresh research" in recommendations[0]["refusal"]
+        assert "fresh facts" in recommendations[0]["refusal"]
 
 
 class TestGapsAreActionable:

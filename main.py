@@ -401,6 +401,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_thesis_show.add_argument("ticker")
     _add_db(p_thesis_show)
     thesis_sub.add_parser("list", help="Every current thesis")
+    p_thesis_examine = thesis_sub.add_parser(
+        "examine", help="Record your own reason after examining a holding"
+    )
+    p_thesis_examine.add_argument("ticker")
+    p_thesis_examine.add_argument(
+        "--conviction",
+        required=True,
+        choices=("none", "weak", "moderate", "strong"),
+        help="How strong the reason is; none permits selling a holding with no reason",
+    )
+    p_thesis_examine.add_argument(
+        "--summary", required=True, help="The reason in one sentence, in your words"
+    )
+    p_thesis_examine.add_argument("--why", default=None, help="The fuller version")
+    _add_db(p_thesis_examine)
     for action in ("accept", "reject"):
         command = thesis_sub.add_parser(
             action, help=f"{action.title()} a proposed thesis"

@@ -315,6 +315,12 @@ pays: `eval` lists such theses as broken invariants until you write what would
 change your mind in `context/log.md` and rerun `thesis bootstrap TICKER
 --overwrite`.
 
+`main.py thesis examine TICKER --conviction LEVEL --summary "..."` records your own
+reason after looking at a holding properly: a new version in your words, marked
+examined, keeping its breaking conditions and open questions. It is how a
+holding leaves `unexamined`, and conviction `none` recorded this way is what
+permits selling a holding that never had a reason.
+
 Theses are versioned and never edited. A revision is a new version and the old
 one is kept, so a year later it is still possible to ask what was believed at
 the time and how it changed.
@@ -435,6 +441,13 @@ relevant contrary evidence, material gaps and the comparison with keeping cash.
 REVIEW identifies whether resolution needs owner input, thesis adoption or more
 evidence. Purchase price and a desire to recover a loss do not justify a trade.
 
+Each recommendation carries a one-line `headline`: the question for a REVIEW,
+the action and its reason for a trade. One longer than
+`RECOMMENDATION_HEADLINE_MAX_CHARS` is cut at a word boundary. A REVIEW also
+states `done_when`, what settles it. The rationale is asked to stay within
+`RECOMMENDATION_WHY_MAX_WORDS` words and is shown collapsed under the headline,
+never in the summary.
+
 The deterministic checks enforce:
 
 - **Funded cash.** Planned monthly contributions are informational. Approved
@@ -443,14 +456,40 @@ The deterministic checks enforce:
 - **Position caps.** Buying transfers cash into securities without increasing
   total wealth. The full batch is checked cumulatively. Duplicate or conflicting
   ticker proposals invalidate a batch before earlier advice is retired.
-- **Sell discipline and sizing.** Sales require a priced holding. TRIM is limited
-  by holding value and the single-trade cap. An EXIT requires a broken thesis;
-  deterioration reduces it to TRIM. An intact oversized position may only be
-  trimmed back toward the position cap. EXIT records the full holding value.
+- **Sell discipline and sizing.** Sales require a priced holding and one of the
+  sell paths below. TRIM is limited by holding value and the single-trade cap.
+  EXIT records the full holding value.
 - **Evidence and freshness.** Missing/stale prices or FX block trades. BUY, ADD
   and EXIT require a recent assessment with sufficient cited coverage. Failed
   or deferred weekly stages block trade proposals while still allowing REVIEW.
   Citation presence is not a calibrated measure of investment quality.
+
+### What counts as a good buy or sell
+
+The agreed defaults live in `src/buy_sell_rules.py`. They define a disciplined
+decision, not a profitable one.
+
+A BUY or ADD needs every check: a **reason** rated moderate or better; a
+**price** check of valuation against the company's own history; **fit**, with
+the position under `MAX_POSITION_WEIGHT_PCT` and each of its themes under
+`CONCENTRATION_ALERT_PCT` (an amount is cut to fit); and a **size** of at least
+`MIN_TRADE_EUR` once every limit applies. Nothing supplies valuation evidence
+yet, so every buy is currently refused as "price: valuation not checked",
+deliberately, until filing retrieval exists. A refusal names every failing
+check at once.
+
+A TRIM or EXIT needs one path: the **reason broke** (broken may exit,
+deteriorating may trim); **examined, no reason**, when you recorded conviction
+`none` with `thesis examine`; or **too big**, when the excess over the position
+cap is more than `TRIM_CONTRIBUTION_MONTHS` of contributions, trimming only the
+excess. A smaller excess is left for new money to dilute.
+
+Approval waits: a buy can be approved `BUY_COOLING_OFF_DAYS` after it was
+proposed and a sale `SELL_COOLING_OFF_DAYS` after; its card says from when.
+The prompt lists what is never a reason on its own — a price move, a well-known
+buyer, the news, averaging down, idle cash — and `eval` lists trade rationales
+that may rest on one. Each holding's decision input states whether adding and
+selling are permitted and which check stands in the way.
 
 Refusals are stored and shown in the weekly report. "The model wanted to sell and the rules
 would not let it" is a different event from "the model recommended nothing",
@@ -503,6 +542,13 @@ prices and the run continues on them, marked stale. A research pass that fails
 on one holding does not stop the others. A failed decision still leaves a
 report to send. Abandoning the run on the first fault turns a partial answer
 into no answer, and the next attempt is seven days away.
+
+With `--telegram`, and on the daemon's schedule, the run can be watched. One
+silent message lists the stages, marks each as it starts and finishes with its
+duration, and names the holding research is on. When the run ends that message
+is deleted and the summary sent fresh, because an edit never notifies. A
+progress update that fails is logged and never stops the run; a run that raises
+says so in the same message.
 
 `RESEARCH_MAX_PASSES` caps deep passes; `--max-research` overrides it for one
 cycle. `RESEARCH_ROTATION_SLOTS` reserves capacity for holdings older than
@@ -614,10 +660,26 @@ to avoid.
 
 ## The weekly report
 
-`report` renders review health, valuation coverage, pending actions, thesis
-proposals, blocked trade proposals and approved actions awaiting execution.
-`--telegram` sends action-specific buttons: acknowledge a review question,
-approve a trade, reject, snooze, view evidence or review the thesis.
+`report` renders one summary message. Its second line is the verdict: trades
+to approve, questions that need you and fills to record, or that nothing needs
+you. Then the value and "Your portfolio": facts computed without a model — the
+largest position against `MAX_POSITION_WEIGHT_PCT`, the heaviest theme against
+`CONCENTRATION_ALERT_PCT`, the currencies holdings are priced in, cash, how many
+holdings have a reason rated moderate or better, the change in value since the
+snapshot `REPORT_COMPARISON_DAYS` back with deposits and withdrawals taken out,
+and the benchmark, which shows amounts only once
+`BENCHMARK_MEANINGFUL_AFTER_DAYS` have passed. Then the latest cycle as a stage flow with
+each stage's time and the cycle's model calls and cost, and "Your move": one
+line per decision, plus thesis changes waiting. Keeping cash is one line, not a decision. Stage
+failures, trades the rules blocked and standing concerns sit in a collapsed
+Details section.
+
+`--telegram` sends that summary, then one card per decision: its headline, what
+settles a review question, and the rationale collapsed underneath. Buttons mark
+a review Done or approve a trade, reject, snooze, or open the evidence and the
+thesis. Answering a card rewrites it with the outcome and removes its buttons,
+so the chat shows what is still open. Without `--telegram` the summary and
+cards print in the terminal: a dry run that sends nothing and calls no model.
 
 A completed review with no pending actions is different from no review or a
 failed cycle. Stage outcomes persist, so `/review` continues to show failures.
@@ -625,7 +687,7 @@ Missing holding prices suppress aggregate return; stale prices and FX are named.
 The first report after an upgrade has no verified cycle history until `weekly`
 runs. Opening an existing database applies the workflow migration automatically.
 
-Current holdings whose reason is missing or weak are reported separately, under
+Current holdings whose reason is missing or weak are listed in Details, under
 "standing, not new", one line each for no thesis recorded, conviction `none`
 and conviction `weak`. They are not this week's finding and never will be, and
 repeating them as though they were would be the generic-summary habit the whole

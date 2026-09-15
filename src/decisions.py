@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # Portfolio decision
 # ---------------------------------------------------------------------------
 
-DECIDE_PROMPT_VERSION = "decide/4"
+DECIDE_PROMPT_VERSION = "decide/6"
 
 _VALID_ACTIONS = {"BUY", "ADD", "HOLD", "TRIM", "EXIT", "REVIEW", "KEEP_CASH"}
 _VALID_URGENCY = {"low", "medium", "high"}
@@ -46,15 +46,34 @@ def build_guardrail_context(
     total = total_value(rows, cash=cash)
     theses = active_theses(conn)
 
+    from buy_sell_rules import valuation_evidence
+    from store import load_securities
+
+    securities = load_securities(conn)
+    themes = {
+        ticker: security.themes
+        for ticker, security in securities.items()
+        if security.themes
+    }
+    # Every security with a thesis, not only holdings: a BUY of something not
+    # yet owned is judged on the reason written for it.
+    convictions: dict[str, str] = {
+        ticker: theses[security.id].conviction
+        for ticker, security in securities.items()
+        if security.id in theses
+    }
     weights: dict[str, float] = {}
     values: dict[str, float] = {}
     statuses: dict[str, str] = {}
+    theme_values: dict[str, float] = {}
     for row in rows:
         security = row.position.security
         assert security.id is not None
         if row.value_eur is not None and total:
             weights[security.ticker] = row.value_eur / total * 100
             values[security.ticker] = row.value_eur
+            for theme in themes.get(security.ticker, ()):
+                theme_values[theme] = theme_values.get(theme, 0.0) + row.value_eur
         thesis = theses.get(security.id)
         statuses[security.ticker] = thesis.thesis_status if thesis else "unexamined"
 
@@ -67,6 +86,8 @@ def build_guardrail_context(
     for ticker, amount in committed.items():
         values[ticker] = values.get(ticker, 0) + amount
         weights[ticker] = values[ticker] / total * 100 if total else 0
+        for theme in themes.get(ticker, ()):
+            theme_values[theme] = theme_values.get(theme, 0.0) + amount
     pending_tickers = frozenset(
         row["ticker"]
         for row in conn.execute("""
@@ -91,6 +112,10 @@ def build_guardrail_context(
         weights_by_ticker=weights,
         values_by_ticker=values,
         thesis_status_by_ticker=statuses,
+        conviction_by_ticker=convictions,
+        themes_by_ticker=themes,
+        theme_values_eur=theme_values,
+        valuation_checked=valuation_evidence(conn),
     )
 
 
@@ -129,8 +154,13 @@ def run_decision(
     Raises:
         ValueError: If there is nothing to decide on, or output is unusable.
     """
-    from config import RECOMMENDATION_EXPIRY_DAYS
+    from config import (
+        RECOMMENDATION_EXPIRY_DAYS,
+        RECOMMENDATION_HEADLINE_MAX_CHARS,
+        RECOMMENDATION_WHY_MAX_WORDS,
+    )
     from guardrails import check_proposal
+    from review_text import clip_line
     from store import latest_prices, load_securities
     from store_research import create_llm_trace, create_research_run
 
@@ -188,7 +218,12 @@ def run_decision(
         conn,
         feature="decision",
         messages=[
-            {"role": "system", "content": load_prompt("decide.md")},
+            {
+                "role": "system",
+                "content": load_prompt("decide.md").replace(
+                    "{{WHY_MAX_WORDS}}", str(RECOMMENDATION_WHY_MAX_WORDS)
+                ),
+            },
             {"role": "user", "content": message},
         ],
         prompt_version=DECIDE_PROMPT_VERSION,
@@ -239,6 +274,21 @@ def run_decision(
             if ticker and ticker not in securities:
                 logger.warning("Discarding proposal for unknown ticker %r", ticker)
                 continue
+
+            headline = raw.get("headline")
+            headline = (
+                clip_line(headline, RECOMMENDATION_HEADLINE_MAX_CHARS)
+                if isinstance(headline, str) and headline.strip()
+                else None
+            )
+            done_when = raw.get("done_when")
+            done_when = (
+                " ".join(done_when.split())
+                if action == "REVIEW"
+                and isinstance(done_when, str)
+                and done_when.strip()
+                else None
+            )
 
             amount = raw.get("amount_eur")
             try:
@@ -294,7 +344,7 @@ def run_decision(
                         action,
                         None,
                         refused=True,
-                        refusal="Fresh research with verified citations is required; review the evidence first.",
+                        refusal="fresh facts: no recent research with verified citations; review the evidence first.",
                     )
             if verdict.refused:
                 conn.execute(
@@ -313,6 +363,8 @@ def run_decision(
                         "refused": True,
                         "refusal": verdict.refusal,
                         "rationale": str(raw.get("rationale", "")).strip(),
+                        "headline": headline,
+                        "done_when": done_when,
                         "urgency": "low",
                         "adjustments": (),
                     }
@@ -337,6 +389,8 @@ def run_decision(
                 action=verdict.action,
                 amount_eur=verdict.amount_eur,
                 rationale=str(raw.get("rationale", "")).strip() or "no rationale given",
+                headline=headline,
+                done_when=done_when,
                 urgency=urgency if urgency in _VALID_URGENCY else "low",
                 price_row=price_row,
                 weight_pct=context.weights_by_ticker.get(ticker) if ticker else None,
@@ -353,6 +407,8 @@ def run_decision(
                     "refused": False,
                     "refusal": None,
                     "rationale": str(raw.get("rationale", "")).strip(),
+                    "headline": headline,
+                    "done_when": done_when,
                     "urgency": urgency if urgency in _VALID_URGENCY else "low",
                     "adjustments": verdict.adjustments,
                 }
@@ -379,6 +435,8 @@ def _store_recommendation(
     action: str,
     amount_eur: float | None,
     rationale: str,
+    headline: str | None,
+    done_when: str | None,
     urgency: str,
     price_row: sqlite3.Row | None,
     weight_pct: float | None,
@@ -420,10 +478,11 @@ def _store_recommendation(
         """
         INSERT INTO recommendation (
             run_date, research_run_id, security_id, action, amount_eur,
-            rationale, urgency, thesis_id, price_native, fx_rate, value_eur,
-            weight_pct, expires_on, guardrails, adjusted, llm_call_id, created_at
+            rationale, headline, done_when, urgency, thesis_id, price_native,
+            fx_rate, value_eur, weight_pct, expires_on, guardrails, adjusted,
+            llm_call_id, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             run_date,
@@ -432,6 +491,8 @@ def _store_recommendation(
             action,
             amount_eur,
             rationale,
+            headline,
+            done_when,
             urgency,
             thesis.id if thesis else None,
             price_native,

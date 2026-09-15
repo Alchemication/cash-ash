@@ -283,6 +283,12 @@ class TriageInput:
     never happened. A fact in the input is harder to overlook than a rule in
     the instructions.
     """
+    sell_refusal: str | None = None
+    """Why selling would be refused, naming the missing sell path."""
+    add_permitted: bool | None = None
+    """Whether the rules would allow adding, stated for the same reason."""
+    add_refusal: str | None = None
+    """Why adding would be refused, naming each failing buy check."""
 
     def render(self) -> str:
         """Format this holding for the triage prompt."""
@@ -316,10 +322,19 @@ class TriageInput:
                     "permitted"
                     if self.sell_permitted
                     else (
-                        f"NOT permitted — thesis is '{self.thesis_status}' and the "
-                        f"position is within its weight cap. A TRIM or EXIT here "
-                        f"will be refused."
+                        f"NOT permitted — "
+                        f"{self.sell_refusal or f'thesis is {self.thesis_status!r}'}"
+                        f" A TRIM or EXIT here will be refused."
                     )
+                )
+            )
+        if self.add_permitted is not None:
+            lines.append(
+                "- adding: "
+                + (
+                    "permitted"
+                    if self.add_permitted
+                    else f"NOT permitted — {self.add_refusal} An ADD here will be refused."
                 )
             )
         if self.upcoming:
@@ -474,8 +489,10 @@ def triage_inputs(
         target = upcoming_by_security if days >= 0 else recent_by_security
         target.setdefault(int(event["security_id"]), []).append(label)
 
-    sell_permitted_by_ticker: dict[str, bool] = {}
+    sell_by_ticker: dict[str, tuple[bool, str | None]] = {}
+    add_by_ticker: dict[str, tuple[bool, str | None]] = {}
     if include_sell_eligibility:
+        from config import MAX_NEW_TRADE_EUR
         from guardrails import check_proposal
 
         from decisions import build_guardrail_context
@@ -483,15 +500,25 @@ def triage_inputs(
         context = build_guardrail_context(conn, account_id=account_id, today=now)
         for row in rows:
             ticker = row.position.security.ticker
-            sell_permitted_by_ticker[ticker] = not check_proposal(
+            sale = check_proposal(
                 action="TRIM", ticker=ticker, amount_eur=None, context=context
-            ).refused
+            )
+            sell_by_ticker[ticker] = (not sale.refused, sale.refusal)
+            purchase = check_proposal(
+                action="ADD",
+                ticker=ticker,
+                amount_eur=MAX_NEW_TRADE_EUR,
+                context=context,
+            )
+            add_by_ticker[ticker] = (not purchase.refused, purchase.refusal)
 
     result: list[TriageInput] = []
     for row in rows:
         security = row.position.security
         assert security.id is not None
         thesis = theses.get(security.id)
+        sale = sell_by_ticker.get(security.ticker)
+        purchase = add_by_ticker.get(security.ticker)
         result.append(
             TriageInput(
                 ticker=security.ticker,
@@ -512,7 +539,10 @@ def triage_inputs(
                 estimate_change=_estimate_change(
                     conn, security.id, window_days=lookback_days
                 ),
-                sell_permitted=sell_permitted_by_ticker.get(security.ticker),
+                sell_permitted=sale[0] if sale else None,
+                sell_refusal=sale[1] if sale else None,
+                add_permitted=purchase[0] if purchase else None,
+                add_refusal=purchase[1] if purchase else None,
             )
         )
     return result

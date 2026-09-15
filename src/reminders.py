@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import date
 
-from notify import escape, send_with_buttons
+from notify import send_with_buttons
 from profiles import load_profiles
+from report import card_text
 from review_text import recommendation_buttons
 from store import open_existing_db
 from store_workflow import now_iso
@@ -34,7 +35,7 @@ def send_due_snoozes() -> None:
                 item = dict(row)
                 send_with_buttons(
                     chat_id=profile.telegram_id,
-                    text=f"<b>Snoozed review is due</b> #{item['id']} {escape(item['ticker'] or '')}\n{escape(item['rationale'])}",
+                    text=f"<b>Snoozed review is due</b>\n\n{card_text(item)}",
                     buttons=recommendation_buttons(item),
                 )
                 conn.execute(

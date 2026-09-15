@@ -669,3 +669,30 @@ class TestButtonsOnStaleMessages:
     def test_an_unknown_recommendation_is_handled(self, db, roster) -> None:
         message = daemon_module._record_decision(roster["adam"], 9999, "approve")
         assert "No such recommendation" in message
+
+    def test_an_answered_card_is_closed(
+        self, db, roster, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The chat then shows which cards are still open.
+        rec = self._add(db)
+        edits: list[dict] = []
+        monkeypatch.setattr(daemon_module, "answer_callback", lambda **kw: None)
+        monkeypatch.setattr(
+            daemon_module, "edit_message", lambda **kw: edits.append(kw)
+        )
+        handle_update(_callback(111, f"rec:{rec}:approve"))
+        assert len(edits) == 1
+        assert edits[0]["message_id"] == 7
+        assert "✓ Done" in edits[0]["text"]
+
+    def test_a_refused_answer_leaves_the_card(
+        self, db, roster, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        rec = self._add(db, superseded_by_run_id=1)
+        edits: list[dict] = []
+        monkeypatch.setattr(daemon_module, "answer_callback", lambda **kw: None)
+        monkeypatch.setattr(
+            daemon_module, "edit_message", lambda **kw: edits.append(kw)
+        )
+        handle_update(_callback(111, f"rec:{rec}:approve"))
+        assert edits == []

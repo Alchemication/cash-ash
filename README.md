@@ -75,7 +75,7 @@ return when due, with a daemon reminder. No command places a broker order.
 
 In Telegram: `/review`, `/pending`, `/refresh`, `/evidence TEST`, `/thesis TEST`,
 `/accept TEST 2`, `/reject TEST 2`. Recommendation buttons open evidence and
-thesis details; review questions use acknowledgement instead of trade approval.
+thesis details; review questions are marked Done rather than approved as trades.
 
 Anything not starting with `/` is a question, answered by a model that reads the
 book through tools — "what did I pay for TEST", "how much cash", "when did I

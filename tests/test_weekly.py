@@ -299,3 +299,57 @@ class TestSnapshot:
         assert outcome.report is not None
         stage = next(s for s in outcome.stages if s.name == "snapshot")
         assert stage.ok is False
+
+
+class TestProgress:
+    """The run can be watched stage by stage, and watching never breaks it."""
+
+    def test_each_stage_is_announced_in_order(
+        self, seeded: sqlite3.Connection, stages
+    ) -> None:
+        stages()
+        seen: list[str | None] = []
+        run_weekly(
+            seeded,
+            today=TODAY,
+            progress=lambda done, running, note=None: seen.append(running),
+        )
+        assert list(dict.fromkeys(seen)) == [
+            "sync",
+            "snapshot",
+            "triage",
+            "research",
+            "decide",
+            "report",
+        ]
+
+    def test_research_names_each_holding(
+        self, seeded: sqlite3.Connection, stages
+    ) -> None:
+        stages(selected=["AAA", "BBB"])
+        notes: list[str | None] = []
+        run_weekly(
+            seeded,
+            today=TODAY,
+            max_research=2,
+            progress=lambda done, running, note=None: notes.append(note),
+        )
+        assert "1/2 AAA" in notes and "2/2 BBB" in notes
+
+    def test_every_stage_is_timed(self, seeded: sqlite3.Connection, stages) -> None:
+        stages()
+        outcome = run_weekly(seeded, today=TODAY)
+        assert all(stage.seconds is not None for stage in outcome.stages)
+        # The sync stand-in builds its own result; every real stage says briefly.
+        assert all(stage.brief for stage in outcome.stages if stage.name != "sync")
+
+    def test_a_broken_watcher_does_not_stop_the_run(
+        self, seeded: sqlite3.Connection, stages
+    ) -> None:
+        stages()
+
+        def explode(*args, **kwargs):  # type: ignore[no-untyped-def]
+            raise RuntimeError("telegram is down")
+
+        outcome = run_weekly(seeded, today=TODAY, progress=explode)
+        assert outcome.report is not None

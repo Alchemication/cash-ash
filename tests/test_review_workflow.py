@@ -62,10 +62,30 @@ def book(conn: sqlite3.Connection, account_id: int) -> sqlite3.Connection:
             security_id=security,
             summary="Recurring revenue persists",
             source="user",
+            conviction="moderate",
             what_would_break_it=("Revenue contracts",),
         ),
     )
     return conn
+
+
+@pytest.fixture(autouse=True)
+def rules_would_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Let these tests reach funding, reservation and execution.
+
+    No source supplies valuation evidence yet, so every buy fails the price
+    check, and a same-day approval fails the cooling-off wait. These tests are
+    about what happens once a trade passes; test_buy_sell_rules covers the real
+    defaults and each check.
+    """
+    import buy_sell_rules
+    import config
+
+    monkeypatch.setattr(
+        buy_sell_rules, "valuation_evidence", lambda conn: frozenset({"TEST", "NEW"})
+    )
+    monkeypatch.setattr(config, "BUY_COOLING_OFF_DAYS", 0)
+    monkeypatch.setattr(config, "SELL_COOLING_OFF_DAYS", 0)
 
 
 def assessment(
@@ -236,15 +256,15 @@ class TestFundedWorkflow:
             total_value_eur=1000,
             cash_eur=100,
             monthly_contribution_eur=0,
-            values_by_ticker={"TEST": 30},
-            weights_by_ticker={"TEST": 3},
+            values_by_ticker={"TEST": 80},
+            weights_by_ticker={"TEST": 8},
             thesis_status_by_ticker={"TEST": "broken"},
         )
         assert (
             check_proposal(
                 action="TRIM", ticker="TEST", amount_eur=10000, context=context
             ).amount_eur
-            == 30
+            == 80
         )
 
     def test_expired_approval_can_be_cancelled(self, book: sqlite3.Connection) -> None:
@@ -449,6 +469,35 @@ class TestAtomicDecisions:
         with pytest.raises(ValueError, match="Duplicate"):
             run_decision(book, today=TODAY)
 
+    def test_headline_is_cut_and_done_when_kept_for_reviews(
+        self, book: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from config import RECOMMENDATION_HEADLINE_MAX_CHARS
+
+        model(
+            monkeypatch,
+            {
+                "recommendations": [
+                    dict(
+                        ticker="TEST",
+                        action="REVIEW",
+                        amount_eur=None,
+                        rationale="Reason",
+                        headline="word " * 60,
+                        done_when="You  restate\nthe thesis",
+                    )
+                ]
+            },
+        )
+        run_decision(book, today=TODAY)
+        row = book.execute(
+            "SELECT headline, done_when FROM recommendation "
+            "WHERE superseded_by_run_id IS NULL ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        assert len(row["headline"]) <= RECOMMENDATION_HEADLINE_MAX_CHARS
+        assert row["headline"].endswith("…")
+        assert row["done_when"] == "You restate the thesis"
+
     def test_persistence_failure_rolls_back_retirement(
         self, book: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -494,7 +543,7 @@ class TestAtomicDecisions:
         _, rows, _ = run_decision(book, today=TODAY)
         assert rows[0]["refused"]
         assert book.execute("SELECT COUNT(*) FROM decision_refusal").fetchone()[0] == 1
-        assert "Trade proposals blocked" in weekly_report(book, today=TODAY).body
+        assert "Blocked by the rules" in weekly_report(book, today=TODAY).body
 
     def test_weekly_execution_budget_survives_rerun(
         self, book: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
@@ -512,13 +561,15 @@ class TestAtomicDecisions:
             },
         )
         _, rows, _ = run_decision(book, today=TODAY)
-        assert rows[0]["amount_eur"] == 20
+        # 20 of the week's allocation is left, below the minimum trade.
+        assert rows[0]["refused"]
+        assert "minimum trade" in rows[0]["refusal"]
 
 
 class TestReviewHealth:
     def test_unreviewed_is_not_a_quiet_week(self, book: sqlite3.Connection) -> None:
         body = weekly_report(book, today=TODAY).body
-        assert "No conclusion about this week" in body
+        assert "Not reviewed yet" in body
         assert "Review completed; no action proposed" not in body
 
     def test_failure_persists_into_report(self, book: sqlite3.Connection) -> None:
@@ -527,7 +578,7 @@ class TestReviewHealth:
             book, cycle, [dict(name="research", ok=False, detail="provider failed")]
         )
         body = weekly_report(book, today=TODAY).body
-        assert "incomplete" in body and "provider failed" in body
+        assert "did not complete" in body and "provider failed" in body
 
     def test_unpriced_holding_does_not_create_a_loss(
         self, book: sqlite3.Connection
@@ -788,7 +839,7 @@ class TestUpgradeAndNotifications:
 
         review = recommendation_buttons(dict(id=1, action="REVIEW", ticker="TEST"))
         trade = recommendation_buttons(dict(id=2, action="ADD", ticker="TEST"))
-        assert review[0][0][0] == "Acknowledge"
+        assert review[0][0][0] == "Done"
         assert trade[0][0][0] == "Approve trade"
 
     def test_failed_delivery_does_not_consume_reminder(
@@ -832,7 +883,12 @@ class TestUpgradeAndNotifications:
         sid = upsert_security(
             book, Security(ticker="NEW", name="Synthetic new", currency="EUR")
         )
-        save_thesis(book, Thesis(security_id=sid, summary="Reason", source="user"))
+        save_thesis(
+            book,
+            Thesis(
+                security_id=sid, summary="Reason", source="user", conviction="moderate"
+            ),
+        )
         assessment(book, ticker="NEW")
         model(
             monkeypatch,

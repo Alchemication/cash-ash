@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sqlite3
+from datetime import date
 
+from models import Thesis
 from profiles import resolve_cli_profile
 from store import load_securities, open_existing_db
-from store_research import active_thesis, thesis_history
+from store_research import active_thesis, save_thesis, thesis_history
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,60 @@ def _resolve_security(conn, ticker: str):  # type: ignore[no-untyped-def]
     return security
 
 
+def record_examined(
+    conn: sqlite3.Connection,
+    *,
+    security_id: int,
+    conviction: str,
+    summary: str,
+    why: str | None = None,
+) -> Thesis:
+    """Record the owner's own reason after examining a holding.
+
+    A new version in the owner's words, marked examined, keeping the breaking
+    conditions, assumptions and open questions already recorded. This is how a
+    holding leaves ``unexamined``, and conviction ``none`` recorded this way is
+    what the sell rules accept as "examined, no reason".
+
+    Args:
+        conn: Open database connection.
+        security_id: Holding examined.
+        conviction: ``none``, ``weak``, ``moderate`` or ``strong``.
+        summary: The reason in one sentence.
+        why: The fuller version, if any.
+
+    Returns:
+        The stored thesis.
+
+    Raises:
+        ValueError: If the reason is blank or the conviction unknown.
+    """
+    if not summary.strip():
+        raise ValueError(
+            "Write the reason in your own words, even if it is that there is none."
+        )
+    if conviction not in {"none", "weak", "moderate", "strong"}:
+        raise ValueError("Conviction must be none, weak, moderate or strong.")
+    current = active_thesis(conn, security_id=security_id)
+    return save_thesis(
+        conn,
+        Thesis(
+            security_id=security_id,
+            summary=summary.strip(),
+            rationale=(why or "").strip() or (current.rationale if current else None),
+            conviction=conviction,
+            # Examined and restated as it stands. A reason that weakened is
+            # recorded through conviction, not a separate status.
+            thesis_status="unchanged",
+            key_assumptions=current.key_assumptions if current else (),
+            open_questions=current.open_questions if current else (),
+            what_would_break_it=current.what_would_break_it if current else (),
+            source="user",
+            note=f"Examined by the owner on {date.today().isoformat()}.",
+        ),
+    )
+
+
 def cmd_thesis(args: argparse.Namespace) -> None:
     """Show, list or bootstrap theses.
 
@@ -61,6 +118,40 @@ def cmd_thesis(args: argparse.Namespace) -> None:
         console.print(
             f"{'Accepted' if args.thesis_cmd == 'accept' else 'Rejected'} {security.ticker} v{args.version}. Run main.py recommend to reconsider actions."
         )
+        return
+
+    if args.thesis_cmd == "examine":
+        from buy_sell_rules import DEFENSIBLE_CONVICTION
+
+        security = _resolve_security(conn, args.ticker)
+        assert security.id is not None
+        examined = record_examined(
+            conn,
+            security_id=security.id,
+            conviction=args.conviction,
+            summary=args.summary,
+            why=args.why,
+        )
+        console.print(
+            f"Recorded {security.ticker} v{examined.version}: {examined.conviction}, "
+            f"examined, in your words."
+        )
+        if examined.conviction == "none":
+            console.print(
+                "[yellow]Examined, with no reason to own it.[/yellow] Selling is "
+                "now permitted if the weekly review proposes it; nothing is sold "
+                "unless you approve."
+            )
+        elif examined.conviction in DEFENSIBLE_CONVICTION:
+            console.print(
+                "The reason check now passes for adding. The price check still has "
+                "to pass before a buy can be recommended."
+            )
+        else:
+            console.print(
+                "A weak reason still blocks adding, and does not by itself permit "
+                "selling."
+            )
         return
 
     if args.thesis_cmd == "bootstrap":

@@ -7,6 +7,7 @@ difference matters.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import urllib.error
 from datetime import date
@@ -18,7 +19,12 @@ import notify as notify_module
 from config import TELEGRAM_MAX_MESSAGE_CHARS
 from models import Thesis
 from notify import TelegramError, chunk, escape, send_message, send_with_buttons
-from report import weekly_report
+from report import (
+    card_text,
+    decided_card_text,
+    recommendation_item,
+    weekly_report,
+)
 from seed import load_snapshot, seed_database
 from store_research import save_thesis
 from tests.test_seed import FIXTURE
@@ -224,8 +230,7 @@ class TestWeeklyReport:
     def test_quiet_week_says_so_plainly(self, seeded: sqlite3.Connection) -> None:
         # A report that manufactures content trains the reader to stop opening it.
         parts = weekly_report(seeded, today=self.TODAY)
-        assert "not reviewed" in parts.body
-        assert "No conclusion about this week" in parts.body
+        assert "Not reviewed yet" in parts.body.splitlines()[1]
         assert parts.actionable == []
 
     def test_shows_the_total_and_the_gain(self, seeded: sqlite3.Connection) -> None:
@@ -274,7 +279,8 @@ class TestWeeklyReport:
         )
         parts = weekly_report(seeded, today=self.TODAY)
         assert len(parts.actionable) == 1
-        assert "Add to" in parts.body
+        assert "1 trade to approve" in parts.body.splitlines()[1]
+        assert "add €50.00" in parts.body
 
     def test_a_rerun_retires_the_previous_set(self, seeded: sqlite3.Connection) -> None:
         # Re-running is the normal repair when a stage fails, and without this
@@ -355,6 +361,135 @@ class TestWeeklyReport:
         parts = weekly_report(conn, today=self.TODAY)
         # The fixture prices everything from its snapshot, so nothing is missing.
         assert "could not be priced" not in parts.body
+
+
+class TestReportLayout:
+    """The summary answers "does anything need me" before anything else."""
+
+    TODAY = date(2026, 9, 7)
+
+    def _recommend(
+        self,
+        conn: sqlite3.Connection,
+        action: str = "REVIEW",
+        *,
+        rationale: str = "Because. More reasoning follows.",
+        headline: str | None = None,
+        done_when: str | None = None,
+        amount: float | None = None,
+        security_id: int | None = 1,
+    ) -> int:
+        cursor = conn.execute(
+            """
+            INSERT INTO recommendation (run_date, security_id, action, amount_eur,
+                                        rationale, headline, done_when, urgency,
+                                        expires_on, created_at)
+            VALUES ('2026-09-07', ?, ?, ?, ?, ?, ?, 'low', '2026-09-14', 'x')
+            """,
+            (security_id, action, amount, rationale, headline, done_when),
+        )
+        return int(cursor.lastrowid)
+
+    def test_the_verdict_is_the_second_line(self, seeded: sqlite3.Connection) -> None:
+        self._recommend(seeded, headline="Who decides now?")
+        verdict = weekly_report(seeded, today=self.TODAY).body.splitlines()[1]
+        assert "1 needs your input" in verdict
+        assert "no trades" in verdict
+
+    def test_reasoning_stays_on_the_card(self, seeded: sqlite3.Connection) -> None:
+        # The rationale was printed in the summary and again on its card.
+        self._recommend(
+            seeded,
+            rationale="A long unique rationale.",
+            headline="Who decides now?",
+            done_when="You name them",
+        )
+        parts = weekly_report(seeded, today=self.TODAY)
+        assert "Who decides now?" in parts.body
+        assert "A long unique rationale." not in parts.body
+        card = card_text(parts.actionable[0])
+        assert "<blockquote expandable>A long unique rationale.</blockquote>" in card
+        assert "Done when:</i> You name them" in card
+
+    def test_an_older_recommendation_is_read_by_its_first_sentence(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        self._recommend(seeded, rationale="First sentence here. Second is not shown.")
+        body = weekly_report(seeded, today=self.TODAY).body
+        assert "First sentence here." in body
+        assert "Second is not shown" not in body
+
+    def test_keeping_cash_is_a_line_not_a_card(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        self._recommend(
+            seeded, "KEEP_CASH", headline="Nothing qualifies.", security_id=None
+        )
+        parts = weekly_report(seeded, today=self.TODAY)
+        assert parts.actionable == []
+        assert "Keep cash: Nothing qualifies." in parts.body
+
+    def test_the_flow_shows_each_stage_and_its_time(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        stages = [
+            dict(
+                name="sync", ok=True, detail="3 priced", brief="3/3 priced", seconds=3.2
+            ),
+            dict(
+                name="research",
+                ok=False,
+                detail="1 researched, 1 insufficient (AAA)",
+                brief="1 run, 0 conclusive",
+                seconds=109.0,
+            ),
+            dict(name="report", ok=True, detail="0 actionable", seconds=0.1),
+        ]
+        seeded.execute(
+            """INSERT INTO review_cycle (run_date, status, stages_json, started_at,
+            finished_at) VALUES ('2026-09-07', 'incomplete', ?,
+            '2026-09-07T17:00:00+00:00', '2026-09-07T17:14:00+00:00')""",
+            (json.dumps(stages),),
+        )
+        body = weekly_report(seeded, today=self.TODAY).body
+        flow = body.split("<pre>")[1].split("</pre>")[0]
+        assert "✓ sync" in flow and "3s" in flow
+        assert "! research" in flow and "1m49s" in flow
+        assert "report" not in flow
+        assert "14m" in flow
+        assert "trades are blocked" in body
+        assert (
+            "research: 1 researched, 1 insufficient (AAA)"
+            in body.split("<b>Details</b>")[1]
+        )
+
+    def test_an_answered_card_says_what_happened(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        review = recommendation_item(seeded, self._recommend(seeded, headline="Who?"))
+        assert "✓ Done" in decided_card_text(review, "approve")
+        trade = recommendation_item(
+            seeded,
+            self._recommend(seeded, "ADD", amount=50.0, security_id=2, headline="Add"),
+        )
+        assert f"main.py executed {trade['id']}" in decided_card_text(trade, "approve")
+
+    def test_a_trade_card_says_when_it_can_be_approved(
+        self, seeded: sqlite3.Connection
+    ) -> None:
+        trade = recommendation_item(
+            seeded,
+            self._recommend(seeded, "ADD", amount=60.0, security_id=2, headline="Add"),
+        )
+        assert "Approve from Wed 9 Sep, if you still agree." in card_text(trade)
+
+    def test_a_crowded_week_still_fits(self, seeded: sqlite3.Connection) -> None:
+        for security_id in (1, 2, 3):
+            self._recommend(seeded, rationale="a & b " * 900, security_id=security_id)
+        parts = weekly_report(seeded, today=self.TODAY)
+        assert len(parts.body) < TELEGRAM_MAX_MESSAGE_CHARS
+        for item in parts.actionable:
+            assert len(decided_card_text(item, "approve")) <= TELEGRAM_MAX_MESSAGE_CHARS
 
 
 class TestRefusalMessages:

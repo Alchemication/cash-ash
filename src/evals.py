@@ -47,6 +47,21 @@ _STATED_ODDS = re.compile(
 )
 
 
+# Phrases that give a price move, the news, averaging down or idle cash as the
+# reason for a trade — each on the agreed never-a-reason list. A mention in
+# passing matches too ("the shares have fallen, which is not a reason"), so a
+# match is something to read, never a failure.
+_NEVER_A_REASON = re.compile(
+    r"\b(?:has|have|had)\s+(?:risen|fallen|dropped|rallied|surged|plunged|"
+    r"climbed|slumped|sold off)\b"
+    r"|\bbuy(?:ing)? the dip\b|\baverag(?:e|ing) down\b"
+    r"|\blower(?:ing)? (?:the |your |my )?average (?:cost|price)\b"
+    r"|\bmomentum\b|\btrending\b|\bin the news\b|\bbeing talked about\b"
+    r"|\bcash (?:is )?(?:sitting|waiting|idle)\b",
+    re.IGNORECASE,
+)
+
+
 @dataclass(frozen=True)
 class Check:
     """One invariant, and what broke it."""
@@ -301,7 +316,11 @@ def _notes_restating_figures(conn: sqlite3.Connection) -> list[str]:
 def _stated_odds(conn: sqlite3.Connection) -> list[str]:
     """Identify possible percentage forecasts for review, without judging intent."""
     found: list[str] = []
-    for row in _rows(conn, "SELECT id, rationale FROM recommendation ORDER BY id"):
+    for row in _rows(
+        conn,
+        "SELECT id, rationale || ' ' || COALESCE(headline, '') || ' ' "
+        "|| COALESCE(done_when, '') AS rationale FROM recommendation ORDER BY id",
+    ):
         if _STATED_ODDS.search(row["rationale"]):
             found.append(f"recommendation {row['id']}")
     for row in _rows(conn, "SELECT id, rationale FROM decision_refusal ORDER BY id"):
@@ -326,6 +345,26 @@ def _stated_odds(conn: sqlite3.Connection) -> list[str]:
         ]
         if any(_STATED_ODDS.search(text) for text in texts):
             found.append(f"assessment {row['run_id']}")
+    return found
+
+
+def _never_a_reason(conn: sqlite3.Connection) -> list[str]:
+    """Identify trade rationales that may rest on a never-a-reason."""
+    found: list[str] = []
+    for row in _rows(
+        conn,
+        "SELECT id, rationale || ' ' || COALESCE(headline, '') AS text "
+        "FROM recommendation WHERE action IN ('BUY','ADD','TRIM','EXIT') ORDER BY id",
+    ):
+        if _NEVER_A_REASON.search(row["text"]):
+            found.append(f"recommendation {row['id']}")
+    for row in _rows(
+        conn,
+        "SELECT id, rationale FROM decision_refusal "
+        "WHERE action IN ('BUY','ADD','TRIM','EXIT') ORDER BY id",
+    ):
+        if _NEVER_A_REASON.search(row["rationale"]):
+            found.append(f"refusal {row['id']}")
     return found
 
 
@@ -356,6 +395,19 @@ def observe(
             "This does not establish a violation or affect the eval exit status.",
         )
     )
+
+    not_reasons = _never_a_reason(conn)
+    if not_reasons:
+        out.append(
+            Observation(
+                "trade reasons that may be on the never-a-reason list",
+                ", ".join(not_reasons),
+                "A price move, a well-known buyer, the news, averaging down or "
+                "idle cash is never a reason on its own under the agreed rules. "
+                "Pattern matches only: read the rationale, since a mention in "
+                "passing matches too. This does not affect the exit status.",
+            )
+        )
 
     notes = _notes_restating_figures(conn)
     if notes:

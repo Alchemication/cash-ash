@@ -24,6 +24,15 @@ def _context(**kw) -> GuardrailContext:
             "MID": "unchanged",
             "SMALL": "broken",
         },
+        # Reason and price pass, so these tests reach the arithmetic; the checks
+        # themselves are tested in test_buy_sell_rules.
+        "conviction_by_ticker": {
+            "BIG": "moderate",
+            "MID": "moderate",
+            "SMALL": "moderate",
+            "NEW": "moderate",
+        },
+        "valuation_checked": frozenset({"BIG", "MID", "SMALL", "NEW"}),
     }
     base.update(kw)
     return GuardrailContext(**base)
@@ -61,8 +70,10 @@ class TestSellDiscipline:
 
     def test_oversized_position_may_be_trimmed_without_a_thesis_change(self) -> None:
         # Trimming for size is a portfolio decision, not a view on the company.
+        # 700 of 1000 is 500 over a 200 cap: more than three months of new money.
         context = _context(
-            weights_by_ticker={"BIG": 25.0},
+            weights_by_ticker={"BIG": 70.0},
+            values_by_ticker={"BIG": 700.0},
             thesis_status_by_ticker={"BIG": "unchanged"},
         )
         verdict = check_proposal(
@@ -72,8 +83,10 @@ class TestSellDiscipline:
 
     def test_exit_on_an_oversized_intact_position_becomes_a_trim(self) -> None:
         # Being too large justifies trimming, never closing.
+        # 700 of 1000 is 500 over a 200 cap: more than three months of new money.
         context = _context(
-            weights_by_ticker={"BIG": 25.0},
+            weights_by_ticker={"BIG": 70.0},
+            values_by_ticker={"BIG": 700.0},
             thesis_status_by_ticker={"BIG": "unchanged"},
         )
         verdict = check_proposal(
@@ -106,24 +119,29 @@ class TestBuyLimits:
         assert "cap" in verdict.refusal
 
     def test_add_is_clamped_to_the_weight_headroom(self) -> None:
-        verdict = check_proposal(
-            action="ADD", ticker="BIG", amount_eur=100.0, context=_context()
+        context = _context(
+            cash_eur=500.0,
+            weights_by_ticker={"BIG": 15.0},
+            values_by_ticker={"BIG": 150.0},
         )
-        assert verdict.amount_eur < 100.0
+        verdict = check_proposal(
+            action="ADD", ticker="BIG", amount_eur=100.0, context=context
+        )
+        assert verdict.amount_eur is not None and verdict.amount_eur < 100.0
         assert verdict.adjusted
 
     def test_cash_purchase_preserves_total_wealth(self) -> None:
         context = _context(
             total_value_eur=1000,
             cash_eur=100,
-            weights_by_ticker={"BIG": 19},
-            values_by_ticker={"BIG": 190},
+            weights_by_ticker={"BIG": 14},
+            values_by_ticker={"BIG": 140},
         )
         verdict = check_proposal(
             action="ADD", ticker="BIG", amount_eur=100, context=context
         )
-        assert verdict.amount_eur == 10
-        assert (190 + verdict.amount_eur) / 1000 * 100 == MAX_POSITION_WEIGHT_PCT
+        assert verdict.amount_eur == 60
+        assert (140 + verdict.amount_eur) / 1000 * 100 == MAX_POSITION_WEIGHT_PCT
 
     def test_single_trade_limit_binds(self) -> None:
         verdict = check_proposal(
@@ -135,11 +153,11 @@ class TestBuyLimits:
         assert verdict.amount_eur == min(MAX_NEW_TRADE_EUR, MAX_WEEKLY_ALLOCATION_EUR)
 
     def test_available_capital_binds(self) -> None:
-        context = _context(cash_eur=20.0, monthly_contribution_eur=150.0)
+        context = _context(cash_eur=60.0, monthly_contribution_eur=150.0)
         verdict = check_proposal(
             action="BUY", ticker="NEW", amount_eur=100.0, context=context
         )
-        assert verdict.amount_eur == 20.0
+        assert verdict.amount_eur == 60.0
 
     def test_weekly_allocation_is_consumed_across_proposals(self) -> None:
         context = _context(allocated_this_run_eur=MAX_WEEKLY_ALLOCATION_EUR)
