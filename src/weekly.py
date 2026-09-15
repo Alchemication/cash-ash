@@ -348,7 +348,7 @@ def _triage(
     today: date | None,
 ) -> list[tuple[str, str]]:
     """Rank the portfolio, returning what was selected for depth."""
-    from research import run_triage
+    from triage import run_triage
 
     try:
         _, rankings, _ = run_triage(conn, account_id=account_id, today=today)

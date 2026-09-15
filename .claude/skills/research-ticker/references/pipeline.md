@@ -28,7 +28,7 @@ write or recommend a trade. Nothing it says is a stage output.
 | guardrails | deterministic | portfolio state | refusals, clamps |
 | report | deterministic | stored rows | the review |
 
-## triage — `src/research.py`, `run_triage`
+## triage — `src/triage.py`, `run_triage`
 
 One call for the whole portfolio, because the judgement is comparative.
 

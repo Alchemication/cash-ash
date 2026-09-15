@@ -14,7 +14,8 @@ from llm import call_llm
 from models import Security
 from profiles import Profile, read_context
 from guardrails import GuardrailContext, Verdict
-from research import extract_json, load_prompt, triage_inputs
+from research import extract_json, load_prompt
+from triage import triage_inputs
 
 logger = logging.getLogger(__name__)
 

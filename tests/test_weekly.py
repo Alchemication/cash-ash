@@ -50,9 +50,10 @@ def stages(monkeypatch: pytest.MonkeyPatch):
         import decisions
         import research_coverage
         import research
+        import triage
 
         monkeypatch.setattr(
-            research,
+            triage,
             "run_triage",
             stage(
                 "triage",

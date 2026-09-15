@@ -914,10 +914,10 @@ class TestProcessRegressions:
     def test_string_false_is_not_a_selection(
         self, book: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import research
+        import triage
 
         monkeypatch.setattr(
-            research,
+            triage,
             "call_llm",
             lambda *args, **kwargs: LLMResult(
                 text=json.dumps(
@@ -937,7 +937,7 @@ class TestProcessRegressions:
             ),
         )
         with pytest.raises(ValueError, match="boolean"):
-            research.run_triage(book, today=TODAY)
+            triage.run_triage(book, today=TODAY)
 
     def test_unused_capacity_checks_more_overdue_holdings(
         self, book: sqlite3.Connection

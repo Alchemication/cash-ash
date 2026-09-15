@@ -7,11 +7,11 @@ from datetime import date
 
 import pytest
 
-import research as research_module
+import triage as triage_module
 from config import TRIAGE_MAX_TOKENS
 from llm import LLMResult
 from models import Event, Thesis
-from research import run_triage, triage_inputs
+from triage import run_triage, triage_inputs
 from seed import load_snapshot, seed_database
 from store import save_events, save_prices
 from store_research import save_thesis
@@ -63,7 +63,7 @@ def fake_llm(monkeypatch: pytest.MonkeyPatch):
 
         import decisions
 
-        monkeypatch.setattr(research_module, "call_llm", fake)
+        monkeypatch.setattr(triage_module, "call_llm", fake)
         monkeypatch.setattr(decisions, "call_llm", fake)
         return seen
 
@@ -531,6 +531,6 @@ class TestTriageBudget:
                 llm_call_id=1,
             )
 
-        monkeypatch.setattr(research_module, "call_llm", fake)
+        monkeypatch.setattr(triage_module, "call_llm", fake)
         run_triage(seeded, today=TODAY)
         assert budgets == [TRIAGE_MAX_TOKENS]

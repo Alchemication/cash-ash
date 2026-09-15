@@ -23,7 +23,7 @@ def cmd_triage(args: argparse.Namespace) -> None:
     from rich.panel import Panel
     from rich.table import Table
 
-    from research import run_triage, triage_inputs
+    from triage import run_triage, triage_inputs
 
     console = Console()
     _, db_path = resolve_cli_profile(args.profile, db=args.db)
