@@ -658,6 +658,29 @@ series cannot be reconstructed later; reading it as a verdict should not, and a
 number shown without that caveat invites exactly the mistake the system exists
 to avoid.
 
+## The record
+
+`main.py record` (and `/record`) answers one question: if the recommendations
+had been followed, what would that be worth now? Every recommendation stores
+the price and FX rate behind it, so the figure is arithmetic over rows that
+already exist — never a replay, and never backfilled. The record cannot reach
+further back than the first recommendation the system made: reconstructing what
+it "would have said" earlier would be asking a model that already knows what
+happened next.
+
+Following is inferred from the ledger: a fill in the same security and
+direction within `RECORD_FOLLOW_WINDOW_DAYS` counts. Sync the broker and the
+record keeps itself; there is nothing to approve. Trades you did and trades you
+skipped are totalled separately, which is the comparison worth having — the
+system's picks against your own decisions.
+
+A sale is measured by the fall it avoided. Trades that cannot be priced are
+named and left out of the totals rather than counted as zero. Every total
+carries its trade count, because a handful of trades cannot separate judgement
+from luck, and a total without its count reads as a verdict. Keeping cash is
+measured too: today's cash against what the benchmark did since that advice.
+`RECORD_WINDOW_WEEKS` bounds what the weekly message shows.
+
 ## The weekly report
 
 `report` renders one summary message. Its second line is the verdict: trades
@@ -674,12 +697,12 @@ line per decision, plus thesis changes waiting. Keeping cash is one line, not a 
 failures, trades the rules blocked and standing concerns sit in a collapsed
 Details section.
 
-`--telegram` sends that summary, then one card per decision: its headline, what
-settles a review question, and the rationale collapsed underneath. Buttons mark
-a review Done or approve a trade, reject, snooze, or open the evidence and the
-thesis. Answering a card rewrites it with the outcome and removes its buttons,
-so the chat shows what is still open. Without `--telegram` the summary and
-cards print in the terminal: a dry run that sends nothing and calls no model.
+`--telegram` sends that summary, then one card per recommendation: its
+headline, what settles a review question, and the rationale collapsed
+underneath. The cards carry no buttons. You trade at the broker and sync, and
+whether you followed a recommendation is read from the ledger, so approvals
+would only record intentions. Without `--telegram` the summary and cards print
+in the terminal: a dry run that sends nothing and calls no model.
 
 A completed review with no pending actions is different from no review or a
 failed cycle. Stage outcomes persist, so `/review` continues to show failures.

@@ -477,6 +477,16 @@ def weekly_report(
             f"<i>Keep cash: {escape(recommendation_headline(keep_cash))}</i>",
         ]
 
+    from record import record_lines, shadow_record
+
+    followed = record_lines(shadow_record(conn, account_id=account_id, today=now))
+    if followed:
+        lines += [
+            "",
+            "<b>If you had followed it</b>",
+            *(f"• {escape(line)}" for line in followed),
+        ]
+
     held = {
         row.position.security.id: row.position.security.ticker
         for row in rows

@@ -271,6 +271,23 @@ the last review rather than since an arbitrary date. The value change is read
 from the newest snapshot at least this old.
 """
 
+RECORD_WINDOW_WEEKS: int = 12
+"""How far back the record of followed recommendations looks.
+
+A quarter: long enough to hold several weeks of advice, short enough that the
+message stays readable. The all-time totals are in the record itself; this only
+bounds what the weekly message shows.
+"""
+
+RECORD_FOLLOW_WINDOW_DAYS: int = 5
+"""Days after a recommendation in which a matching fill counts as following it.
+
+The owner trades at the broker and syncs afterwards, so following is inferred
+from the ledger rather than recorded by a button. Five days covers a weekend
+plus a couple of working days, which is how long acting on a Sunday review
+realistically takes.
+"""
+
 
 # ---------------------------------------------------------------------------
 # Market data

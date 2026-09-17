@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 _BOT_COMMANDS = [
     ("holdings", "Current positions and value"),
     ("review", "This week's portfolio review"),
-    ("pending", "Recommendations awaiting your decision"),
+    ("pending", "This week's recommendations"),
+    ("record", "What following past recommendations would have done"),
     ("refresh", "Download and reconcile the latest broker statement"),
     ("thesis", "Compare owner thesis and proposed changes"),
     ("evidence", "Dated findings and source excerpts"),

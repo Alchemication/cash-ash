@@ -192,7 +192,7 @@ def _record_decision(profile, recommendation_id: int, decision: str) -> str:  # 
 
 
 HELP_TEXT = (
-    "Commands: /review, /holdings, /pending, /refresh, /evidence TICKER, "
+    "Commands: /review, /holdings, /pending, /record, /refresh, /evidence TICKER, "
     "/thesis TICKER, /reset. Anything else, just ask in plain words — "
     '"what did I pay for BRK.B", "how much cash", "when did I last '
     'add money".'
@@ -303,6 +303,12 @@ def _chat_reply(profile, text: str) -> str:  # type: ignore[no-untyped-def]
             f"{item['action']} {item['ticker'] or ''} — "
             f"{escape(recommendation_headline(item))}"
             for item in parts.actionable
+        )
+    if command == "record":
+        from record import record_lines, shadow_record
+
+        return "<b>If you had followed it</b>\n" + "\n".join(
+            escape(line) for line in record_lines(shadow_record(conn))
         )
     if command == "reset":
         from daemon_chat import reset_conversation

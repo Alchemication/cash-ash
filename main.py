@@ -155,8 +155,10 @@ from cmd_report import cmd_report, cmd_telegram_setup  # noqa: E402
 from cmd_research import cmd_research  # noqa: E402
 from cmd_triage import cmd_triage  # noqa: E402
 from cmd_sync import cmd_events, cmd_price, cmd_sync  # noqa: E402
+from config import RECORD_WINDOW_WEEKS  # noqa: E402
 from commands import (  # noqa: E402
     cmd_concentration,
+    cmd_record,
     cmd_context,
     cmd_doctor,
     cmd_holdings,
@@ -354,6 +356,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_holdings = sub.add_parser("holdings", help="Show current positions")
     _add_db(p_holdings)
     p_holdings.set_defaults(func=cmd_holdings)
+
+    p_record = sub.add_parser(
+        "record", help="What following past recommendations would have done"
+    )
+    p_record.add_argument(
+        "--weeks",
+        type=int,
+        default=RECORD_WINDOW_WEEKS,
+        help=f"How far back to look (default: {RECORD_WINDOW_WEEKS})",
+    )
+    _add_db(p_record)
+    p_record.set_defaults(func=cmd_record)
 
     p_conc = sub.add_parser("concentration", help="Show grouped portfolio weights")
     p_conc.add_argument(

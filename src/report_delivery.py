@@ -22,15 +22,8 @@ import logging
 import sqlite3
 from datetime import date
 
-from notify import (
-    TelegramError,
-    delete_message,
-    edit_message,
-    send_message,
-    send_with_buttons,
-)
+from notify import TelegramError, delete_message, edit_message, send_message
 from report import ReportParts, card_text, progress_text, weekly_report
-from review_text import recommendation_buttons
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +83,12 @@ def send_review(
     progress_message_id: int | None = None,
     today: date | None = None,
 ) -> ReportParts:
-    """Send the summary, then one card per decision.
+    """Send the summary, then one card per recommendation.
+
+    Read-only: the cards carry no buttons. The owner trades at the broker and
+    syncs, and whether they followed a recommendation is read from the ledger,
+    so a second workflow of approvals would only be a record of intentions
+    nobody keeps up to date.
 
     The progress message is deleted and the summary sent fresh rather than
     edited into place. An edit never notifies, so a run that ended in an edit
@@ -120,9 +118,5 @@ def send_review(
             logger.warning("Could not remove the progress message", exc_info=True)
     send_message(chat_id=profile.telegram_id, text=parts.body)
     for item in parts.actionable:
-        send_with_buttons(
-            chat_id=profile.telegram_id,
-            text=card_text(item),
-            buttons=recommendation_buttons(item),
-        )
+        send_message(chat_id=profile.telegram_id, text=card_text(item))
     return parts

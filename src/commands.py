@@ -7,6 +7,7 @@ Public API:
     cmd_init           -- create and seed a profile's database
     cmd_holdings       -- current positions, cost basis and value
     cmd_concentration  -- grouped weights by security, sector and theme
+    cmd_record         -- what following past recommendations would have done
     cmd_profile        -- create and list profiles
     cmd_context        -- show a profile's context files and their status
     cmd_doctor         -- check whether a profile is ready to use
@@ -508,3 +509,31 @@ def cmd_doctor(args: argparse.Namespace) -> None:
         f"{len(provider_keys)} key(s) set — needed from Phase 3",
     )
     console.print(table)
+
+
+def cmd_record(args: argparse.Namespace) -> None:
+    """Print what following past recommendations would have done.
+
+    Raises:
+        ProfileConfigError: If the profile or its database is missing.
+    """
+    from rich.console import Console
+    from rich.panel import Panel
+
+    from record import record_lines, shadow_record
+    from store import open_existing_db
+
+    console = Console()
+    _, db_path = resolve_cli_profile(args.profile, db=args.db)
+    record = shadow_record(open_existing_db(db_path), weeks=args.weeks)
+    console.print(
+        Panel(
+            "\n".join(record_lines(record)),
+            title=f"If you had followed it — since {record.since}",
+            border_style="cyan",
+        )
+    )
+    console.print(
+        "[dim]Following is read from your synced trades. Nothing here measures "
+        "skill: the trade count is what says how much it can mean.[/dim]"
+    )
