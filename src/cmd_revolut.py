@@ -84,6 +84,18 @@ def cmd_revolut(args: argparse.Namespace) -> None:
             "statement": statement.to_dict(),
             "reconciliation": reconcile(conn, statement),
         }
+        if args.revolut_cmd in {"download", "ingest"}:
+            # Only an archived statement is written to the ledger: inspecting
+            # some other PDF must never change the book.
+            from revolut_fills import import_activity
+
+            result = import_activity(conn, statement)
+            report["import"] = {
+                "trades": result.trades,
+                "dividends": result.dividends,
+                "already_recorded": result.already,
+                "not_imported": result.skipped,
+            }
     print(json.dumps(report, indent=2))
 
 

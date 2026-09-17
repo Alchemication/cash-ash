@@ -83,6 +83,7 @@ class Trade:
     fee_eur: float = 0.0
     is_synthetic: bool = False
     note: str | None = None
+    source_ref: str | None = None
     id: int | None = None
 
 
@@ -95,6 +96,7 @@ class CashFlow:
     amount_eur: float
     account_id: int = 1
     note: str | None = None
+    source_ref: str | None = None
     id: int | None = None
 
 

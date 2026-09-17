@@ -105,16 +105,16 @@ uv run --group browser python main.py revolut download --profile NAME \
 ```
 
 `ingest` validates an English, text-based account statement PDF, archives its
-original bytes and parsed evidence, then prints JSON with a quantity comparison.
-`reconcile` prints the same comparison without archiving. Both require an
-initialized profile database. Neither writes trades, cash flows, securities, FX
-or pricing snapshots. Normal database migrations still apply when opening it.
+original bytes and parsed evidence, imports its activity into the ledger, then
+prints JSON with a quantity comparison and what the import did. `download` does
+the same after fetching the statement. `reconcile` prints the comparison
+without archiving or importing: inspecting some other PDF must never change the
+book. All require an initialized profile database, and normal migrations apply
+when it is opened.
 
 The source model preserves separate USD, EUR and GBP sections, holdings with
 ISINs, native prices and values, starting/ending balances, and transaction
-timestamps, description text, values, fees and commissions. Transaction details
-remain source text; they are not interpreted as executable trade records.
-Unknown layouts, missing tables, duplicate holdings and inconsistent totals
+timestamps, description text, values, fees and commissions. Unknown layouts, missing tables, duplicate holdings and inconsistent totals
 are refused. Scanned/encrypted PDFs and other currencies are unsupported.
 
 Period start, period end and generation date remain distinct. A statement
@@ -125,6 +125,30 @@ positions, not a reconstruction at either date. Symbol/currency identity is
 provisional because the ledger has no ISIN field. Differences in quantities,
 holdings missing from either side, and unknown valuation time remain visible.
 Cash/value reconciliation to EUR is not performed using current FX rates.
+
+### Importing activity
+
+A filled order becomes a trade, and a dividend becomes a `DIVIDEND` cash flow.
+That is what makes syncing the only step after trading at the broker: the
+ledger learns what happened from the statement rather than from an approval
+nobody pressed.
+
+Three rules keep it from inventing history:
+
+- **Only recognised rows.** A row whose shape is not understood is reported and
+  left out. A misparsed fill is a wrong position that looks right.
+- **Only after the opening snapshot.** The seed already represents everything
+  held on its date, so an earlier fill would count the same shares twice.
+- **Only once.** Every row carries a reference derived from its own contents,
+  unique across `trades` and `cash_flows`, so overlapping statements and
+  repeated downloads add nothing twice.
+
+Money is stored in EUR, so a fill needs the rate of its own trade date. A
+missing rate is fetched once from the market-data provider and stored; where it
+still cannot be established the row is skipped and named, because converting at
+today's rate would restate what the position cost. Fees and commission convert
+with it. A refresh says what it imported, and an import that fails does not
+discard the archived statement or its comparison.
 
 `correct-seed` fixes one known defect: the broker screenshot that seeds the book
 truncates quantities, while its EUR values cover the full holding. It archives

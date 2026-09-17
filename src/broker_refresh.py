@@ -66,6 +66,7 @@ async def run_broker_refresh(
     end: date | None = None,
     download=None,  # type: ignore[no-untyped-def]
     reconcile_fn=None,  # type: ignore[no-untyped-def]
+    import_fn=None,  # type: ignore[no-untyped-def]
 ) -> RefreshResult:
     """Sign in by QR relay, download the period's statement, reconcile it.
 
@@ -83,6 +84,8 @@ async def run_broker_refresh(
             :func:`revolut_download.download_statement`.
         reconcile_fn: Injection point for reconciliation, for tests. Defaults to
             :func:`revolut_reconcile.reconcile`.
+        import_fn: Injection point for the ledger import, for tests. Defaults to
+            :func:`revolut_fills.import_activity`.
 
     Returns:
         The result. Only ``reconciled`` touched the archive; every other status
@@ -94,6 +97,8 @@ async def run_broker_refresh(
         download = download_statement
     if reconcile_fn is None:
         from revolut_reconcile import reconcile as reconcile_fn
+    if import_fn is None:
+        from revolut_fills import import_activity as import_fn
 
     from revolut_download import SignInRequired
     from store import open_existing_db
@@ -118,6 +123,13 @@ async def run_broker_refresh(
     try:
         with open_existing_db(profile.db) as conn:
             reconciliation = reconcile_fn(conn, statement)
+            try:
+                imported = import_fn(conn, statement).summary()
+            except Exception as exc:  # noqa: BLE001 - the statement is archived
+                # The download and the comparison already succeeded; a failed
+                # import is worth saying, not worth discarding them for.
+                logger.exception("Could not import statement activity")
+                imported = f"Ledger import failed ({exc})."
     except Exception as exc:  # noqa: BLE001 - the statement is archived; report the miss
         logger.exception("Reconciliation failed after a successful download")
         return RefreshResult(
@@ -127,7 +139,8 @@ async def run_broker_refresh(
     differing = sum(row["status"] != "quantity_match" for row in reconciliation["rows"])
     detail = (
         f"Statement {statement.period_start}–{statement.period_end} archived; "
-        f"{differing} of {len(reconciliation['rows'])} rows differ from the ledger."
+        f"{differing} of {len(reconciliation['rows'])} rows differ from the ledger. "
+        f"{imported}"
     )
     return RefreshResult(
         "reconciled", detail, reconciliation=reconciliation, archive=str(archive)

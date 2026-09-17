@@ -255,9 +255,9 @@ def insert_trade(conn: sqlite3.Connection, trade: Trade) -> int:
             INSERT INTO trades (
                 account_id, security_id, trade_date, side, quantity,
                 price_native, fx_rate, amount_eur, fee_eur, is_synthetic,
-                note, created_at
+                note, source_ref, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 trade.account_id,
@@ -271,6 +271,7 @@ def insert_trade(conn: sqlite3.Connection, trade: Trade) -> int:
                 trade.fee_eur,
                 int(trade.is_synthetic),
                 trade.note,
+                trade.source_ref,
                 _now(),
             ),
         )
@@ -377,8 +378,9 @@ def insert_cash_flow(conn: sqlite3.Connection, flow: CashFlow) -> int:
     with conn:
         cursor = conn.execute(
             """
-            INSERT INTO cash_flows (account_id, flow_date, kind, amount_eur, note, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO cash_flows (account_id, flow_date, kind, amount_eur, note,
+                                    source_ref, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 flow.account_id,
@@ -386,6 +388,7 @@ def insert_cash_flow(conn: sqlite3.Connection, flow: CashFlow) -> int:
                 flow.kind,
                 flow.amount_eur,
                 flow.note,
+                flow.source_ref,
                 _now(),
             ),
         )

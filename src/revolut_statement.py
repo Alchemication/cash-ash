@@ -241,7 +241,8 @@ def parse_layout(text: str) -> Statement:
             "Generated before period end: this is a partial-period statement."
         )
     statement.warnings.append(
-        "Transactions are source evidence only; no trades or cash flows were imported."
+        "Transactions are parsed here as evidence; writing them to the ledger is a "
+        "separate step (revolut_fills.import_activity)."
     )
     return statement
 
