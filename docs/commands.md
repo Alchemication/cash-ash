@@ -708,7 +708,7 @@ measured too: today's cash against what the benchmark did since that advice.
 ## The weekly report
 
 `report` renders one summary message. Its second line is the verdict: trades
-to approve, questions that need you and fills to record, or that nothing needs
+to approve, questions for you and fills to record, or that nothing needs
 you. Then the value and "Your portfolio": facts computed without a model — the
 largest position against `MAX_POSITION_WEIGHT_PCT`, the heaviest theme against
 `CONCENTRATION_ALERT_PCT`, the currencies holdings are priced in, cash, how many

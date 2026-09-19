@@ -455,6 +455,8 @@ def landing_placeholders() -> dict[str, str]:
         "MAX_POSITION_WEIGHT_PCT": _figure(config.MAX_POSITION_WEIGHT_PCT),
         "MAX_NEW_TRADE_EUR": _figure(config.MAX_NEW_TRADE_EUR),
         "MAX_WEEKLY_ALLOCATION_EUR": _figure(config.MAX_WEEKLY_ALLOCATION_EUR),
+        "MIN_TRADE_EUR": _figure(config.MIN_TRADE_EUR),
+        "CONCENTRATION_ALERT_PCT": _figure(config.CONCENTRATION_ALERT_PCT),
         "RECOMMENDATION_EXPIRY_DAYS": str(config.RECOMMENDATION_EXPIRY_DAYS),
         "PRICE_STALE_AFTER_DAYS": str(config.PRICE_STALE_AFTER_DAYS),
         "BENCHMARK_NAME": html.escape(config.BENCHMARK_NAME),

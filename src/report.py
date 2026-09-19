@@ -518,7 +518,7 @@ def _verdict(
     if trades:
         parts.append(f"{_plural(trades, 'trade')} to approve")
     if reviews:
-        parts.append(f"{reviews} {'needs' if reviews == 1 else 'need'} your input")
+        parts.append(f"{_plural(reviews, 'question')} for you")
     if unfilled:
         parts.append(f"{_plural(unfilled, 'fill')} to record")
     if parts:

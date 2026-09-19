@@ -393,7 +393,7 @@ class TestReportLayout:
     def test_the_verdict_is_the_second_line(self, seeded: sqlite3.Connection) -> None:
         self._recommend(seeded, headline="Who decides now?")
         verdict = weekly_report(seeded, today=self.TODAY).body.splitlines()[1]
-        assert "1 needs your input" in verdict
+        assert "1 question for you" in verdict
         assert "no trades" in verdict
 
     def test_reasoning_stays_on_the_card(self, seeded: sqlite3.Connection) -> None:

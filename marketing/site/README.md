@@ -19,11 +19,12 @@ site, the docs, the README, or `src/config.py`. Enable publishing once with
 
 A ledger sheet, kept in the dark. Ash-black ground, faint ruling, and one
 ember margin line. Ember is the brand and the calls to action; the two verdict
-colours are spent on meaning only — teal for a sourced finding or an
-approval, red for anything the rules refused — so neither ever decorates. The
-hero is a question beside a stone dollar going to ash; the first entry below
-it is one week's review rendered as the artifact the app produces, with a
-proposal the rules overruled. Section headings sit in the margin; the content
+colours are spent on meaning only — teal for a sourced finding or a stage
+that finished, red for anything the rules refused or a stage that failed — so
+neither ever decorates. The hero is a question beside a stone dollar going to
+ash, with the weekly run's five stages marking themselves off beneath the
+question; the first entry below it is one week's review rendered as the
+artifact the app produces, with a proposal the rules overruled. Section headings sit in the margin; the content
 sits to its right.
 
 Two typefaces, both self-hosted under `assets/fonts/` so no page makes an
@@ -48,12 +49,21 @@ apart.
   in the build rewrites them for pages under `docs/`.
 - `index.html` — the landing page. Page-specific CSS only; the shared chrome
   arrives via the token. Opening it straight from disk looks unstyled, which is
-  expected — build the site to view it. Two pieces of motion: the stamp on
-  the hero sheet, which lands once on load, and the ash — the inline script at
-  the foot of the page drawing a few dozen grey flecks settling and the odd
-  ember rising on a fixed canvas behind the content. Both are off under
-  `prefers-reduced-motion`; the canvas also pauses while the tab is hidden
-  and reads its two colours from the stylesheet's tokens.
+  expected — build the site to view it. Three pieces of motion. The flow in
+  the hero: the five stages of a weekly run as nodes on a line, marked off
+  once on load by an inline script the way the app marks them off on the
+  phone, with one line beneath saying what each stage just reported, in the
+  phrasing of `src/weekly.py`. One scripted run, in which the price feed
+  fails and the run carries on, over the example snapshot's four invented
+  holdings, ending on the verdict line with a model-call count but no cost,
+  since an invented spend figure would read as a claim. It does not loop: a
+  second showing is the same information. The stamp on the review sheet,
+  which lands once on load. And the ash — the inline script at the foot of
+  the page drawing a few dozen grey flecks settling and the odd ember rising
+  on a fixed canvas behind the content. All three are off under
+  `prefers-reduced-motion` (the flow then shows the finished run, still);
+  the flow and the canvas pause while the tab is hidden, and both read their
+  colours from the stylesheet's tokens.
 - `assets/fonts/` — the three `.woff2` files, downloaded once from Google
   Fonts (latin subset, variable).
 - `assets/cash-ash-hero.jpg` — the hero image, a generated stone dollar
@@ -80,6 +90,8 @@ publishing an unresolved token. Currently:
 | `{{MAX_POSITION_WEIGHT_PCT}}` | `src/config.py` |
 | `{{MAX_NEW_TRADE_EUR}}` | `src/config.py` |
 | `{{MAX_WEEKLY_ALLOCATION_EUR}}` | `src/config.py` |
+| `{{MIN_TRADE_EUR}}` | `src/config.py` |
+| `{{CONCENTRATION_ALERT_PCT}}` | `src/config.py` |
 | `{{RECOMMENDATION_EXPIRY_DAYS}}` | `src/config.py` |
 | `{{PRICE_STALE_AFTER_DAYS}}` | `src/config.py` |
 | `{{BENCHMARK_NAME}}` | `src/config.py` |
