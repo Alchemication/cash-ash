@@ -60,6 +60,19 @@ everything else.
 
 FEATURES: tuple[str, ...] = tuple(FEATURE_PURPOSE)
 
+UNCALLED_FEATURES: frozenset[str] = frozenset({"synthesis"})
+"""Routable stages no code path invokes yet.
+
+``synthesis`` reconciles several analysts, and the pipeline runs exactly one,
+so nothing calls it: in the week of 2026-09-20 it was routed, priced and
+displayed beside stages that ran, having made no call at all. Multiple
+analysts are deliberately deferred until the single-analyst workflow has
+measured weaknesses (`docs/roadmap.md`), so the route stays configurable and
+is labelled instead of being presented as live.
+
+Remove a name from here when a stage starts calling it.
+"""
+
 MODEL_TIERS: dict[str, str] = {
     FLASH_MODEL: "flash",
     FAST_MODEL: "fast",
@@ -67,26 +80,57 @@ MODEL_TIERS: dict[str, str] = {
 }
 """Tier shown beside a model, so a change is visibly a change.
 
-``flash`` and ``pro`` reason before answering; ``fast`` does not. The
-distinction matters more than the price: on an analytical stage the reasoning
-is the output being bought, so a model that skips it is not a cheaper way to do
-the same work.
+All three reason before answering, which is why every route declares a
+reasoning effort. ``fast`` sits on a second provider and is the fallback for
+that reason alone — it is redundancy against an outage, not a cheaper way to
+do the analysis.
 """
 
-_DEFAULT_TEMPERATURE: dict[str, float] = {
-    # Analysts read the same frozen evidence; the useful disagreement between
-    # them should come from different models, not from sampling noise, or it
-    # cannot be distinguished from randomness on a rerun.
-    "analyst": 0.0,
-    "synthesis": 0.0,
-    "decision": 0.0,
-    "triage": 0.0,
-    "plan": 0.2,
-    "explain": 0.3,
-    # Conversation, not analysis: a little warmth reads better than a report,
-    # and the figures come from tools rather than from sampling.
-    "chat": 0.3,
+_DEFAULT_TEMPERATURE: dict[str, float] = {}
+"""No stage sets a temperature; every route uses the provider's own default.
+
+Setting one was actively harmful. A reasoning model may refuse any temperature
+but 1 while it is thinking, and the fast fallback does exactly that: every
+attempt to reach it died instantly on ``temperature=0.0``, so the cross-
+provider redundancy the routing is built around had never once worked. The
+first outage that needed it, on 2026-09-20, found nothing there.
+
+The reproducibility it was supposed to buy was not real either. A reasoning
+model is not deterministic at temperature 0 — expert routing and batching move
+the output anyway — so a rerun could never have told sampling noise apart from
+judgement on that basis alone. Stability across reruns is measured by the
+evals, not assumed from a parameter.
+
+Kept as a map rather than deleted because an override may still set one per
+profile, and a future provider may need a specific value.
+"""
+
+_DEFAULT_REASONING_EFFORT: dict[str, str] = {
+    # The two stages whose output is a judgement the owner acts on. Depth is
+    # the thing being bought here, and these are also the only stages where a
+    # shallow answer is expensive rather than merely worse.
+    "analyst": "high",
+    "decision": "high",
+    "synthesis": "high",
+    # Ranking, question-writing and prose. Cheap by default, as the routing
+    # is throughout: these are comparative or clerical, not analytical.
+    "triage": "low",
+    "plan": "low",
+    "explain": "low",
+    "chat": "low",
 }
+"""How hard each stage is asked to think, stated rather than left to chance.
+
+Unset, this is whatever the provider happens to default to, on the single
+largest lever over cost, latency and quality in the system — the one knob this
+project documents everywhere else and had never declared here.
+
+High costs more and is slower, which is the trade being made deliberately on
+two stages and declined on the rest.
+"""
+
+REASONING_EFFORTS: tuple[str, ...] = ("none", "low", "medium", "high")
+"""Accepted reasoning-effort levels, lowest first."""
 
 
 @dataclass(frozen=True)
@@ -97,6 +141,7 @@ class ModelRoute:
     model: str
     fallback: str | None
     temperature: float | None
+    reasoning_effort: str | None
     source: str
     """``default`` or ``override``, so it is obvious what has been changed."""
 
@@ -112,9 +157,7 @@ def default_route(feature: str) -> ModelRoute:
     The fallback is the fast tier, which sits on a different provider. That is
     the point: a fallback within one provider covers a fault specific to one
     model but not the provider going down, which is the outage that would take
-    a whole weekly run with it. It also emits no reasoning, so it cannot fail
-    the way the primary can — by spending an entire budget thinking and
-    returning nothing.
+    a whole weekly run with it.
 
     Analytical stages all route to the flash tier. The fast model is here for
     resilience, not because it is a cheaper way to do the same analysis.
@@ -130,6 +173,7 @@ def default_route(feature: str) -> ModelRoute:
         model=FLASH_MODEL,
         fallback=FAST_MODEL,
         temperature=_DEFAULT_TEMPERATURE.get(feature),
+        reasoning_effort=_DEFAULT_REASONING_EFFORT.get(feature),
         source="default",
     )
 
@@ -194,11 +238,13 @@ def resolve_route(feature: str, path: Path | None = None) -> ModelRoute:
 
     model = stored.get("model")
     temperature = stored.get("temperature", route.temperature)
+    effort = stored.get("reasoning_effort", route.reasoning_effort)
     return ModelRoute(
         feature=feature,
         model=model if isinstance(model, str) and model else route.model,
         fallback=stored.get("fallback", route.fallback),
         temperature=temperature if isinstance(temperature, int | float) else None,
+        reasoning_effort=effort if effort in REASONING_EFFORTS else None,
         source="override",
     )
 
@@ -217,6 +263,7 @@ def set_route(
     *,
     model: str | None = None,
     temperature: float | None = None,
+    reasoning_effort: str | None = None,
     path: Path | None = None,
 ) -> ModelRoute:
     """Persist a routing override for one feature.
@@ -225,6 +272,7 @@ def set_route(
         feature: Feature to change.
         model: Model id, or None to leave it as is.
         temperature: Sampling temperature, or None to leave it as is.
+        reasoning_effort: Reasoning level, or None to leave it as is.
         path: Preferences file, or None to use the active profile's.
 
     Returns:
@@ -250,6 +298,13 @@ def set_route(
         entry["model"] = model
     if temperature is not None:
         entry["temperature"] = temperature
+    if reasoning_effort is not None:
+        if reasoning_effort not in REASONING_EFFORTS:
+            levels = ", ".join(REASONING_EFFORTS)
+            raise ValueError(
+                f"Unknown reasoning effort {reasoning_effort!r}. Levels: {levels}."
+            )
+        entry["reasoning_effort"] = reasoning_effort
     routes[feature] = entry
     _write(routes, resolved)
     return resolve_route(feature, resolved)

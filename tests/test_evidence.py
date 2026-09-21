@@ -196,3 +196,57 @@ class TestEvidenceProvenanceConstraint:
         self._insert(conn, run_id, claim="something general")
         row = conn.execute("SELECT kind FROM evidence").fetchone()
         assert row["kind"] == "background"
+
+
+class TestRelevanceFilter:
+    """An aggregator attaches sector commentary to a ticker; it is not evidence."""
+
+    @staticmethod
+    def _item(title: str, summary: str = "") -> EvidenceItem:
+        return EvidenceItem(
+            title=title,
+            url="https://example.com/x",
+            published="2026-09-20",
+            summary=summary,
+        )
+
+    @pytest.mark.parametrize(
+        "title,summary,expected",
+        [
+            ("Amazon's cloud margins widen", "", True),
+            ("AMZN slips after results", "", True),
+            # Named only in the summary, which is where a wire often puts it.
+            ("Three stocks to watch", "Amazon led the group.", True),
+            # The real 2026-09-20 package: neither item concerns the holding.
+            ("The Caterpillar Compelling Case", "Hyperscaler capex.", False),
+            ("Hyderabad takes on Bangalore", "A tech hub matures.", False),
+        ],
+    )
+    def test_only_items_naming_the_company_survive(
+        self, title: str, summary: str, expected: bool
+    ) -> None:
+        from research_evidence import _subject_terms, is_about
+
+        terms = _subject_terms("AMZN", "Amazon")
+        assert is_about(self._item(title, summary), terms) is expected
+
+    def test_generic_name_words_do_not_establish_relevance(self) -> None:
+        from research_evidence import _subject_terms, is_about
+
+        terms = _subject_terms("META", "Meta Platforms")
+        assert is_about(self._item("Platforms face new rules"), terms) is False
+        assert is_about(self._item("Meta ships a new model"), terms) is True
+
+    def test_a_short_name_is_carried_by_the_ticker(self) -> None:
+        # "Eli" is below the length floor and would match inside "eligible".
+        from research_evidence import _subject_terms, is_about
+
+        terms = _subject_terms("LLY", "Eli Lilly")
+        assert "eli" not in terms
+        assert is_about(self._item("Eligible plans expand"), terms) is False
+        assert is_about(self._item("Lilly raises guidance"), terms) is True
+
+    def test_the_exchange_suffix_is_not_part_of_the_symbol(self) -> None:
+        from research_evidence import _subject_terms
+
+        assert "vwce" in _subject_terms("VWCE.DE", "FTSE All-World")

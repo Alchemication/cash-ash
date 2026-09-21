@@ -64,7 +64,6 @@ def cmd_process(args: argparse.Namespace) -> None:
         EVIDENCE_ITEMS_PER_SECURITY,
         EVIDENCE_MAX_AGE_DAYS,
         RESEARCH_MAX_PASSES,
-        RESEARCH_ROTATION_SLOTS,
         RESEARCH_ASSET_CLASSES,
         RESEARCH_OVERDUE_DAYS,
         SNOOZE_DAYS,
@@ -101,7 +100,6 @@ def cmd_process(args: argparse.Namespace) -> None:
                     "calls_without_cost": cost[2] or 0,
                     "limits": {
                         "RESEARCH_MAX_PASSES": RESEARCH_MAX_PASSES,
-                        "RESEARCH_ROTATION_SLOTS": RESEARCH_ROTATION_SLOTS,
                         "RESEARCH_ASSET_CLASSES": RESEARCH_ASSET_CLASSES,
                         "RESEARCH_OVERDUE_DAYS": RESEARCH_OVERDUE_DAYS,
                         "SNOOZE_DAYS": SNOOZE_DAYS,

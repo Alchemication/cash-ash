@@ -48,8 +48,13 @@ argument, and a bear case produced on request is indistinguishable from one the
 evidence forced — which destroys the only signal a panel offers. Disagreement
 is worth something when it emerges between models reading the same frozen
 evidence with the same instructions; it is worth nothing when it was assigned.
-That is also why analyst temperature is zero: disagreement traceable to
-sampling noise cannot be told apart from disagreement traceable to judgement.
+
+Separating disagreement from sampling noise cannot be done by pinning
+temperature. That was the original plan and it does not work: a reasoning
+model is not reproducible at temperature 0 anyway, and setting one is refused
+outright by some models while they are thinking. Repeated runs over frozen
+evidence are what establish whether a difference is stable, which is why
+repeated-run stability sits under process evaluations above.
 
 ## Benchmark methodology
 

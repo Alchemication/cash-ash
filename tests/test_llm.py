@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 import llm as llm_module
-from config import MIN_MAX_TOKENS
+from config import LLM_PROVIDER_RETRIES, MIN_MAX_TOKENS
 from llm import LLMError, _is_transient, _was_truncated, call_llm
 from store_research import create_llm_trace, llm_cost_summary, load_llm_calls
 
@@ -143,6 +143,22 @@ class TestCallLLM:
         script = patched()
         call_llm(conn, feature="triage", messages=self.MESSAGES, max_tokens=1)
         assert script.calls[0]["max_tokens"] == MIN_MAX_TOKENS
+
+    def test_the_provider_sdk_is_not_left_to_retry_underneath_us(
+        self, conn: sqlite3.Connection, patched
+    ) -> None:
+        # Provider-side retries are invisible: unlogged, ignoring the backoff,
+        # and each granted a fresh timeout, so the per-request ceiling silently
+        # triples. Retrying belongs to call_llm alone.
+        import litellm
+
+        litellm.OpenAIConfig.max_retries = 2
+        script = patched()
+        call_llm(conn, feature="triage", messages=self.MESSAGES)
+        assert script.calls[0]["max_retries"] == LLM_PROVIDER_RETRIES
+        # The keyword above is dropped by litellm for every non-Azure route,
+        # so the provider config is what actually binds.
+        assert litellm.OpenAIConfig.max_retries == LLM_PROVIDER_RETRIES
 
     def test_transient_failure_is_retried(
         self, conn: sqlite3.Connection, patched

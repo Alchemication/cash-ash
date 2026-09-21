@@ -56,8 +56,8 @@ uv run python main.py decide                # inspect recommendation IDs
 uv run python main.py process               # coverage, citation checks, cost and limits
 ```
 
-A weekly cycle syncs data, ranks holdings, reserves research capacity for overdue
-coverage, researches selected companies and proposes actions. Findings remain
+A weekly cycle syncs data, ranks holdings, researches what triage selected and
+spends any spare capacity on overdue coverage, then proposes actions. Findings remain
 separate from the owner's active thesis until explicitly accepted. Decisions
 receive dated findings, citations and unanswered questions.
 They also receive stored native closes, dated FX, reserved cash, and the current

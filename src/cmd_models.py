@@ -8,6 +8,7 @@ import logging
 from config import FAST_MODEL, FLASH_MODEL, PRO_MODEL
 from model_prefs import (
     FEATURE_PURPOSE,
+    UNCALLED_FEATURES,
     FEATURES,
     clear_route,
     resolve_route,
@@ -41,7 +42,10 @@ def cmd_models(args: argparse.Namespace) -> None:
         from model_prefs import set_route
 
         updated = set_route(
-            args.feature, model=args.model, temperature=args.temperature
+            args.feature,
+            model=args.model,
+            temperature=args.temperature,
+            reasoning_effort=args.reasoning_effort,
         )
         console.print(
             f"[green]{args.feature}[/green]: {route.model} → "
@@ -107,23 +111,32 @@ def cmd_models(args: argparse.Namespace) -> None:
     table.add_column("Model")
     table.add_column("Tier")
     table.add_column("Temp", justify="right")
+    table.add_column("Effort", justify="right")
     table.add_column("Source")
     table.add_column("Purpose", style="dim", overflow="fold")
 
     for feature in FEATURES:
         route = resolve_route(feature)
         tier = route.tier
+        uncalled = feature in UNCALLED_FEATURES
+        purpose = FEATURE_PURPOSE[feature]
         table.add_row(
-            feature,
+            f"{feature} [yellow]*[/yellow]" if uncalled else feature,
             route.model,
             f"[{_tier_style(tier)}]{tier}[/{_tier_style(tier)}]",
             "—" if route.temperature is None else f"{route.temperature:g}",
+            route.reasoning_effort or "—",
             route.source
             if route.source == "default"
             else f"[cyan]{route.source}[/cyan]",
-            FEATURE_PURPOSE[feature],
+            f"{purpose} [yellow](not called yet)[/yellow]" if uncalled else purpose,
         )
     console.print(table)
+    if any(feature in UNCALLED_FEATURES for feature in FEATURES):
+        console.print(
+            "[yellow]*[/yellow] [dim]Routable but never invoked, so its route "
+            "and tier change nothing until a stage calls it.[/dim]"
+        )
     console.print(
         f"[dim]flash={FLASH_MODEL} · fast={FAST_MODEL} · pro={PRO_MODEL}\n"
         f"flash and pro reason before answering; fast does not, which is why it "

@@ -170,7 +170,7 @@ from log import setup_logging  # noqa: E402
 from llm import LLMError  # noqa: E402
 from market_data import ProviderError  # noqa: E402
 from notify import TelegramError  # noqa: E402
-from model_prefs import FEATURES  # noqa: E402
+from model_prefs import FEATURES, REASONING_EFFORTS  # noqa: E402
 from profiles import ProfileConfigError  # noqa: E402
 
 
@@ -575,6 +575,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="T",
         help="Sampling temperature",
+    )
+    p_models_set.add_argument(
+        "--reasoning-effort",
+        choices=REASONING_EFFORTS,
+        default=None,
+        help="How hard the stage is asked to think",
     )
     p_models_reset = models_sub.add_parser("reset", help="Restore defaults")
     p_models_reset.add_argument("feature", choices=(*FEATURES, "all"))

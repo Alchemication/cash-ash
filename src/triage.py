@@ -27,7 +27,7 @@ from datetime import date, timedelta
 from config import TRIAGE_HORIZON_DAYS, TRIAGE_LOOKBACK_DAYS, TRIAGE_MAX_TOKENS
 from llm import call_llm
 from research import _string_list, extract_json, load_prompt
-from store_research import create_research_run
+from store_research import create_llm_trace, create_research_run
 
 logger = logging.getLogger(__name__)
 
@@ -360,7 +360,10 @@ def run_triage(
         raise ValueError("No holdings to triage.")
 
     run_date = (today or date.today()).isoformat()
-    run_id = create_research_run(conn, run_date=run_date, kind="triage")
+    trace_id = create_llm_trace(conn, operation="triage", feature="triage")
+    run_id = create_research_run(
+        conn, run_date=run_date, kind="triage", trace_id=trace_id
+    )
 
     body = "\n\n".join(entry.render() for entry in inputs)
     thin = sum(1 for entry in inputs if entry.thesis_summary is None)
@@ -403,6 +406,7 @@ def run_triage(
         ],
         prompt_version=TRIAGE_PROMPT_VERSION,
         max_tokens=TRIAGE_MAX_TOKENS,
+        trace_id=trace_id,
     )
     payload = extract_json(result.text)
 

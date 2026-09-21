@@ -4,15 +4,54 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import re
 import sqlite3
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
 from urllib.parse import urlparse
 
-from config import EVIDENCE_ITEMS_PER_SECURITY, EVIDENCE_MAX_AGE_DAYS
+from config import (
+    EVIDENCE_ITEMS_PER_SECURITY,
+    EVIDENCE_MAX_AGE_DAYS,
+    EVIDENCE_OVERFETCH,
+    EVIDENCE_NAME_MIN_LENGTH,
+    EVIDENCE_NAME_STOPWORDS,
+)
 from evidence import EvidenceItem, EvidenceSource
 from store_workflow import now_iso
+
+logger = logging.getLogger(__name__)
+
+
+def _subject_terms(symbol: str, company: str) -> list[str]:
+    """Return the words that mark an item as being about this company."""
+    terms = {symbol.split(".")[0].casefold()}
+    for word in re.findall(r"[A-Za-z]+", company):
+        if (
+            len(word) >= EVIDENCE_NAME_MIN_LENGTH
+            and word.casefold() not in EVIDENCE_NAME_STOPWORDS
+        ):
+            terms.add(word.casefold())
+    return sorted(t for t in terms if t)
+
+
+def is_about(item: EvidenceItem, terms: list[str]) -> bool:
+    """True when the item's own text names the company.
+
+    The feed is already scoped to one symbol, so this is not deciding what the
+    item is about from scratch — it is dropping the sector commentary and
+    unrelated market wrap-ups an aggregator attaches to a ticker. On
+    2026-09-20 that was five of eight items for AMZN, including a piece on
+    Hyderabad's tech sector and one on Caterpillar.
+
+    Matching is deliberately loose: a false positive costs one noisy line in
+    the prompt, while a false negative silently removes the only evidence that
+    could have answered a question.
+    """
+    haystack = f"{item.title} {item.summary or ''}".casefold()
+    return any(re.search(rf"\b{re.escape(term)}", haystack) for term in terms)
 
 
 def gather_evidence(
@@ -20,6 +59,7 @@ def gather_evidence(
     symbol: str,
     questions: list[str],
     *,
+    company: str,
     today: date,
     evidence_file: Path | None = None,
 ) -> list[EvidenceItem]:
@@ -27,6 +67,20 @@ def gather_evidence(
 
     Curated JSON is local input, not a remote URL fetcher. Excerpts remain
     attributed material; a primary label is the owner's classification.
+
+    Fetched items must name the company; owner-supplied ones are kept as
+    given, since the owner already chose them for this holding.
+
+    Args:
+        source: Where fetched items come from.
+        symbol: Provider symbol for the holding.
+        questions: This week's questions, used to match curated excerpts.
+        company: Company name, for deciding which fetched items are relevant.
+        today: Reference date, for the age cutoff.
+        evidence_file: Optional owner-curated JSON of dated excerpts.
+
+    Returns:
+        Dated, reachable items concerning this company, newest first.
     """
     items: list[EvidenceItem] = []
     if evidence_file and evidence_file.exists():
@@ -58,7 +112,20 @@ def gather_evidence(
                     summary=raw["excerpt"],
                 )
             )
-    items += source.fetch(symbol, limit=EVIDENCE_ITEMS_PER_SECURITY)
+    terms = _subject_terms(symbol, company)
+    off_topic = 0
+    pool = source.fetch(symbol, limit=EVIDENCE_ITEMS_PER_SECURITY * EVIDENCE_OVERFETCH)
+    for item in pool:
+        if is_about(item, terms):
+            items.append(item)
+        else:
+            off_topic += 1
+    if off_topic:
+        logger.info(
+            "Dropped %d fetched item(s) for %s that do not name the company",
+            off_topic,
+            symbol,
+        )
     unique: dict[str, EvidenceItem] = {}
     for item in items:
         try:

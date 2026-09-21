@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from config import (
+    LLM_PROVIDER_RETRIES,
     LLM_RETRY_DELAYS,
     LLM_TIMEOUT_S,
     MAX_TOKENS_DEFAULT,
@@ -185,6 +186,60 @@ def _was_truncated(finish_reason: str | None) -> bool:
     return finish_reason == "length"
 
 
+def _reasoning_kwargs(litellm: Any, model: str, effort: str | None) -> dict[str, Any]:
+    """Express a reasoning effort in whatever parameter *model* accepts.
+
+    Sending a reasoning parameter a model does not take is not ignored, it is
+    a hard failure — which is how the fast fallback came to be unreachable for
+    its whole existence, on ``temperature`` rather than this. So the parameter
+    goes only where it is known to work.
+
+    Only ``reasoning_effort`` is sent. litellm also reports ``thinking`` as
+    supported for the GLM models and that report is wrong: passing it reaches
+    the provider SDK as an unexpected keyword and fails the call. Those models
+    reason by default and expose no working control through litellm 1.100.0,
+    so their effort setting is recorded but cannot yet be applied. Revisit
+    when litellm's zai handler translates it.
+
+    Args:
+        litellm: The imported module, passed in to keep the import lazy.
+        model: The model about to be called.
+        effort: Desired level, or None to say nothing about reasoning.
+
+    Returns:
+        Keyword arguments to merge into the call; empty when the model
+        exposes no reasoning control this can reach.
+    """
+    if effort is None:
+        return {}
+    try:
+        supported = litellm.get_supported_openai_params(model=model) or []
+    except Exception:  # noqa: BLE001 - an unknown model is not a failure here
+        return {}
+    if "reasoning_effort" in supported:
+        return {"reasoning_effort": effort}
+    logger.debug("%s exposes no reasoning control; effort %r unused", model, effort)
+    return {}
+
+
+def _pin_provider_retries(litellm: Any) -> None:
+    """Stop the provider SDK retrying underneath this module's retry loop.
+
+    ``litellm.completion(max_retries=...)`` looks like the way to do this and
+    is not: litellm copies that argument into the provider's parameters only
+    on the Azure path, and the OpenAI-compatible handler every route here uses
+    then falls back to a hardcoded two. The retries it performs are invisible
+    — nothing is logged, ``LLM_RETRY_DELAYS`` is not consulted, and each one
+    gets a fresh ``LLM_TIMEOUT_S``, so a call given three minutes can run for
+    nine and a dead provider is not reported as dead until then.
+
+    Setting it on the provider config works because litellm merges that config
+    into the parameters the handler reads. The ``max_retries`` keyword is sent
+    as well, so the call stays correct if litellm starts honouring it.
+    """
+    litellm.OpenAIConfig.max_retries = LLM_PROVIDER_RETRIES
+
+
 def call_llm(
     conn: sqlite3.Connection | None,
     *,
@@ -238,11 +293,14 @@ def call_llm(
 
     from model_prefs import resolve_route
 
+    _pin_provider_retries(litellm)
+
     route = resolve_route(feature)
     requested = model or route.model
     fallback = fallback_model if fallback_model is not None else route.fallback
     if temperature is None:
         temperature = route.temperature
+    effort = route.reasoning_effort
 
     budget = max(int(max_tokens), MIN_MAX_TOKENS)
     if max_tokens < MIN_MAX_TOKENS:
@@ -281,9 +339,14 @@ def call_llm(
                 "messages": messages,
                 "max_tokens": current_budget,
                 "timeout": timeout,
+                # Without this the provider SDK retries underneath us, so
+                # `timeout` bounds one hidden attempt of three rather than the
+                # call. Retrying is this loop's job; see LLM_PROVIDER_RETRIES.
+                "max_retries": LLM_PROVIDER_RETRIES,
             }
             if temperature is not None:
                 kwargs["temperature"] = temperature
+            kwargs.update(_reasoning_kwargs(litellm, candidate, effort))
             if response_format is not None:
                 kwargs["response_format"] = response_format
             if tools:

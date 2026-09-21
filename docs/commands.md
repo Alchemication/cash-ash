@@ -45,7 +45,8 @@ uv run python main.py price SPCX --close 147.95 --date 2026-09-04
 uv run python main.py sync --prices-only      # skip the calendar fetch
 uv run python main.py events --days 30
 uv run python main.py events --past           # include dates already passed
-uv run python main.py models set synthesis --model zai/glm-4.7
+uv run python main.py models set analyst --model zai/glm-4.7
+uv run python main.py models set triage --reasoning-effort high
 uv run python main.py models reset all
 uv run python main.py models cost --since 2026-09-01
 uv run python main.py llm-log --id 42         # one call in full
@@ -373,7 +374,7 @@ calm it never observed — in the first weeks there is no price history and only
 one consensus observation, and neither means nothing moved.
 The prompt does not infer normal volatility, market divergence or the cause of
 a move from two stored closes. A thin thesis can warrant research without news;
-routine overdue coverage is also handled by the research rotation.
+routine overdue coverage is picked up by whatever capacity triage leaves.
 
 Two failure modes are handled rather than hidden. A holding the model omits is
 recorded as unranked, because a silently dropped holding looks exactly like one
@@ -400,6 +401,12 @@ owner's full rationale and assumptions, and is asked to identify contradictions
 in supplied evidence without manufacturing an opposing case. Planner source
 suggestions do not drive automated retrieval; the default feed remains ticker
 news, with question-linked local excerpts available for targeted evidence.
+
+The planner is told what the evidence source can and cannot supply, and each
+source carries that description itself so it cannot drift from what is
+fetched. A question the source cannot reach belongs in `not_this_week`, naming
+what it would need: an unanswerable question costs a call and returns nothing,
+while a recorded gap is visible and can be acted on.
 
 **Research proposes; it never adopts.** When a pass concludes the thesis has
 weakened, improved or broken, it records a *proposed* revision beside the
@@ -575,9 +582,10 @@ progress update that fails is logged and never stops the run; a run that raises
 says so in the same message.
 
 `RESEARCH_MAX_PASSES` caps deep passes; `--max-research` overrides it for one
-cycle. `RESEARCH_ROTATION_SLOTS` reserves capacity for holdings older than
-`RESEARCH_OVERDUE_DAYS`, ordered by oldest completed assessment. Remaining slots
-follow triage priority; unused capacity checks additional overdue holdings.
+cycle. Triage's selections take the slots, in its own order. Whatever capacity
+is left over goes to holdings not checked for `RESEARCH_OVERDUE_DAYS`, oldest
+assessment first and larger cost basis first among equally stale ones, so the
+backlog cannot displace what triage flagged this week.
 `main.py process` prints the effective limits. Deferred
 selections and unsupported instruments are reported explicitly. Company research
 supports `RESEARCH_ASSET_CLASSES`; other asset classes require manual review.
@@ -1014,7 +1022,13 @@ applies an excerpt to any question for that symbol. Use the provider symbol.
 These are supplied excerpts; the app does not automatically fetch filings or
 verify their transcription. Keep personal research under `CASH_ASH_HOME`.
 `EVIDENCE_ITEMS_PER_SECURITY` limits package size and `EVIDENCE_MAX_AGE_DAYS`
-excludes old material. `main.py process` prints both. Future-dated and malformed
+excludes old material. A fetched item must name the company in its title or
+summary, because an aggregator attaches sector commentary and market wrap-ups
+to a ticker; owner-supplied excerpts are kept as given, having already been
+chosen for that holding. Several times the package size is requested so the
+filter has something to discard, though the feed itself runs out first: on
+2026-09-20 it offered ten items per holding and two to eight of them were
+about the company at all. `main.py process` prints both. Future-dated and malformed
 items are excluded. Unsupported instruments need manual review rather than an
 assumption that a company analyst can handle them.
 
@@ -1028,24 +1042,36 @@ Every stage defaults to the flash tier. The pro tier is opt-in per feature:
 
 ```bash
 uv run python main.py models                                  # what is in force
-uv run python main.py models set synthesis --model zai/glm-4.7
+uv run python main.py models set analyst --model zai/glm-4.7
 uv run python main.py models cost                             # what it actually cost
 ```
 
-Three tiers ship. `flash` and `pro` reason before answering; `fast` does not,
-and sits on a second provider. `fast` is the default fallback for that reason —
-a fallback within one provider survives a bad model but not an outage, which is
-the failure that would take a whole weekly run with it. It is redundancy, not a
-cheaper way to do the analysis: where the reasoning is the output, the
-reasoning is what is being paid for.
+Three tiers ship, all of them reasoning models. `fast` sits on a second
+provider and is the default fallback for that reason alone — a fallback within
+one provider survives a bad model but not an outage, which is the failure that
+would take a whole weekly run with it. It is redundancy, not a cheaper way to
+do the analysis: where the reasoning is the output, the reasoning is what is
+being paid for.
 
 Preferences persist per profile, so two people can route differently. Any
 litellm model id is accepted, which is how a further provider joins without a
 code change.
 
-Analysts default to temperature 0. Disagreement between them should come from
-using different models, not from sampling noise, or a rerun cannot tell the two
-apart.
+A stage no code path invokes yet is marked in the table and changes nothing
+until something calls it. `synthesis` reconciles several analysts and the
+pipeline runs one, so it is routable and idle; see `docs/roadmap.md`.
+
+No stage sets a temperature; every route uses the provider's own default. A
+reasoning model may refuse any temperature but 1 while it is thinking, and
+setting one is how the fallback came to fail on every call it was ever asked
+to serve. It bought nothing in return: these models are not reproducible at
+temperature 0 either way.
+
+Every stage does declare a reasoning effort, shown in the table and settable
+with `--reasoning-effort`. `analyst` and `decision` think hardest, because
+their output is a judgement you act on; the rest stay cheap. Where a provider
+exposes no reasoning control the declared level is recorded and not sent — the
+GLM models reason by default and litellm has no working switch for them.
 
 ## Model call log
 
@@ -1054,15 +1080,20 @@ token counts, cost and the reasoning the model emitted. Failures are kept
 deliberately: a model that fails repeatedly is exactly what a later evaluation
 needs to see, and it is invisible if only successes are stored.
 
+Retrying happens in one place, so what the log shows is what happened. The
+provider SDK's own retries are turned off: they log nothing, ignore the
+backoff, and each one restarts `CASH_ASH_LLM_TIMEOUT_S`, so the timeout bounds
+a single attempt and one logged call can hide three.
+
 ```bash
 uv run python main.py llm-log            # recent calls
 uv run python main.py llm-log --id 42    # prompt, reasoning, response, cost
 uv run python main.py llm-log --trace 7  # every call in one weekly run
 ```
 
-A trace groups the calls of one operation. Reading a synthesis in isolation
-says little about why it concluded what it did; reading it beside the analyst
-calls it consumed says a lot.
+A trace groups the calls of one operation. An analyst answer in isolation says
+little about why it reached what it did; reading it beside the plan call that
+chose its questions, and the evidence that plan was given, says a lot.
 
 Two behaviours worth knowing, both measured rather than assumed. Output budgets
 have an enforced floor: the default model always reasons and cannot be told not

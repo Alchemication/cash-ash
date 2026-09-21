@@ -11,6 +11,7 @@ from config import FAST_MODEL, FLASH_MODEL, PRO_MODEL
 from model_prefs import (
     FEATURE_PURPOSE,
     FEATURES,
+    REASONING_EFFORTS,
     clear_route,
     default_route,
     load_prefs,
@@ -50,10 +51,33 @@ class TestDefaults:
         for feature in FEATURES:
             assert FEATURE_PURPOSE[feature].strip()
 
-    def test_analysts_are_deterministic_by_default(self, prefs: Path) -> None:
-        # Disagreement between analysts should come from different models, not
-        # from sampling noise, or a rerun cannot tell the two apart.
-        assert resolve_route("analyst", prefs).temperature == 0.0
+    def test_no_stage_sets_a_temperature(self, prefs: Path) -> None:
+        # A reasoning model may refuse any temperature but 1 while thinking.
+        # Setting one made the fast fallback unreachable for its whole
+        # existence, and bought no determinism: these models are not
+        # reproducible at temperature 0 regardless.
+        for feature in FEATURES:
+            assert resolve_route(feature, prefs).temperature is None
+
+    def test_every_stage_declares_a_reasoning_effort(self, prefs: Path) -> None:
+        # Left unset this is a provider default on the largest lever over
+        # cost, latency and quality in the system.
+        for feature in FEATURES:
+            assert resolve_route(feature, prefs).reasoning_effort in REASONING_EFFORTS
+
+    def test_the_judgement_stages_think_hardest(self, prefs: Path) -> None:
+        for feature in ("analyst", "decision"):
+            assert resolve_route(feature, prefs).reasoning_effort == "high"
+        for feature in ("triage", "plan", "chat", "explain"):
+            assert resolve_route(feature, prefs).reasoning_effort == "low"
+
+    def test_reasoning_effort_can_be_overridden(self, prefs: Path) -> None:
+        set_route("triage", reasoning_effort="high", path=prefs)
+        assert resolve_route("triage", prefs).reasoning_effort == "high"
+
+    def test_an_invented_effort_level_is_rejected(self, prefs: Path) -> None:
+        with pytest.raises(ValueError, match="Unknown reasoning effort"):
+            set_route("triage", reasoning_effort="maximum", path=prefs)
 
     def test_unknown_feature_is_rejected(self, prefs: Path) -> None:
         with pytest.raises(ValueError, match="Unknown feature"):

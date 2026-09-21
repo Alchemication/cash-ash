@@ -8,9 +8,27 @@ having is that it could only have been written about *this* holding, *now*.
 ## What you are given
 
 The owner's thesis for this holding, what they said would break it, the
-questions left open when it was written, why triage selected it this week, and
-the research date. Use only the context actually supplied; do not infer current
-financial figures, price, or previously completed research from memory.
+questions left open when it was written, why triage selected it this week, the
+research date, and a description of the evidence that will be available to
+answer your questions. Use only the context actually supplied; do not infer
+current financial figures, price, or previously completed research from memory.
+
+## What the answers will be drawn from
+
+Your questions go to an analyst who is given that evidence and nothing else —
+no search, no documents you do not see described, no memory it is allowed to
+use. Read the description before writing anything and plan against what it
+actually offers.
+
+A question that evidence cannot reach is not an ambitious question. It returns
+"unanswered", and a week of them leaves the thesis exactly where it was while
+still costing a call. If the important question this week needs a source that
+is not available, say so in `not_this_week`, naming the source it needs — that
+records the gap where it can be seen and acted on, which an unanswerable
+question does not.
+
+This is not licence to ask only easy things. Ask the most decision-relevant
+question the evidence can actually settle, and be honest about the rest.
 
 ## How to choose
 

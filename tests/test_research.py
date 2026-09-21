@@ -41,6 +41,7 @@ class _Source:
     """An evidence source returning a fixed list."""
 
     name = "fake"
+    capability = "Dated news items about the company."
 
     def __init__(self, items: list[EvidenceItem] | None = None) -> None:
         self._items = items or []
@@ -200,7 +201,14 @@ class TestResearchPass:
             seeded,
             ticker="AAA",
             source=_Source(
-                [EvidenceItem("A thing", "https://e.com/a", "2026-09-05", "Wire")]
+                [
+                    EvidenceItem(
+                        "Alpha Industries does a thing",
+                        "https://e.com/a",
+                        "2026-09-05",
+                        "Wire",
+                    )
+                ]
             ),
         )
         assert "https://e.com/a" in seen[1]
@@ -248,7 +256,9 @@ class TestProvenance:
             source=_Source(
                 [
                     EvidenceItem(
-                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                        title="Alpha Industries makes a claim",
+                        url="https://e.com/a",
+                        published="2026-09-05",
                     )
                 ]
             ),
@@ -316,7 +326,9 @@ class TestProposalOnly:
             source=_Source(
                 [
                     EvidenceItem(
-                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                        title="Alpha Industries makes a claim",
+                        url="https://e.com/a",
+                        published="2026-09-05",
                     )
                 ]
             ),
@@ -342,7 +354,9 @@ class TestProposalOnly:
             source=_Source(
                 [
                     EvidenceItem(
-                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                        title="Alpha Industries makes a claim",
+                        url="https://e.com/a",
+                        published="2026-09-05",
                     )
                 ]
             ),
@@ -369,7 +383,9 @@ class TestProposalOnly:
             source=_Source(
                 [
                     EvidenceItem(
-                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                        title="Alpha Industries makes a claim",
+                        url="https://e.com/a",
+                        published="2026-09-05",
                     )
                 ]
             ),
@@ -393,7 +409,9 @@ class TestProposalOnly:
             source=_Source(
                 [
                     EvidenceItem(
-                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                        title="Alpha Industries makes a claim",
+                        url="https://e.com/a",
+                        published="2026-09-05",
                     )
                 ]
             ),
@@ -416,7 +434,9 @@ class TestProposalOnly:
             source=_Source(
                 [
                     EvidenceItem(
-                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                        title="Alpha Industries makes a claim",
+                        url="https://e.com/a",
+                        published="2026-09-05",
                     )
                 ]
             ),
@@ -442,7 +462,9 @@ class TestProposalOnly:
             source=_Source(
                 [
                     EvidenceItem(
-                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                        title="Alpha Industries makes a claim",
+                        url="https://e.com/a",
+                        published="2026-09-05",
                     )
                 ]
             ),
@@ -469,7 +491,9 @@ class TestProposalOnly:
             source=_Source(
                 [
                     EvidenceItem(
-                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                        title="Alpha Industries makes a claim",
+                        url="https://e.com/a",
+                        published="2026-09-05",
                     )
                 ]
             ),
@@ -495,7 +519,9 @@ class TestProposalOnly:
             source=_Source(
                 [
                     EvidenceItem(
-                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                        title="Alpha Industries makes a claim",
+                        url="https://e.com/a",
+                        published="2026-09-05",
                     )
                 ]
             ),
@@ -517,7 +543,9 @@ class TestProposalOnly:
             source=_Source(
                 [
                     EvidenceItem(
-                        title="a claim", url="https://e.com/a", published="2026-09-05"
+                        title="Alpha Industries makes a claim",
+                        url="https://e.com/a",
+                        published="2026-09-05",
                     )
                 ]
             ),

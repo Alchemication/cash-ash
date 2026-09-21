@@ -71,6 +71,17 @@ class EvidenceSource(Protocol):
 
     name: str
 
+    capability: str
+    """What this source can and cannot answer, in the planner's own terms.
+
+    The planner writes the questions the analyst must then answer from this
+    source alone. Planning blind produces questions no retrieval here could
+    settle — on 2026-09-20 it asked four holdings for segment revenue from the
+    latest 10-K and for proxy ownership tables, against a feed carrying news
+    commentary, and 18 of 20 questions came back unanswered. This travels with
+    the source so the description cannot drift from what is fetched.
+    """
+
     def fetch(self, symbol: str, *, limit: int) -> list[EvidenceItem]:
         """Return recent items for one symbol, newest first."""
         ...
@@ -86,6 +97,17 @@ class YFinanceNewsSource:
     """
 
     name = "yfinance-news"
+
+    capability = (
+        "Recent news and market commentary about the company, each item dated "
+        "and attributed to a publisher, from roughly the last few months. It "
+        "is reporting and opinion, not primary documents: there are no "
+        "filings, annual or quarterly reports, proxy statements, earnings-call "
+        "transcripts, analyst consensus figures, valuation multiples or market "
+        "share datasets, and no full article text beyond a headline and a "
+        "short summary. A figure appears only if a journalist happened to "
+        "quote it."
+    )
 
     @staticmethod
     def _text(value: Any) -> str | None:

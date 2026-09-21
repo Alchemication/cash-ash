@@ -699,7 +699,7 @@ class TestEvidenceAndRotation:
             def fetch(self, symbol: str, *, limit: int) -> list[EvidenceItem]:
                 return [
                     EvidenceItem(
-                        title="News",
+                        title="TEST reports quarterly news",
                         url="https://example.com/news",
                         published="2026-09-05",
                     )
@@ -721,13 +721,23 @@ class TestEvidenceAndRotation:
             )
         )
         items = gather_evidence(
-            Source(), "TEST", ["Revenue?"], today=TODAY, evidence_file=path
+            Source(),
+            "TEST",
+            ["Revenue?"],
+            company="Synthetic issuer",
+            today=TODAY,
+            evidence_file=path,
         )
         assert items[0].title == "Release"
         items = gather_evidence(
-            Source(), "TEST", ["Debt?"], today=TODAY, evidence_file=path
+            Source(),
+            "TEST",
+            ["Debt?"],
+            company="Synthetic issuer",
+            today=TODAY,
+            evidence_file=path,
         )
-        assert items[0].title == "News"
+        assert items[0].title == "TEST reports quarterly news"
 
     def test_overdue_research_gets_a_slot_without_model_selection(
         self, book: sqlite3.Connection
@@ -757,6 +767,57 @@ class TestEvidenceAndRotation:
         assessment(book, ticker="TEST")
         targets, _ = select_research(book, [("TEST", "Event")], today=TODAY, limit=2)
         assert {t for t, _ in targets} == {"TEST", "NEXT"}
+
+    def _holding(
+        self, book: sqlite3.Connection, ticker: str, *, amount_eur: float
+    ) -> int:
+        """Add a held, thesis-backed, never-researched equity."""
+        sid = upsert_security(
+            book, Security(ticker=ticker, name=f"Synthetic {ticker}", currency="EUR")
+        )
+        insert_trade(
+            book,
+            Trade(
+                security_id=sid,
+                trade_date=TODAY.isoformat(),
+                side="BUY",
+                quantity=1,
+                amount_eur=amount_eur,
+            ),
+        )
+        save_thesis(book, Thesis(security_id=sid, summary="Reason", source="user"))
+        return sid
+
+    def test_backlog_never_displaces_a_triage_pick(
+        self, book: sqlite3.Connection
+    ) -> None:
+        # The 2026-09-20 regression: rotation reserved a slot before triage's
+        # picks were placed, so the cap fell on the picks instead of on the
+        # backlog and the two holdings triage most wanted were dropped.
+        self._holding(book, "BACKLOG", amount_eur=10)
+        assessment(book, ticker="TEST")
+        targets, _ = select_research(book, [("TEST", "Event")], today=TODAY, limit=1)
+        assert targets == [("TEST", "Event")]
+
+    def test_spare_capacity_still_goes_to_the_backlog(
+        self, book: sqlite3.Connection
+    ) -> None:
+        self._holding(book, "BACKLOG", amount_eur=10)
+        assessment(book, ticker="TEST")
+        targets, _ = select_research(book, [("TEST", "Event")], today=TODAY, limit=2)
+        assert [t for t, _ in targets] == ["TEST", "BACKLOG"]
+
+    def test_the_backlog_is_worked_by_size_not_by_alphabet(
+        self, book: sqlite3.Connection
+    ) -> None:
+        # Every never-researched holding shares one stand-in date, so the
+        # tiebreak decides the whole queue. Alphabetical order sent a week of
+        # research capacity to whichever ticker sorted first.
+        self._holding(book, "AAA", amount_eur=10)
+        self._holding(book, "ZZZ", amount_eur=500)
+        assessment(book, ticker="TEST")
+        targets, _ = select_research(book, [], today=TODAY, limit=1)
+        assert [t for t, _ in targets] == ["ZZZ"]
 
     def test_unsupported_asset_is_deferred(self, book: sqlite3.Connection) -> None:
         book.execute("UPDATE securities SET asset_class='fund'")

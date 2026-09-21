@@ -439,16 +439,45 @@ and pays twice. Retried once only; a second truncation means the prompt is
 asking for too much, which more budget will not fix.
 """
 
-LLM_RETRY_DELAYS: tuple[int, ...] = (5, 15, 45)
+LLM_RETRY_DELAYS: tuple[int, ...] = (5, 20)
 """Backoff between retries of a transient failure, in seconds.
 
-Three attempts spanning about a minute. A weekly batch job can afford to wait;
-what it cannot afford is to abandon a run because one provider blipped.
+One delay per retry, so this is three attempts on the routed model before the
+fallback — it used to read as three and give four, which mattered once the
+timeout became real.
+
+Deliberately short now that ``LLM_TIMEOUT_S`` binds a single attempt rather
+than a third of one. The two multiply: every retry is a further ten minutes a
+dead provider can hold the run open, and the common transient faults —
+overload, a rate limit, a reset — either clear within seconds or are not going
+to clear during a weekly run at all.
 """
 
-LLM_TIMEOUT_S: float = _env_float("CASH_ASH_LLM_TIMEOUT_S", 180.0)
-"""Per-request timeout. Generous because reasoning models are slow, and a
-research call that takes two minutes is still cheaper than a failed run.
+LLM_TIMEOUT_S: float = _env_float("CASH_ASH_LLM_TIMEOUT_S", 600.0)
+"""Per-request timeout, bounding one attempt.
+
+Sized from observed latency, not from taste. Triage writes a comparative
+ranking of every holding in one call and has taken 484 seconds to do it;
+analyst and decision now reason at high effort, which is slower again. The
+previous 180 was never tested at its face value, because the provider SDK
+retried underneath it and gave every call three attempts at that limit — the
+first run where the timeout actually bound at 180 lost triage entirely to four
+consecutive timeouts.
+
+Generous on purpose: a weekly batch job can wait, and abandoning a run costs
+far more than a slow call. What it must not do is hide a dead provider, which
+is why the retry schedule above is short.
+"""
+
+LLM_PROVIDER_RETRIES: int = 0
+"""Retries inside the provider SDK, below litellm.
+
+Zero because retrying belongs to one layer and this project already owns it in
+``llm.call_llm``, which backs off over ``LLM_RETRY_DELAYS`` and logs every
+attempt. The OpenAI client litellm builds for an OpenAI-compatible endpoint
+defaults to two internal retries, which are invisible here: they log nothing,
+ignore the backoff, and multiply ``LLM_TIMEOUT_S`` by three, so a call given
+three minutes took nine and a timeout that should have failed fast did not.
 """
 
 
@@ -465,6 +494,51 @@ than filings, so an item establishes that something was said, not that it is
 true. A paid search API is a plausible upgrade at roughly ten dollars a year at
 this portfolio's usage, but adding a credential before the free source has been
 shown inadequate is a cost with no measured benefit.
+"""
+
+EVIDENCE_NAME_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "class",
+        "company",
+        "corp",
+        "corporation",
+        "group",
+        "holdings",
+        "inc",
+        "international",
+        "limited",
+        "ltd",
+        "platforms",
+        "plc",
+        "systems",
+        "technologies",
+    }
+)
+"""Company-name words too generic to prove an item is about that company.
+
+An article mentioning "platforms" or "technologies" says nothing about who it
+concerns, so matching on them readmits exactly the items the relevance filter
+exists to drop.
+"""
+
+EVIDENCE_NAME_MIN_LENGTH: int = 4
+"""Shortest company-name word allowed to establish relevance.
+
+Three letters and under collide with ordinary prose — "Eli" inside "eligible"
+— and every holding is also matched on its ticker, which is what carries the
+short names.
+"""
+
+EVIDENCE_OVERFETCH: int = 4
+"""How many items to request per item the package will keep.
+
+The relevance filter can only subtract, so asking for exactly the package size
+guarantees a short package. Most of what an aggregator files under a ticker is
+not about that company — measured on 2026-09-20, six of eight NVDA items and
+five of eight for LLY — so the pool has to be larger than the package.
+
+Four because the feed runs out before this does: it returns about ten items
+however many are asked for, and the cost of asking is one request either way.
 """
 
 EVIDENCE_ITEMS_PER_SECURITY: int = _env_int("CASH_ASH_EVIDENCE_ITEMS_PER_SECURITY", 8)
@@ -613,8 +687,12 @@ RESEARCH_MAX_PASSES: int = _env_int("CASH_ASH_RESEARCH_MAX_PASSES", 4)
 RESEARCH_OVERDUE_DAYS: int = _env_int("CASH_ASH_RESEARCH_OVERDUE_DAYS", 42)
 """Six-week coverage floor so quiet holdings cannot be skipped forever."""
 
-RESEARCH_ROTATION_SLOTS: int = 1
-"""Reserve one weekly slot for the oldest coverage gap without crowding out events."""
+NEVER_RESEARCHED: str = "0001-01-01"
+"""Stand-in coverage date for a holding no research pass has ever touched.
+
+Sorts ahead of every real date, so an unexamined holding is the first to take
+a spare slot rather than the last.
+"""
 
 SNOOZE_DAYS: int = _env_int("CASH_ASH_SNOOZE_DAYS", 2)
 """Two days to reconsider an item while keeping it inside the weekly review."""

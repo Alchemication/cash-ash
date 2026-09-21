@@ -246,7 +246,7 @@ def _bootstrap_message(security: Security, context: dict[str, str]) -> str:
 # Deep research
 # ---------------------------------------------------------------------------
 
-PLAN_PROMPT_VERSION = "research_plan/2"
+PLAN_PROMPT_VERSION = "research_plan/3"
 ANALYST_PROMPT_VERSION = "research_analyst/4"
 
 _VALID_THESIS_STATUS = {"improving", "unchanged", "deteriorating", "broken"}
@@ -278,12 +278,18 @@ def _plan_research(
     trigger: str,
     trace_id: int,
     run_date: str,
+    capability: str,
     model: str | None = None,
 ) -> tuple[list[str], tuple[str, ...]]:
     """Choose this week's questions for one holding."""
     lines = [
         f"Research date: {run_date}.",
         f"Holding: {security.ticker} ({security.name}).",
+        "",
+        # Stated because the planner is otherwise blind to it: the analyst
+        # gets this evidence and nothing else, so a question beyond its reach
+        # is a guaranteed gap rather than an ambitious one.
+        f"The evidence available to answer these questions: {capability}",
         "",
         f"Triage selected it because: {trigger}",
         "",
@@ -391,6 +397,7 @@ def research_security(
     )
 
     routing = model_overrides or {}
+    evidence_source = source or get_evidence_source()
     questions, not_this_week = _plan_research(
         conn,
         security=security,
@@ -398,6 +405,7 @@ def research_security(
         trigger=trigger,
         trace_id=trace_id,
         run_date=run_date,
+        capability=evidence_source.capability,
         model=routing.get("plan"),
     )
     if not questions:
@@ -411,9 +419,10 @@ def research_security(
     )
 
     items = gather_evidence(
-        source or get_evidence_source(),
+        evidence_source,
         security.price_symbol,
         questions,
+        company=security.name,
         today=today or date.today(),
         evidence_file=evidence_file,
     )
