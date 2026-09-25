@@ -849,11 +849,11 @@ uv run python main.py weekly --telegram
       x: o.x,
       y: o.y,
       // Embers lift and blow right; grit falls off the edge. Pixels per second.
-      vx: (ember ? 8 + Math.random() * 34 : 10 + Math.random() * 30) * scale,
-      vy: (ember ? -(30 + Math.random() * 60) : 6 + Math.random() * 22) * scale,
+      vx: (ember ? 4 + Math.random() * 17 : 5 + Math.random() * 15) * scale,
+      vy: (ember ? -(15 + Math.random() * 30) : 3 + Math.random() * 11) * scale,
       r: ember ? 0.7 + Math.random() * 0.9 : 0.6 + Math.random() * 1.2,
       life: 0,
-      span: ember ? 1.6 + Math.random() * 2.6 : 1.2 + Math.random() * 1.6,
+      span: ember ? 2.4 + Math.random() * 3.9 : 1.8 + Math.random() * 2.4,
       phase: Math.random() * Math.PI * 2,
       a: ember ? 0.55 + Math.random() * 0.45 : 0.18 + Math.random() * 0.22
     };
@@ -877,7 +877,7 @@ uv run python main.py weekly --telegram
     ctx.clearRect(0, 0, w, h);
 
     // About this many new sparks a second, fewer on a small image.
-    owed += dt * 27 * Math.min(box.s / 500, 1.2);
+    owed += dt * 18 * Math.min(box.s / 500, 1.2);
     while (owed >= 1) { sparks.push(make()); owed -= 1; }
 
     ctx.globalCompositeOperation = "lighter";
@@ -885,12 +885,12 @@ uv run python main.py weekly --telegram
       var f = sparks[i];
       f.life += dt;
       if (f.life > f.span) { sparks.splice(i, 1); continue; }
-      f.phase += dt * 3;
+      f.phase += dt * 1.6;
       if (f.ember) {
-        f.vy -= 6 * dt;
-        f.vx += Math.sin(f.phase) * 14 * dt;
+        f.vy -= 2.5 * dt;
+        f.vx += Math.sin(f.phase) * 6 * dt;
       } else {
-        f.vy += 30 * dt;
+        f.vy += 12 * dt;
       }
       f.x += f.vx * dt;
       f.y += f.vy * dt;
@@ -912,7 +912,7 @@ uv run python main.py weekly --telegram
         ctx.lineCap = "round";
         ctx.beginPath();
         ctx.moveTo(f.x, f.y);
-        ctx.lineTo(f.x - f.vx * 0.06, f.y - f.vy * 0.06);
+        ctx.lineTo(f.x - f.vx * 0.12, f.y - f.vy * 0.12);
         ctx.stroke();
       } else {
         ctx.globalAlpha = f.a * fade;
