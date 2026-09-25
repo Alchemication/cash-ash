@@ -877,7 +877,7 @@ uv run python main.py weekly --telegram
     ctx.clearRect(0, 0, w, h);
 
     // About this many new sparks a second, fewer on a small image.
-    owed += dt * 34 * Math.min(box.s / 500, 1.2);
+    owed += dt * 27 * Math.min(box.s / 500, 1.2);
     while (owed >= 1) { sparks.push(make()); owed -= 1; }
 
     ctx.globalCompositeOperation = "lighter";
